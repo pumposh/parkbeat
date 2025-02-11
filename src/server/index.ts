@@ -1,5 +1,17 @@
 import { j } from "./jstack"
 import { postRouter } from "./routers/post-router"
+import { cors } from "hono/cors"
+
+/**
+ * WebSocket Durable Object for handling real-time connections
+ */
+export class WebSocketDO {
+  constructor(state: DurableObjectState, env: any) {}
+
+  async fetch(request: Request) {
+    return new Response("WebSocket DO")
+  }
+}
 
 /**
  * This is your base API.
@@ -10,7 +22,12 @@ import { postRouter } from "./routers/post-router"
 const api = j
   .router()
   .basePath("/api")
-  .use(j.defaults.cors)
+  .use(cors({
+    origin: ["http://localhost:3000", "http://localhost:8080"],
+    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Upgrade-Insecure-Requests"],
+    credentials: true,
+  }))
   .onError(j.defaults.errorHandler)
 
 /**

@@ -2,5 +2,17 @@ name = "parkbeat"
 compatibility_date = "2024-08-06"
 main = "src/server/index.ts"
 
+[vars]
+# Reference environment variables without exposing them in the file
+DATABASE_URL = "postgresql://neondb_owner:npg_o87aWciLIkMY@ep-little-scene-a4147jz4-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
+
 [dev]
 port = 8080
+
+[[durable_objects.bindings]]
+name = "WEBSOCKET_DO"
+class_name = "WebSocketDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["WebSocketDO"]

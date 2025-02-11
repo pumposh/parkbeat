@@ -1,1 +1,149 @@
-@import "tailwindcss";
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #18181b;
+    --glass-bg: 0.8;
+    --glass-border: 0.5;
+    --glass-blur: 12px;
+    --transition-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --transition-duration: 250ms;
+
+    /* Z-index layers */
+    --z-map: 0;
+    --z-content: 10;
+    --z-header: 20;
+    --z-dialog: 50;
+  }
+
+  .dark {
+    --background: #1a2419;
+    --foreground: #e5e9e4;
+    --glass-bg: 0.4;
+    --glass-border: 0.15;
+    --glass-blur: 12px;
+  }
+
+  /* Disable transitions on page load */
+  .no-transitions * {
+    transition: none !important;
+  }
+}
+
+@layer base {
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}
+
+@layer components {
+  .frosted-glass {
+    @apply backdrop-blur-md bg-white/80 dark:bg-black/50 border border-zinc-200/50 dark:border-white/10;
+    backdrop-filter: blur(var(--glass-blur));
+    background-color: color-mix(in srgb, var(--background) var(--glass-bg), transparent);
+    border: 1px solid color-mix(in srgb, var(--foreground) var(--glass-border), transparent);
+    border-radius: 12px;
+  }
+
+  .frosted-glass::before {
+    content: "";
+    position: absolute;
+    inset: -1.4px;
+    background: transparent;
+    border-radius: inherit;
+    opacity: 0.1;
+    @apply dark:opacity-40;
+    @media (prefers-color-scheme: dark) {
+      background: linear-gradient(to right, rgb(82, 82, 91), rgb(82, 82, 91), rgb(82, 82, 91));
+    }
+  }
+
+  /* MapLibre Controls */
+  :root {
+    /* Hide all default controls */
+    .maplibregl-control-container,
+    .maplibregl-ctrl.maplibregl-ctrl-attrib,
+    .maplibregl-ctrl.maplibregl-ctrl-scale {
+      display: none !important;
+    }
+  }
+
+  /* Dialog animations */
+  @keyframes overlayShow {
+    from {
+      backdrop-filter: blur(0);
+      opacity: 0;
+    }
+    to {
+      backdrop-filter: blur(16px);
+      opacity: 1;
+    }
+  }
+
+  @keyframes overlayHide {
+    from {
+      backdrop-filter: blur(16px);
+      opacity: 1;
+    }
+    to {
+      backdrop-filter: blur(0);
+      opacity: 0;
+    }
+  }
+
+  @keyframes contentShow {
+    from {
+      transform: translate(-50%, -48%) scale(0.36);
+      filter: blur(16px);
+      opacity: 0;
+    }
+    to {
+      transform: translate(-50%, -50%) scale(1);
+      filter: blur(0px);
+      opacity: 1;
+    }
+  }
+
+  @keyframes contentHide {
+    from {
+      transform: translate(-50%, -50%) scale(1);
+      filter: blur(0px);
+      opacity: 1;
+    }
+    to {
+      transform: translate(-50%, -48%) scale(0.36);
+      filter: blur(16px);
+      opacity: 0;
+    }
+  }
+
+  .dialog-overlay[data-state="open"] {
+    animation: overlayShow var(--transition-duration) var(--transition-ease);
+    backdrop-filter: blur(16px);
+    opacity: 1;
+    z-index: var(--z-dialog);
+  }
+
+  .dialog-overlay[data-state="closed"] {
+    animation: overlayHide var(--transition-duration) var(--transition-ease);
+    backdrop-filter: blur(0);
+    opacity: 0;
+    z-index: var(--z-dialog);
+  }
+
+  .dialog-content[data-state="open"] {
+    animation: contentShow var(--transition-duration) var(--transition-ease);
+    opacity: 1;
+    z-index: var(--z-dialog);
+  }
+
+  .dialog-content[data-state="closed"] {
+    animation: contentHide var(--transition-duration) var(--transition-ease);
+    opacity: 0;
+    z-index: var(--z-dialog);
+  }
+}

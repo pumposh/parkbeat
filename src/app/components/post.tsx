@@ -3,43 +3,92 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { client } from "@/lib/client"
+import { useWebSocket } from "jstack/client"
+import { generateId } from "@/lib/id"
+
+// Define the post type
+type Post = {
+  id: string
+  name: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+// Subscribe to real-time updates
+const ws = client.post.live.$ws()
 
 export const RecentPost = () => {
   const [name, setName] = useState<string>("")
   const queryClient = useQueryClient()
 
+  useWebSocket(ws, {
+    message: (data: Post) => {
+      // Only handle actual post updates
+      if (data && typeof data === 'object' && 'id' in data) {
+        console.log('Client: Received post update:', data)
+        if (data.id !== "0") { // Skip the connection confirmation message
+          queryClient.setQueryData(["get-recent-post"], data)
+        }
+      }
+    },
+    ping: () => {
+      console.log('Client: Ping received')
+    },
+    post: (data: { id: string; name: string }) => {
+      console.log('Client: Received post name:', data.name)
+    },
+    onConnect: () => {
+      console.log('Client: Connected to WebSocket')
+    },
+    onError: (error: Error) => {
+      console.error('Client: WebSocket error:', error)
+    },
+  })
+
   const { data: recentPost, isPending: isLoadingPosts } = useQuery({
     queryKey: ["get-recent-post"],
     queryFn: async () => {
       const res = await client.post.recent.$get()
-      return await res.json()
+      const data = await res.json()
+      console.log('Client: Recent post data:', data)
+      return data
     },
   })
 
   const { mutate: createPost, isPending } = useMutation({
     mutationFn: async ({ name }: { name: string }) => {
-      const res = await client.post.create.$post({ name })
-      return await res.json()
+      const id = generateId();
+      console.log("Client: Creating post with name:", name)
+      try {
+        // Emit the post event and wait for response
+        ws.emit('post', { id, name })
+        // The actual post will be received through the message event handler
+        return name
+      } catch (error) {
+        console.error('Client: Error creating post:', error)
+        throw error
+      }
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["get-recent-post"] })
+    onSuccess: async (data) => {
+      console.log("Client: Mutation succeeded with data:", data)
       setName("")
+      // No need to invalidate query as we'll receive the update via WebSocket
     },
   })
 
   return (
-    <div className="w-full max-w-sm backdrop-blur-lg bg-black/15 px-8 py-6 rounded-md text-zinc-100/75 space-y-2">
+    <div className="w-full max-w-sm frosted-glass px-8 py-6 text-zinc-600 dark:text-zinc-100/90 space-y-2">
       {isLoadingPosts ? (
-        <p className="text-[#ececf399] text-base/6">
-          Loading posts...
+        <p className="text-zinc-500 dark:text-zinc-400 text-base/6">
+          Loading your beats...
         </p>
       ) : recentPost ? (
-        <p className="text-[#ececf399] text-base/6">
-          Your recent post: "{recentPost.name}"
+        <p className="text-zinc-800 dark:text-zinc-400 text-base/6">
+          Your latest beat: "{recentPost.name}"
         </p>
       ) : (
-        <p className="text-[#ececf399] text-base/6">
-          You have no posts yet.
+        <p className="text-zinc-500 dark:text-zinc-400 text-base/6">
+          Drop your first beat!
         </p>
       )}
       <form
@@ -57,17 +106,17 @@ export const RecentPost = () => {
       >
         <input
           type="text"
-          placeholder="Enter a title..."
+          placeholder="What's on your mind?"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full text-base/6 rounded-md bg-black/50 hover:bg-black/75 focus-visible:outline-none ring-2 ring-transparent  hover:ring-zinc-800 focus:ring-zinc-800 focus:bg-black/75 transition h-12 px-4 py-2 text-zinc-100"
+          className="w-full text-base/6 rounded-md frosted-glass hover:bg-white/75 dark:hover:bg-black/80 focus-visible:outline-none hover:ring-zinc-300 dark:hover:ring-zinc-700 focus:ring-zinc-300 dark:focus:ring-zinc-700 focus:bg-white/75 dark:focus:bg-black/80 transition h-12 px-4 py-2 text-zinc-800 dark:text-zinc-100"
         />
         <button
           disabled={isPending}
           type="submit"
-          className="rounded-md text-base/6 ring-2 ring-offset-2 ring-offset-black focus-visible:outline-none focus-visible:ring-zinc-100 ring-transparent hover:ring-zinc-100 h-12 px-10 py-3 bg-brand-700 text-zinc-800 font-medium bg-gradient-to-tl from-zinc-300 to-zinc-200 transition hover:bg-brand-800"
+          className="rounded-md text-base/6 frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 px-10 py-3 text-zinc-800 dark:text-zinc-100 font-medium transition hover:bg-white/90 dark:hover:bg-black/60"
         >
-          {isPending ? "Creating..." : "Create Post"}
+          {isPending ? "Dropping beat..." : "Drop Beat"}
         </button>
       </form>
     </div>
