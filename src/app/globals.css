@@ -6,13 +6,41 @@
   :root {
     --current-theme: "light";
 
+    /* Colors */
     --background: #ffffff;
-    --foreground: #18181b;
+    --foreground: #1a2419;
+    --primary: #2F5233;
+    --primary-foreground: #ffffff;
+    --secondary: #E8F1E9;
+    --secondary-foreground: #2F5233;
+    --muted: #F5F9F5;
+    --muted-foreground: #4B7B4F;
+    --accent: #D5E6D7;
+    --accent-foreground: #2F5233;
+    --destructive: #cc4444;
+    --destructive-foreground: #ffffff;
+    --border: #D5E6D7;
+    
+    /* Glass effect */
     --glass-bg: 0.8;
     --glass-border: 0.5;
     --glass-blur: 12px;
+    
+    /* Animation */
     --transition-ease: cubic-bezier(0.16, 1, 0.3, 1);
     --transition-duration: 250ms;
+
+    /* Spacing */
+    --content-padding: 1.5rem;
+    --card-padding: 1rem;
+    --input-height: 2.5rem;
+    --button-height: 2.5rem;
+    
+    /* Border radius */
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
 
     /* Z-index layers */
     --z-map: 0;
@@ -25,7 +53,19 @@
     --current-theme: "dark";
 
     --background: #1a2419;
-    --foreground: #e5e9e4;
+    --foreground: #e8f1e9;
+    --primary: #4b7b4f;
+    --primary-foreground: #e8f1e9;
+    --secondary: #2f5233;
+    --secondary-foreground: #e8f1e9;
+    --muted: #2f5233;
+    --muted-foreground: #98d8aa;
+    --accent: #3d6340;
+    --accent-foreground: #e8f1e9;
+    --destructive: #cc4444;
+    --destructive-foreground: #ffffff;
+    --border: #2f5233;
+    
     --glass-bg: 40%;
     --glass-border: 0.15;
     --glass-blur: 12px;
@@ -34,6 +74,14 @@
   /* Disable transitions on page load */
   .no-transitions * {
     transition: none !important;
+  }
+
+  dialog::backdrop {
+    @apply bg-black/20 backdrop-blur-sm;
+  }
+
+  dialog {
+    @apply bg-transparent;
   }
 }
 
@@ -76,15 +124,19 @@
     .dark .frosted-glass::before {
       opacity: 0.4;
       background: linear-gradient(to right, rgb(82, 82, 91), rgb(82, 82, 91), rgb(82, 82, 91));
-  } 
+    } 
 
   /* MapLibre Controls */
   :root {
     /* Hide all default controls */
     .maplibregl-control-container,
     .maplibregl-ctrl.maplibregl-ctrl-attrib,
+    .cl-formButtonPrimary::after,
     .maplibregl-ctrl.maplibregl-ctrl-scale {
       display: none !important;
+    }
+    .cl-rootBox.cl-userProfile-root {
+      width: 100%;
     }
     .cl-formButtonPrimary {
       font-size: 12px;
@@ -94,6 +146,11 @@
     .cl-header, .cl-footer, .cl-navbar, .cl-navbarMobileMenuRow {
       display: none !important;
     }
+    .cl-formFieldInput, .cl-input, .cl-formFieldInput__identifier, .cl-input__identifier, .cl-required {
+      margin-left: -16px;
+      z-index: 0;
+      padding-left: 20px;
+    }
     .cl-cardBox {
         max-width: unset;
         width: unset;
@@ -101,7 +158,15 @@
     .cl-cardBox, .cl-card, 
     .cl-formFieldInput, .cl-scrollBox,
     .cl-pageScrollBox {
-        color: var(--foreground);
+      color: var(--foreground);
+      backdrop-filter: blur(16px) !important;
+    }
+    .cl-card {
+      background: color-mix(in srgb, var(--background) var(--glass-bg), transparent);
+    }
+    .cl-formButtonPrimary, .cl-button {
+      background-color: color-mix(in srgb, var(--background) 20%, transparent);
+
     }
     .cl-scrollBox,
     .cl-pageScrollBox,
@@ -110,6 +175,7 @@
         background-color: transparent !important;
         height: unset !important;
         color: var(--foreground) !important;
+        backdrop-filter: none !important;
       
         .cl-pageScrollBox {
             padding: 0 !important;
@@ -164,11 +230,20 @@
         background-color: color-mix(in srgb, var(--foreground) 2%, transparent) !important;
     }
     .cl-phoneInputBox > div {
-        color: color-mix(in srgb, var(--foreground) 60%, transparent) !important;
-        background-color: color-mix(in srgb, var(--foreground) 2%, transparent) !important;
+      color: color-mix(in srgb, var(--foreground) 60%, transparent) !important;
+      background-color: color-mix(in srgb, var(--foreground) 2%, transparent) !important;
+    }
+    .cl-phoneInputBox > p {
+      z-index: 2;
     }
     .cl-profileSection .cl-profileSection__profile {
         padding: 0 !important;
+    }
+
+    .root-layout-container {
+      > :first-child {
+        pointer-events: auto
+      }
     }
   }
 
@@ -179,14 +254,14 @@
       opacity: 0;
     }
     to {
-      backdrop-filter: blur(16px);
+      backdrop-filter: blur(4px);
       opacity: 1;
     }
   }
 
   @keyframes overlayHide {
     from {
-      backdrop-filter: blur(16px);
+      backdrop-filter: blur(4px);
       opacity: 1;
     }
     to {
@@ -223,7 +298,7 @@
 
   .dialog-overlay[data-state="open"] {
     animation: overlayShow var(--transition-duration) var(--transition-ease);
-    backdrop-filter: blur(16px);
+    backdrop-filter: blur(4px);
     opacity: 1;
     z-index: var(--z-dialog);
   }
@@ -245,5 +320,12 @@
     animation: contentHide var(--transition-duration) var(--transition-ease);
     opacity: 0;
     z-index: var(--z-dialog);
+  }
+
+  .input, input {
+    padding: 0.25rem 0.5rem;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--foreground) var(--glass-bg), transparent);
+    background-color: color-mix(in srgb, var(--background) 20%, transparent);
   }
 }

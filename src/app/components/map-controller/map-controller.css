@@ -1,0 +1,77 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+@keyframes actionButtonEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(-15px) scale(0.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(-50px) scale(1);
+  }
+}
+
+@keyframes actionButtonLeave {
+  0% {
+    opacity: 1;
+    transform: translateY(-50px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-40px) scale(0.1);
+  }
+}
+
+@layer map-components {
+  .map-container {
+    @apply fixed inset-0;
+    z-index: var(--z-map);
+  }
+
+  .map-view {
+    @apply w-full h-full transition-opacity duration-300;
+  }
+
+  .map-controls {
+    @apply fixed flex flex-row gap-1.5 transition-opacity duration-300;
+    z-index: var(--z-header);
+  }
+
+  .map-control-button {
+    @apply w-10 h-10 rounded-xl flex items-center justify-center hover:bg-white/90 dark:hover:bg-black/60 transition-colors;
+  }
+
+  .pin-container {
+    @apply fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center;
+    pointer-events: none;
+    z-index: var(--z-dialog);
+  }
+
+  .pin {
+    @apply text-4xl text-zinc-800 dark:text-zinc-800;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+  }
+
+  .pin-shadow {
+    @apply w-2 h-2 rounded-full bg-black/60 blur-[2px] transition-all duration-300;
+  }
+
+  .manage-trees-button {
+    position: absolute;
+    z-index: var(--z-dialog);
+    transform: translateY(-50px);
+    pointer-events: auto;
+    @apply rounded-xl px-3 py-1.5 flex items-center gap-2 text-sm text-zinc-800 dark:text-zinc-800 transition-all duration-300 ease-out;
+  }
+
+  .manage-trees-button-enter {
+    animation: actionButtonEnter 0.15s ease-in-out forwards;
+  }
+
+  .manage-trees-button-leave {
+    animation: actionButtonLeave 0.15s ease-in-out forwards;
+  }
+}

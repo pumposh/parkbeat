@@ -45,32 +45,6 @@ export const postRouter = j.router({
     }
   }),
 
-  create: publicProcedure
-    .input(z.object({ 
-      id: z.string(),
-      name: z.string().min(1) 
-    }))
-    .mutation(async ({ ctx, c, input }) => {
-      const { id, name } = input
-      const { db } = ctx
-
-      try {
-        console.log('Attempting to create post with name:', name, 'id:', id)
-        
-        // Insert the new post with client-provided ID
-        const [result] = await db.insert(posts)
-          .values({ id, name })
-          .returning()
-        console.log('Insert result:', result)
-
-        // Return the created post
-        return c.json(result)
-      } catch (error) {
-        console.error('Error in create mutation:', error)
-        throw error
-      }
-    }),
-
   // WebSocket procedure for real-time updates
   live: publicProcedure
     .incoming(wsEvents)

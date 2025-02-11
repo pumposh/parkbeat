@@ -1,7 +1,7 @@
 'use client'
 
 import {
-    SignedIn, SignedOut, SignInButton, UserButton
+    UserButton
 } from "@clerk/nextjs";
 
 export const Clerk = () => {

@@ -15,6 +15,27 @@
       "when": 1739233325408,
       "tag": "0001_dusty_silverclaw",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1739273756202,
+      "tag": "0002_black_veda",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1739273795273,
+      "tag": "0003_slimy_layla_miller",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1739274972279,
+      "tag": "0004_shallow_hex",
+      "breakpoints": true
     }
   ]
 }
