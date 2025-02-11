@@ -7,6 +7,7 @@ import { SignInButton, SignOutButton, UserButton, UserProfile } from '@clerk/nex
 import { SignedIn, SignedOut } from '@clerk/nextjs'
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
 
 export const SettingsDialog = () => {
   const router = useRouter()
@@ -58,48 +59,51 @@ export const SettingsDialog = () => {
       </Dialog.Trigger>
 
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/40 dialog-overlay" />
-        <Dialog.Content 
-          className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 dialog-content w-full max-w-md" 
-          onCloseAutoFocus={(e) => e.preventDefault()}
-        >
-          <Dialog.Title className="sr-only">Settings</Dialog.Title>
-          <Dialog.Description className="sr-only">
-            Adjust application settings and theme preferences
-          </Dialog.Description>
-          
-          <div className="card frosted-glass p-[var(--content-padding)]">
-            <div className="space-y-6">
-              <div className="space-y-1">
-                <h2 className="text-lg font-semibold text-foreground">Settings</h2>
-              </div>
-              
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-foreground">Theme</h3>
-                  <ThemeSwitcher />
+        <Dialog.Overlay className="dialog-overlay fixed inset-0" />
+        <Dialog.Content className="dialog-content fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md p-4 overflow-visible">
+          <div className="pointer-events-auto">
+            <div className={cn(
+              "frosted-glass p-8 relative",
+              "rounded-t-2xl md:rounded-2xl" // Only rounded at top on mobile, fully rounded on desktop
+            )}>
+              <div className="flex flex-col gap-6">
+                <div className="flex items-center gap-3">
+                  <i className="fa-solid fa-gear text-xl text-zinc-800 dark:text-zinc-200" aria-hidden="true" />
+                  <Dialog.Title className={cn(
+                    "text-xl font-semibold",
+                    "text-zinc-900 dark:text-zinc-200"
+                  )}>
+                    Settings
+                  </Dialog.Title>
                 </div>
-                
-                <SignedIn>
+
+                <div className="space-y-4">
                   <div className="space-y-2">
-                    <h3 className="text-sm font-medium text-foreground">Account</h3>
-                    <div className="px-1">
-                      <UserProfile routing="hash" />
-                    </div>
+                    <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Theme</h3>
+                    <ThemeSwitcher />
                   </div>
-                  <SignOutButton>
-                    <button className="w-full rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 px-10 py-3 text-zinc-800 dark:text-zinc-100 font-medium transition hover:bg-white/90 dark:hover:bg-black/60">
-                      Sign out
-                    </button>
-                  </SignOutButton>
-                </SignedIn>
-                <SignedOut>
-                  <SignInButton forceRedirectUrl={'/'}>
-                    <button className="w-full rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 px-10 py-3 text-zinc-800 dark:text-zinc-100 font-medium transition hover:bg-white/90 dark:hover:bg-black/60">
-                      Sign in
-                    </button>
-                  </SignInButton>
-                </SignedOut>
+                  
+                  <SignedIn>
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Account</h3>
+                      <div className="px-1">
+                        <UserProfile routing="hash" />
+                      </div>
+                    </div>
+                    <SignOutButton>
+                      <button className="w-full rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 px-10 py-3 text-zinc-800 dark:text-zinc-100 font-medium transition hover:bg-white/90 dark:hover:bg-black/60">
+                        Sign out
+                      </button>
+                    </SignOutButton>
+                  </SignedIn>
+                  <SignedOut>
+                    <SignInButton forceRedirectUrl={'/'}>
+                      <button className="w-full rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 px-10 py-3 text-zinc-800 dark:text-zinc-100 font-medium transition hover:bg-white/90 dark:hover:bg-black/60">
+                        Sign in
+                      </button>
+                    </SignInButton>
+                  </SignedOut>
+                </div>
               </div>
             </div>
           </div>

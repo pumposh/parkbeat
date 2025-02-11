@@ -8,22 +8,22 @@
 
     /* Colors */
     --background: #ffffff;
-    --foreground: #1a2419;
+    --foreground: #2a2e2a;
     --primary: #2F5233;
     --primary-foreground: #ffffff;
     --secondary: #E8F1E9;
-    --secondary-foreground: #2F5233;
+    --secondary-foreground: #1a2419;
     --muted: #F5F9F5;
-    --muted-foreground: #4B7B4F;
+    --muted-foreground: #2F5233;
     --accent: #D5E6D7;
-    --accent-foreground: #2F5233;
+    --accent-foreground: #1a2419;
     --destructive: #cc4444;
     --destructive-foreground: #ffffff;
     --border: #D5E6D7;
     
     /* Glass effect */
-    --glass-bg: 0.8;
-    --glass-border: 0.5;
+    --glass-bg: 0.85;
+    --glass-border: 0.15;
     --glass-blur: 12px;
     
     /* Animation */
@@ -53,21 +53,21 @@
     --current-theme: "dark";
 
     --background: #1a2419;
-    --foreground: #e8f1e9;
+    --foreground: #f5f9f5;
     --primary: #4b7b4f;
-    --primary-foreground: #e8f1e9;
+    --primary-foreground: #ffffff;
     --secondary: #2f5233;
-    --secondary-foreground: #e8f1e9;
+    --secondary-foreground: #f5f9f5;
     --muted: #2f5233;
-    --muted-foreground: #98d8aa;
+    --muted-foreground: #b8e6c4;
     --accent: #3d6340;
-    --accent-foreground: #e8f1e9;
+    --accent-foreground: #f5f9f5;
     --destructive: #cc4444;
     --destructive-foreground: #ffffff;
     --border: #2f5233;
     
-    --glass-bg: 40%;
-    --glass-border: 0.15;
+    --glass-bg: 30%;
+    --glass-border: 0.1;
     --glass-blur: 12px;
   }
 
@@ -101,6 +101,11 @@
     border-radius: 12px;
   }
 
+  .frosted-glass.card {
+    border-radius: 24px;
+    overflow: visible;
+  }
+
   .frosted-glass::before {
     content: "";
     position: absolute;
@@ -118,7 +123,8 @@
     
     .light .frosted-glass::before {
         background: white;
-        opacity: 0.3;
+        opacity: 0.4;
+        z-index: -1;
     }
     
     .dark .frosted-glass::before {
@@ -270,7 +276,7 @@
     }
   }
 
-  @keyframes contentShow {
+  @keyframes contentShowDesktop {
     from {
       transform: translate(-50%, -48%) scale(0.36);
       filter: blur(16px);
@@ -283,7 +289,7 @@
     }
   }
 
-  @keyframes contentHide {
+  @keyframes contentHideDesktop {
     from {
       transform: translate(-50%, -50%) scale(1);
       filter: blur(0px);
@@ -293,6 +299,24 @@
       transform: translate(-50%, -48%) scale(0.36);
       filter: blur(16px);
       opacity: 0;
+    }
+  }
+
+  @keyframes contentShowMobile {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes contentHideMobile {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(100%);
     }
   }
 
@@ -311,21 +335,106 @@
   }
 
   .dialog-content[data-state="open"] {
-    animation: contentShow var(--transition-duration) var(--transition-ease);
     opacity: 1;
     z-index: var(--z-dialog);
+    outline: none;
   }
 
   .dialog-content[data-state="closed"] {
-    animation: contentHide var(--transition-duration) var(--transition-ease);
     opacity: 0;
     z-index: var(--z-dialog);
+    outline: none;
   }
 
-  .input, input {
+  /* Desktop styles */
+  @media (min-width: 768px) {
+    .dialog-content {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+    }
+
+    .dialog-content[data-state="open"] {
+      animation: contentShowDesktop var(--transition-duration) var(--transition-ease);
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .dialog-content[data-state="closed"] {
+      animation: contentHideDesktop var(--transition-duration) var(--transition-ease);
+      transform: translate(-50%, -48%) scale(0.36);
+    }
+  }
+
+  /* Mobile styles */
+  @media (max-width: 767px) {
+    .dialog-content {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-height: 90vh;
+      width: 100%;
+      overflow-y: auto;
+      margin: 0;
+      transform: none;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+      opacity: 1 !important;
+    }
+
+    .dialog-content[data-state="open"] {
+      animation: contentShowMobile var(--transition-duration) var(--transition-ease);
+      transform: translateY(0);
+    }
+
+    .dialog-content[data-state="closed"] {
+      animation: contentHideMobile var(--transition-duration) var(--transition-ease);
+      transform: translateY(100%);
+    }
+
+    /* Ensure content inside dialog is rounded only at the top on mobile */
+    .dialog-content > div > .frosted-glass {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+
+    /* Remove desktop positioning */
+    .dialog-content {
+      transform-origin: bottom center;
+      left: 0 !important;
+      right: 0 !important;
+      top: auto !important;
+      transform: none;
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+    }
+  }
+
+  /* Remove focus outline but keep it for keyboard navigation */
+  .dialog-content:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  .dialog-content:focus-visible {
+    outline: none;
+  }
+
+  .input, input, textarea {
     padding: 0.25rem 0.5rem;
     border-radius: 10px;
-    border: 1px solid color-mix(in srgb, var(--foreground) var(--glass-bg), transparent);
-    background-color: color-mix(in srgb, var(--background) 20%, transparent);
+    color: var(--foreground)/100;
+    font-weight: 500;
+    border: 1px solid color-mix(in srgb, var(--foreground) var(--glass-bg), transparent) !important;
+    background-color: color-mix(in srgb, var(--background) 20%, transparent) !important;
+  }
+
+  .input:focus-visible {
+    outline: 1px solid color-mix(in srgb, var(--foreground) 40%, transparent);
+  }
+  
+  .input::placeholder {
+    color: color-mix(in srgb, var(--foreground) 40%, transparent);
+    font-weight: 400;
   }
 }

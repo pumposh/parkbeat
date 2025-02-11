@@ -5,6 +5,7 @@ import { client } from "@/lib/client"
 import { useWebSocket } from "jstack/client"
 import { generateId } from "@/lib/id"
 import type { TreeStatus } from "@/server/routers/tree-router"
+import { useEffect, useRef } from "react"
 
 // Define the tree type to match server schema
 type Tree = {
@@ -24,25 +25,8 @@ const ws = client.tree.live.$ws()
 export const useLiveTrees = () => {
   const queryClient = useQueryClient()
 
-  window.addEventListener('map:newBounds', (bounds: CustomEvent<{
-    top: number
-    left: number
-    bottom: number
-    right: number
-  }>) => {
-    console.log('Client: New bounds:', bounds)
-    ws.emit('subscribe', {
-      bounds: {
-        north: bounds.detail.top,
-        south: bounds.detail.bottom,
-        east: bounds.detail.right,
-        west: bounds.detail.left
-      }
-    })
-  })
-
   useWebSocket(ws, {
-    message: (data: Tree) => {
+    newTree: (data: Tree) => {
       // Only handle actual tree updates
       if (data && typeof data === 'object' && 'id' in data) {
         console.log('Client: Received tree update:', data)
@@ -64,6 +48,71 @@ export const useLiveTrees = () => {
       console.error('Client: WebSocket error:', error)
     },
   })
+
+  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastBounds = useRef<{
+    top: number
+    left: number
+    bottom: number
+    right: number
+  } | null>(null)
+  useEffect(() => {
+    window.addEventListener('map:newBounds', (bounds: CustomEvent<{
+      top: number
+      left: number
+      bottom: number
+      right: number
+    }>) => {
+      if (timeout.current) {
+        clearTimeout(timeout.current)
+      }
+      timeout.current = setTimeout(() => {
+        if (lastBounds.current) {
+          ws.emit('unsubscribe', {
+            bounds: {
+            north: lastBounds.current.top,
+            south: lastBounds.current.bottom,
+            east: lastBounds.current.right,
+            west: lastBounds.current.left
+          }
+        })
+      }
+      lastBounds.current = {
+        top: bounds.detail.top,
+        left: bounds.detail.left,
+        bottom: bounds.detail.bottom,
+        right: bounds.detail.right
+      }
+      ws.emit('subscribe', {
+        bounds: {
+          north: lastBounds.current!.top,
+          south: lastBounds.current!.bottom,
+          east: lastBounds.current!.right,
+          west: lastBounds.current!.left
+        },
+      })
+      }, 200)
+    })
+
+    return () => {
+      window.removeEventListener('map:newBounds', (bounds: CustomEvent<{
+        top: number
+        left: number
+        bottom: number
+        right: number 
+      }>) => {
+        console.log('Client: Removing bounds:', bounds)
+        ws.emit('unsubscribe', {
+          bounds: {
+            north: bounds.detail.top,
+            south: bounds.detail.bottom,
+            east: bounds.detail.right,
+            west: bounds.detail.left
+          }
+        })
+      })
+    };
+  }, [])
 
   const { data: nearbyTrees, isPending: isLoadingTrees } = useQuery({
     queryKey: ["get-nearby-trees"],

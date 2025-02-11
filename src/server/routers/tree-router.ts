@@ -20,7 +20,7 @@ type Tree = {
 // Define the WebSocket event types
 const wsEvents = z.object({
   ping: z.void(),
-  message: z.object({
+  newTree: z.object({
     id: z.string(),
     name: z.string(),
     status: z.enum(treeStatus.enumValues),
@@ -47,6 +47,14 @@ const wsEvents = z.object({
       east: z.number(),
       west: z.number(),
     })
+  }),
+  unsubscribe: z.object({
+    bounds: z.object({
+      north: z.number(),
+      south: z.number(),
+      east: z.number(),
+      west: z.number(),
+    })
   })
 })
 
@@ -55,14 +63,10 @@ export const treeRouter = j.router({
   live: publicProcedure
     .incoming(wsEvents)
     .outgoing(wsEvents)
-    .ws(({ io, ctx }) => {
+    .ws(({ io, ctx, c }) => {
       const handlers = {
         onMessage(data: Partial<Tree>) {
           console.log('Server: Received message:', data)
-        },
-
-        ping() {
-          console.log('Server: Ping received')
         },
 
         async subscribe(data: { bounds: { north: number, south: number, east: number, west: number }}) {
@@ -85,7 +89,7 @@ export const treeRouter = j.router({
 
             // Send all trees in the area
             for (const tree of nearbyTrees) {
-              await io.to('trees').emit('message', {
+              await io.to('trees').emit('newTree', {
                 ...tree,
                 _loc_lat: parseFloat(tree._loc_lat),
                 _loc_lng: parseFloat(tree._loc_lng)
@@ -132,7 +136,7 @@ export const treeRouter = j.router({
             }
 
             // Broadcast the new tree to all clients
-            await io.to('trees').emit('message', treeToEmit)
+            await io.to('trees').emit('newTree', treeToEmit)
             console.log('Server: Tree created and broadcast:', treeToEmit)
 
             return treeToEmit
@@ -150,9 +154,12 @@ export const treeRouter = j.router({
           
           // Join the trees room
           await socket.join('trees')
+          socket.on('ping', () => {
+            console.log('Server: Ping received')
+          })
           
           // Send initial message to confirm connection
-          await io.to('trees').emit('message', {
+          await io.to('trees').emit('newTree', {
             id: '0',
             name: 'Connected to WebSocket',
             status: 'archived',

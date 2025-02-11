@@ -4,8 +4,15 @@ import { ClerkProvider } from "@clerk/nextjs"
 import { Header } from "./components/header"
 import { MapController } from "./components/map-controller/index"
 import { FooterMenu } from "./components/footer-menu"
+import { Newsreader } from "next/font/google"
 
 import "./globals.css"
+
+const newsreader = Newsreader({ 
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-display'
+})
 
 export const metadata: Metadata = {
   title: "Parkbeat",
@@ -20,7 +27,7 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en" suppressHydrationWarning>
+      <html lang="en" suppressHydrationWarning className={newsreader.variable}>
         <head>
           <script
             src="https://kit.fontawesome.com/aaef78e0d5.js"
@@ -31,7 +38,7 @@ export default function RootLayout({
           <Providers>
             <MapController />
             <Header />
-            <div className="root-layout-container fixed flex flex-col items-center inset-0 pointer-events-none" style={{ zIndex: 'var(--z-content)' }}>
+            <div className="root-layout-container fixed flex flex-col items-center inset-x-0 bottom-0 pointer-events-none pb-[2.5rem]" style={{ zIndex: 'var(--z-content)' }}>
               {children}
             </div>
             <FooterMenu />

@@ -8,6 +8,8 @@ import { setMapInstance } from '@/hooks/use-map'
 import { usePathname, useRouter } from 'next/navigation'
 import './map-controller.css'
 import { generateId } from '@/lib/id'
+import { useLiveTrees } from '../treebeds/live-trees'
+import type { TreeStatus } from '@/server/routers/tree-router'
 
 interface MapControllerProps {
   initialCenter?: {
@@ -29,6 +31,25 @@ interface IpApiResponse {
   longitude: number
   city: string
   error?: boolean
+}
+
+interface Pin {
+  id: string
+  lat: number
+  lng: number
+  type?: string
+  data?: any
+}
+
+interface Tree {
+  id: string
+  name: string
+  status: TreeStatus
+  _loc_lat: number
+  _loc_lng: number
+  _meta_created_by: string
+  _meta_updated_at: Date
+  _meta_created_at: Date
 }
 
 const getMapStyle = (theme: string) => {
@@ -88,21 +109,19 @@ export const MapController = ({
   const [isButtonVisible, setIsButtonVisible] = useState(false)
   const [isButtonLeaving, setIsButtonLeaving] = useState(false)
   const [isMapMoving, _setIsMapMoving] = useState(false)
+  const [pins, setPins] = useState<Map<string, Pin>>(new Map())
+  const { nearbyTrees, isLoadingTrees } = useLiveTrees()
 
   // Calculate header offset
   useEffect(() => {
     const calculatePosition = () => {
       const header = document.querySelector('.parkbeat-header')
-      const headerContent = header?.querySelector('.header-content')
       
-      if (header && headerContent) {
+      if (header) {
         const headerRect = header.getBoundingClientRect()
-        const computedStyle = window.getComputedStyle(headerContent)
-        const paddingLeft = parseInt(computedStyle.paddingLeft, 10)
-        
         setPosition({
           top: headerRect.top + headerRect.height,
-          left: paddingLeft
+          left: 0
         })
       }
     }
@@ -120,7 +139,7 @@ export const MapController = ({
   const openTreeDialog = () => {
     const id = generateId()
     const center = map.current?.getCenter()
-    router.push(`/manage-trees/${id}`)
+    router.push(`/manage-trees/${id}?lat=${center?.lat}&lng=${center?.lng}`)
   }
 
   const sendBounds = () => {
@@ -306,6 +325,111 @@ export const MapController = ({
     }
   }
 
+  // Initialize map pins layer
+  useEffect(() => {
+    if (!map.current || !isMapLoaded) return
+
+    // Add a source for pins if it doesn't exist
+    if (!map.current.getSource('pins')) {
+      map.current.addSource('pins', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: []
+        }
+      })
+    }
+
+    // Add a layer for pins if it doesn't exist
+    if (!map.current.getLayer('pins-layer')) {
+      map.current.addLayer({
+        id: 'pins-layer',
+        type: 'symbol',
+        source: 'pins',
+        layout: {
+          'text-field': '📍',
+          'text-size': 24,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+          'text-anchor': 'bottom'
+        }
+      })
+    }
+
+    // Update the pins source when pins state changes
+    const updatePinsSource = () => {
+      if (!map.current) return
+
+      const features = Array.from(pins.values()).map(pin => ({
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [pin.lng, pin.lat]
+        },
+        properties: {
+          id: pin.id,
+          type: pin.type,
+          ...pin.data
+        }
+      }))
+
+      const source = map.current.getSource('pins') as maplibregl.GeoJSONSource
+      source?.setData({
+        type: 'FeatureCollection',
+        features
+      })
+    }
+
+    // Subscribe to pin updates
+    const handlePinUpdate = (e: CustomEvent<Pin>) => {
+      setPins(prev => {
+        const next = new Map(prev)
+        next.set(e.detail.id, e.detail)
+        return next
+      })
+    }
+
+    const handlePinRemove = (e: CustomEvent<{ id: string }>) => {
+      setPins(prev => {
+        const next = new Map(prev)
+        next.delete(e.detail.id)
+        return next
+      })
+    }
+
+    window.addEventListener('pin:update', handlePinUpdate as EventListener)
+    window.addEventListener('pin:remove', handlePinRemove as EventListener)
+
+    // Initial update
+    updatePinsSource()
+
+    return () => {
+      window.removeEventListener('pin:update', handlePinUpdate as EventListener)
+      window.removeEventListener('pin:remove', handlePinRemove as EventListener)
+    }
+  }, [isMapLoaded, pins])
+
+  // Update pins when trees change
+  useEffect(() => {
+    if (!nearbyTrees || !Array.isArray(nearbyTrees)) return
+
+    // Convert trees to pins
+    nearbyTrees.forEach((tree: Tree) => {
+      window.dispatchEvent(new CustomEvent('pin:update', {
+        detail: {
+          id: tree.id,
+          lat: tree._loc_lat,
+          lng: tree._loc_lng,
+          type: 'tree',
+          data: {
+            name: tree.name,
+            status: tree.status
+          }
+        }
+      }))
+    })
+  }, [nearbyTrees])
+
   return (
     <div className="map-container">
       <div 
@@ -326,8 +450,7 @@ export const MapController = ({
           isStyleChanging && "opacity-0"
         )}
         style={{ 
-          top: `${position.top}px`,
-          left: `${position.left}px`
+          top: `${position.top}px`
         }}
       >
         <button

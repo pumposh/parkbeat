@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { useMap } from "@/hooks/use-map"
+import { useLiveTrees } from "./live-trees"
+import { useRouter } from "next/navigation"
 
 type TreeBedFormData = {
   name: string
@@ -12,27 +14,32 @@ type TreeBedFormData = {
   } | null
 }
 
-export const PlaceTreeForm = () => {
+export const PlaceTreeForm = (props: {
+  lat?: number
+  lng?: number
+}) => {
+  const router = useRouter()
   const [formData, setFormData] = useState<TreeBedFormData>({
     name: "",
     description: "",
-    location: null
+    location: {
+      lat: props.lat || 0,
+      lng: props.lng || 0
+    }
   })
 
   const { map, isLoaded, error } = useMap()
+  const { setTree, isPending } = useLiveTrees()
 
   useEffect(() => {
     if (!map) return
 
-    const handleLocationSelect = (e: CustomEvent<{ lat: number, lng: number }>) => {
-      setFormData(prev => ({
-        ...prev,
-        location: e.detail
-      }))
+    if (props.lat && props.lng) {
+      formData.location = {
+        lat: props.lat,
+        lng: props.lng
+      }
     }
-
-    window.addEventListener('treebed:location', handleLocationSelect as EventListener)
-    return () => window.removeEventListener('treebed:location', handleLocationSelect as EventListener)
   }, [map])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,8 +47,15 @@ export const PlaceTreeForm = () => {
     if (!map || !formData.location) return
     
     try {
-      // TODO: Implement tree bed creation
-      console.log("Form submitted:", formData)
+      await setTree({
+        name: formData.name,
+        lat: formData.location.lat,
+        lng: formData.location.lng,
+        status: 'live'
+      })
+      
+      // Navigate back after successful creation
+      router.back()
     } catch (err) {
       console.error("Failed to create tree bed:", err)
     }
@@ -117,10 +131,17 @@ export const PlaceTreeForm = () => {
       <div className="flex justify-end">
         <button
           type="submit"
-          disabled={!formData.location}
-          className="btn btn-primary"
+          disabled={!formData.location || isPending}
+          className="w-full rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 px-10 py-3 text-zinc-800 dark:text-zinc-100 font-medium transition hover:bg-white/90 dark:hover:bg-black/60"
         >
-          Create Tree Bed
+          {isPending ? (
+            <>
+              <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />
+              <span>Creating...</span>
+            </>
+          ) : (
+            'Create Tree Bed'
+          )}
         </button>
       </div>
     </form>

@@ -1,0 +1,12 @@
+
+.logo-shadow {
+    filter: url('data:image/svg+xml,\
+      <svg xmlns="http://www.w3.org/2000/svg">\
+        <filter id="naturalShadow" x="0" y="0" width="2" height="2">\
+          <feOffset in="SourceGraphic" dx="8" dy="8" />\
+          <feGaussianBlur stdDeviation="6" result="blur" />\
+          <feBlend in="SourceGraphic" in2="blur" mode="normal" />\
+        </filter>\
+      </svg>#naturalShadow'
+    );
+  }

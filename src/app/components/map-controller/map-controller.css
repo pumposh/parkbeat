@@ -35,8 +35,9 @@
   }
 
   .map-controls {
-    @apply fixed flex flex-row gap-1.5 transition-opacity duration-300;
+    @apply fixed flex flex-col gap-1.5 transition-opacity duration-300;
     z-index: var(--z-header);
+    right: 1rem;
   }
 
   .map-control-button {

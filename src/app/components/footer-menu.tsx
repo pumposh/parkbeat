@@ -4,12 +4,16 @@ import { useUser } from "@clerk/nextjs"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { useState, useEffect } from "react"
+import { SettingsDialog } from "./settings-dialog"
+import { UserButton } from "@clerk/nextjs"
 
 type FooterAction = {
-  href: string
+  href?: string
   icon: string
   label: string
   adminOnly?: boolean
+  component?: React.ReactNode
 }
 
 const footerActions: FooterAction[] = [
@@ -30,9 +34,9 @@ const footerActions: FooterAction[] = [
     adminOnly: true
   },
   {
-    href: "/",
-    icon: "fa-solid fa-bell",
-    label: "Activity"
+    icon: "fa-solid fa-gear",
+    label: "Settings",
+    component: <SettingsDialog />
   }
 ]
 
@@ -52,24 +56,35 @@ export const FooterMenu = () => {
     <div className="fixed bottom-0 left-0 right-0 parkbeat-footer" style={{ zIndex: 'var(--z-header)' }}>
       <div className="mx-auto px-3 py-1.5">
         <div className="relative">
-          {/* Gradient border using pseudo-element */}
-          <div className="absolute -inset-[1px] bg-gradient-to-r from-zinc-300 via-zinc-200 to-zinc-300 dark:from-zinc-600 dark:via-zinc-500 dark:to-zinc-600 rounded-xl opacity-40" />
-          <nav className="frosted-glass rounded-xl px-3 py-1.5 flex items-center justify-around relative">
+          <nav className="frosted-glass rounded-2xl px-3 py-1.5 flex items-center justify-around relative">
             {visibleActions.map((action) => (
-              <Link
-                key={action.href + action.label}
-                href={action.href}
-                className={cn(
-                  "flex flex-col items-center gap-1 px-3 py-1 rounded-lg transition-colors",
-                  "hover:text-zinc-600 dark:hover:text-zinc-300",
-                  pathname === action.href 
-                    ? "text-zinc-800 dark:text-zinc-200" 
-                    : "text-zinc-500 dark:text-zinc-400"
-                )}
-              >
-                <i className={cn(action.icon, "text-lg")} aria-hidden="true" />
-                <span className="text-xs font-medium">{action.label}</span>
-              </Link>
+              action.component ? (
+                <div
+                  key={action.label}
+                  className={cn(
+                    "flex flex-col items-center gap-1 px-3 py-1 rounded-lg transition-colors",
+                    "hover:text-zinc-600 dark:hover:text-zinc-300",
+                    "text-zinc-700 dark:text-zinc-400"
+                  )}
+                >
+                  {action.component}
+                </div>
+              ) : (
+                <Link
+                  key={action.href + action.label}
+                  href={action.href!}
+                  className={cn(
+                    "flex flex-col items-center gap-1 px-3 py-1 rounded-lg transition-colors",
+                    "hover:text-zinc-600 dark:hover:text-zinc-300",
+                    pathname === action.href 
+                      ? "text-zinc-600 dark:text-zinc-300 bg-zinc-300/50 dark:bg-zinc-800/50" 
+                      : "text-zinc-700 dark:text-zinc-100"
+                  )}
+                >
+                  <i className={cn(action.icon, "text-lg")} aria-hidden="true" />
+                  <span className="text-xs font-medium">{action.label}</span>
+                </Link>
+              )
             ))}
           </nav>
         </div>
