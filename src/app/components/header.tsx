@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { SettingsDialog } from "./settings-dialog"
+import { Clerk } from "./settings/clerk"
 
 export const Header = () => {
   return (
@@ -12,7 +13,9 @@ export const Header = () => {
             <Link href="/" className="text-sm font-semibold text-zinc-800 dark:text-zinc-300 dark:hover:text-white/80 dark:hover:text-zinc-600 dark:transition">
               Parkbeat
             </Link>
-            <SettingsDialog />
+            <div className="flex items-center gap-2">
+              <SettingsDialog />
+            </div>
           </div>
         </div>
       </div>

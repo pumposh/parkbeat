@@ -4,6 +4,8 @@
 
 @layer base {
   :root {
+    --current-theme: "light";
+
     --background: #ffffff;
     --foreground: #18181b;
     --glass-bg: 0.8;
@@ -20,9 +22,11 @@
   }
 
   .dark {
+    --current-theme: "dark";
+
     --background: #1a2419;
     --foreground: #e5e9e4;
-    --glass-bg: 0.4;
+    --glass-bg: 40%;
     --glass-border: 0.15;
     --glass-blur: 12px;
   }
@@ -55,12 +59,24 @@
     inset: -1.4px;
     background: transparent;
     border-radius: inherit;
-    opacity: 0.1;
-    @apply dark:opacity-40;
-    @media (prefers-color-scheme: dark) {
-      background: linear-gradient(to right, rgb(82, 82, 91), rgb(82, 82, 91), rgb(82, 82, 91));
+    background-color: red;
+    opacity: 0.4;
+    pointer-events: none;
+    /* @apply dark:opacity-40; */
+    /* @media (prefers-color-scheme: dark) {
+        background: linear-gradient(to right, rgb(82, 82, 91), rgb(82, 82, 91), rgb(82, 82, 91));
+        } */
     }
-  }
+    
+    .light .frosted-glass::before {
+        background: white;
+        opacity: 0.3;
+    }
+    
+    .dark .frosted-glass::before {
+      opacity: 0.4;
+      background: linear-gradient(to right, rgb(82, 82, 91), rgb(82, 82, 91), rgb(82, 82, 91));
+  } 
 
   /* MapLibre Controls */
   :root {
@@ -69,6 +85,90 @@
     .maplibregl-ctrl.maplibregl-ctrl-attrib,
     .maplibregl-ctrl.maplibregl-ctrl-scale {
       display: none !important;
+    }
+    .cl-formButtonPrimary {
+      font-size: 12px;
+      text-transform: none;
+      background-color: var(--background);
+    }
+    .cl-header, .cl-footer, .cl-navbar, .cl-navbarMobileMenuRow {
+      display: none !important;
+    }
+    .cl-cardBox {
+        max-width: unset;
+        width: unset;
+    }
+    .cl-cardBox, .cl-card, 
+    .cl-formFieldInput, .cl-scrollBox,
+    .cl-pageScrollBox {
+        color: var(--foreground);
+    }
+    .cl-scrollBox,
+    .cl-pageScrollBox,
+    .cl-userProfile-root > .cl-cardBox {
+        box-shadow: none !important;
+        background-color: transparent !important;
+        height: unset !important;
+        color: var(--foreground) !important;
+      
+        .cl-pageScrollBox {
+            padding: 0 !important;
+        }
+    }
+    .cl-socialButtonsIconButton,
+    .cl-dividerLine {
+        background-color: color-mix(in srgb, var(--foreground) var(--glass-bg), transparent) !important;
+        color: color-mix(in srgb, var(--foreground) var(--glass-bg), transparent) !important;
+    }
+    .cl-socialButtonsIconButton,
+    .cl-dividerLine,
+    .cl-dividerText,
+    .cl-userPreviewTextContainer,
+    .cl-profileSectionItem p,
+    .cl-formFieldInput {
+        color: color-mix(in srgb, var(--foreground) var(--glass-bg), transparent) !important;
+        @apply text-sm font-medium text-zinc-800 dark:text-zinc-200
+    }
+    .cl-profileSectionTitleText {
+        color: color-mix(in srgb, var(--foreground) 70%, transparent) !important;
+        @apply text-sm font-medium text-zinc-800 dark:text-zinc-200
+    }
+    .cl-menuButtonEllipsis {
+        color: white !important;
+        background-color: color-mix(in srgb, var(--background) 30%, transparent) !important;
+        border-radius: 100% !important;
+        filter: brightness(1.8) !important;
+    }
+    .cl-profileSectionItem * {
+        color: color-mix(in srgb, var(--foreground) var(--glass-bg), transparent) !important;
+        @apply text-zinc-800 dark:text-zinc-200
+    }
+    .cl-socialButtonsIconButton:hover {
+        background-color: color-mix(in srgb, var(--foreground) var(--glass-bg), transparent) !important;
+    }
+    .cl-formFieldLabel,
+    .cl-formFieldAction,
+    .cl-selectButton,
+    .cl-selectButton > *,
+    .cl-button {
+        color: color-mix(in srgb, var(--foreground) 60%, transparent) !important;
+    }
+    .cl-actionCard,
+    .cl-selectButton,
+    .cl-formFieldInput,
+    .cl-menuList {
+        backdrop-filter: blur(16px) !important;
+        background-color: color-mix(in srgb, var(--foreground) 2%, transparent) !important;
+    }
+    .cl-phoneInputBox {
+        background-color: color-mix(in srgb, var(--foreground) 2%, transparent) !important;
+    }
+    .cl-phoneInputBox > div {
+        color: color-mix(in srgb, var(--foreground) 60%, transparent) !important;
+        background-color: color-mix(in srgb, var(--foreground) 2%, transparent) !important;
+    }
+    .cl-profileSection .cl-profileSection__profile {
+        padding: 0 !important;
     }
   }
 

@@ -69,13 +69,17 @@ export const MapController = ({
   },
   initialZoom = 14,
 }: MapControllerProps) => {
-  const mapContainer = useRef<HTMLDivElement>(null)
-  const map = useRef<maplibregl.Map | null>(null)
+  const primaryMapContainer = useRef<HTMLDivElement>(null)
+  const secondaryMapContainer = useRef<HTMLDivElement>(null)
+  const primaryMap = useRef<maplibregl.Map | null>(null)
+  const secondaryMap = useRef<maplibregl.Map | null>(null)
   const controlsRef = useRef<HTMLDivElement>(null)
   const { resolvedTheme } = useTheme()
   const [location, setLocation] = useState<IpLocation | null>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
   const [isMapLoaded, setIsMapLoaded] = useState(false)
+  const [isTransitioning, setIsTransitioning] = useState(false)
+  const [activeMap, setActiveMap] = useState<'primary' | 'secondary'>('primary')
 
   // Calculate header offset
   useEffect(() => {
@@ -105,54 +109,122 @@ export const MapController = ({
     getIpLocation(initialCenter).then(setLocation)
   }, [])
 
+  // Initial map setup
   useEffect(() => {
-    if (map.current || !location) return // initialize map only once and when we have location
+    if (primaryMap.current || !location) return
+    console.log('🗺️ Initializing primary map')
 
-    map.current = new maplibregl.Map({
-      container: mapContainer.current!,
+    primaryMap.current = new maplibregl.Map({
+      container: primaryMapContainer.current!,
       style: getMapStyle(resolvedTheme || 'light'),
       center: [location.longitude, location.latitude],
       zoom: initialZoom,
       attributionControl: false
     })
 
-    map.current.once('load', () => {
+    primaryMap.current.once('load', () => {
+      console.log('🗺️ Primary map loaded')
       setIsMapLoaded(true)
+      setActiveMap('primary')
     })
 
-    // Cleanup on unmount
     return () => {
-      if (map.current) {
-        map.current.remove()
-        map.current = null
-      }
+      console.log('🗺️ Cleaning up maps')
+      primaryMap.current?.remove()
+      primaryMap.current = null
+      secondaryMap.current?.remove()
+      secondaryMap.current = null
     }
   }, [location, resolvedTheme])
 
   // Update map style when theme changes
   useEffect(() => {
-    if (map.current) {
-      // Store current map state
-      const center = map.current.getCenter()
-      const zoom = map.current.getZoom()
-      const bearing = map.current.getBearing()
-      const pitch = map.current.getPitch()
+    if (!primaryMap.current || !isMapLoaded) return
+    console.log('🎨 Theme changed, starting transition')
 
-      map.current.once('styledata', () => {
-        // Restore map state after style loads
-        map.current?.setCenter(center)
-        map.current?.setZoom(zoom)
-        map.current?.setBearing(bearing)
-        map.current?.setPitch(pitch)
+    const currentMap = activeMap === 'primary' ? primaryMap.current : secondaryMap.current
+    if (!currentMap) return
+
+    const currentState = {
+      center: currentMap.getCenter(),
+      zoom: currentMap.getZoom(),
+      bearing: currentMap.getBearing(),
+      pitch: currentMap.getPitch()
+    }
+    console.log('📍 Current map state:', currentState, 'Active map:', activeMap)
+
+    // Determine which container to use for the new map
+    const targetContainer = activeMap === 'primary' ? secondaryMapContainer : primaryMapContainer
+    const targetRef = activeMap === 'primary' ? secondaryMap : primaryMap
+
+    // Clean up existing map in target container if it exists
+    if (targetRef.current) {
+      console.log(`🗑️ Removing existing ${activeMap === 'primary' ? 'secondary' : 'primary'} map`)
+      targetRef.current.remove()
+    }
+
+    try {
+      console.log('🔄 Creating new map with theme:', resolvedTheme)
+      targetRef.current = new maplibregl.Map({
+        container: targetContainer.current!,
+        style: getMapStyle(resolvedTheme || 'light'),
+        center: currentState.center,
+        zoom: currentState.zoom,
+        bearing: currentState.bearing,
+        pitch: currentState.pitch,
+        attributionControl: false
       })
 
-      map.current.setStyle(getMapStyle(resolvedTheme || 'light'))
+      // When new map is ready, transition to it
+      targetRef.current.once('load', () => {
+        console.log('✨ New map loaded, starting transition')
+        
+        // Ensure the new map is fully rendered
+        targetRef.current?.once('render', () => {
+          console.log('🎨 New map rendered, starting fade')
+          setIsTransitioning(true)
+
+          // After fade completes, clean up old map
+          setTimeout(() => {
+            const oldMap = activeMap === 'primary' ? primaryMap : secondaryMap
+            console.log(`🗑️ Removing old ${activeMap} map`)
+            oldMap.current?.remove()
+            oldMap.current = null
+            
+            // Update active map reference
+            console.log('🔄 Updating active map reference')
+            setActiveMap(activeMap === 'primary' ? 'secondary' : 'primary')
+            setIsTransitioning(false)
+          }, 300) // Match the CSS transition duration
+        })
+      })
+
+      // Handle potential errors
+      targetRef.current.on('error', (error) => {
+        console.error('❌ Map error:', error)
+        setIsTransitioning(false)
+      })
+
+    } catch (error) {
+      console.error('❌ Error creating new map:', error)
+      setIsTransitioning(false)
     }
-  }, [resolvedTheme])
+  }, [resolvedTheme, isMapLoaded])
+
+  // Log state changes
+  useEffect(() => {
+    console.log('🔄 Map state changed:', {
+      isMapLoaded,
+      isTransitioning,
+      theme: resolvedTheme,
+      activeMap
+    })
+  }, [isMapLoaded, isTransitioning, resolvedTheme, activeMap])
 
   const handleCenterMap = () => {
-    if (map.current && location) {
-      map.current.flyTo({
+    const currentMap = activeMap === 'primary' ? primaryMap.current : secondaryMap.current
+    if (currentMap && location) {
+      currentMap.flyTo({
         center: [location.longitude, location.latitude],
         zoom: initialZoom,
         duration: 1500,
@@ -162,9 +234,10 @@ export const MapController = ({
   }
 
   const handleZoom = (delta: number) => {
-    if (map.current) {
-      const currentZoom = map.current.getZoom()
-      map.current.easeTo({
+    const currentMap = activeMap === 'primary' ? primaryMap.current : secondaryMap.current
+    if (currentMap) {
+      const currentZoom = currentMap.getZoom()
+      currentMap.easeTo({
         zoom: currentZoom + delta,
         duration: 300,
         easing: t => t * (2 - t) // Ease out quad
@@ -174,11 +247,24 @@ export const MapController = ({
 
   return (
     <div className="fixed inset-0" style={{ zIndex: 'var(--z-map)' }}>
+      {/* Primary Map */}
       <div 
-        ref={mapContainer} 
+        ref={primaryMapContainer}
         className={cn(
-          "w-full h-full transition-opacity duration-500",
-          isMapLoaded ? "opacity-100" : "opacity-0"
+          "absolute inset-0 transition-opacity duration-300",
+          isMapLoaded ? "opacity-100" : "opacity-0",
+          (isTransitioning && activeMap === 'primary') && "opacity-0",
+          (!isTransitioning && activeMap === 'secondary') && "opacity-0"
+        )}
+      />
+      
+      {/* Secondary Map */}
+      <div 
+        ref={secondaryMapContainer}
+        className={cn(
+          "absolute inset-0 transition-opacity duration-100",
+          (isTransitioning || activeMap === 'secondary') ? "opacity-100" : "opacity-0",
+          (!isTransitioning && activeMap === 'primary') && "opacity-0"
         )}
       />
       
@@ -186,7 +272,7 @@ export const MapController = ({
       <div 
         ref={controlsRef}
         className={cn(
-          "fixed flex flex-row gap-1.5 transition-opacity duration-500",
+          "fixed flex flex-row gap-1.5 transition-opacity duration-300",
           isMapLoaded ? "opacity-100" : "opacity-0"
         )}
         style={{ 
