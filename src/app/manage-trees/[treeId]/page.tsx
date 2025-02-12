@@ -8,5 +8,6 @@ export default async function TreePage(props: {
     lng: string
   }
 }) {
-  return <TreeDialog lat={Number(props.searchParams.lat)} lng={Number(props.searchParams.lng)} />
+  const { lat, lng } = await props.searchParams;
+  return <TreeDialog lat={Number(lat)} lng={Number(lng)} />
 } 

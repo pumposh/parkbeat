@@ -1,5 +1,5 @@
 {
-  "id": "b0ef85d7-2e39-47e0-bf6a-6a01e03c09e2",
+  "id": "eefa3809-d530-480a-9769-73255178a0f4",
   "prevId": "c1bd400c-8a16-491f-9b20-235555bcbf1f",
   "version": "7",
   "dialect": "postgresql",
@@ -77,8 +77,7 @@
         },
         "status": {
           "name": "status",
-          "type": "tree_status",
-          "typeSchema": "public",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -91,6 +90,12 @@
         "_loc_lng": {
           "name": "_loc_lng",
           "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "_loc_geohash": {
+          "name": "_loc_geohash",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -116,11 +121,11 @@
         }
       },
       "indexes": {
-        "Tree_name_idx": {
-          "name": "Tree_name_idx",
+        "Tree_geohash_idx": {
+          "name": "Tree_geohash_idx",
           "columns": [
             {
-              "expression": "name",
+              "expression": "_loc_geohash",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -140,17 +145,7 @@
       "isRLSEnabled": false
     }
   },
-  "enums": {
-    "public.tree_status": {
-      "name": "tree_status",
-      "schema": "public",
-      "values": [
-        "draft",
-        "live",
-        "archived"
-      ]
-    }
-  },
+  "enums": {},
   "schemas": {},
   "sequences": {},
   "roles": {},

@@ -7,7 +7,7 @@
     --current-theme: "light";
 
     /* Colors */
-    --background: #ffffff;
+    --background: #9FABB8;
     --foreground: #2a2e2a;
     --primary: #2F5233;
     --primary-foreground: #ffffff;
@@ -52,7 +52,7 @@
   .dark {
     --current-theme: "dark";
 
-    --background: #1a2419;
+    --background: #666c76;
     --foreground: #f5f9f5;
     --primary: #4b7b4f;
     --primary-foreground: #ffffff;
@@ -89,6 +89,15 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
+  }
+  body:has([data-clerk-component="SignIn"]) {
+    .map-controls {
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+    .maplibregl-canvas {
+      filter: blur(4px) !important;
+    }
   }
 }
 
@@ -132,6 +141,13 @@
       background: linear-gradient(to right, rgb(82, 82, 91), rgb(82, 82, 91), rgb(82, 82, 91));
     } 
 
+    .dark .cl-card {
+      background: color-mix(in srgb, black var(--glass-bg), transparent);
+    }
+    .light .cl-card {
+      background: color-mix(in srgb, white 40%, transparent);
+    }
+
   /* MapLibre Controls */
   :root {
     /* Hide all default controls */
@@ -166,9 +182,6 @@
     .cl-pageScrollBox {
       color: var(--foreground);
       backdrop-filter: blur(16px) !important;
-    }
-    .cl-card {
-      background: color-mix(in srgb, var(--background) var(--glass-bg), transparent);
     }
     .cl-formButtonPrimary, .cl-button {
       background-color: color-mix(in srgb, var(--background) 20%, transparent);
@@ -250,6 +263,12 @@
       > :first-child {
         pointer-events: auto
       }
+    }
+    .root-layout-container:has([data-clerk-component="SignIn"]) {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
     }
   }
 

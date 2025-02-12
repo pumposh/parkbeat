@@ -48,16 +48,30 @@
     @apply fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center;
     pointer-events: none;
     z-index: var(--z-dialog);
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, -50%) scale(1);
+    transition: opacity 0.3s ease-out, visibility 0s linear 0s, transform 0.3s ease-out;
+  }
+
+  .pin-container.hidden {
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(-50%, -50%) scale(0.95);
+    transition: opacity 0.2s ease-in, visibility 0s linear 0.2s, transform 0.2s ease-in;
   }
 
   .pin {
     @apply text-4xl text-zinc-800 dark:text-zinc-800;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: none;
+    transform-origin: center bottom;
   }
 
   .pin-shadow {
-    @apply w-2 h-2 rounded-full bg-black/60 blur-[2px] transition-all duration-300;
+    @apply w-2 h-2 rounded-full bg-black/60 blur-[2px];
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-origin: center center;
   }
 
   .manage-trees-button {
@@ -74,5 +88,86 @@
 
   .manage-trees-button-leave {
     animation: actionButtonLeave 0.15s ease-in-out forwards;
+  }
+
+  .tree-info-panel {
+    @apply fixed flex flex-col gap-2 p-4 rounded-xl;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    transform-origin: bottom center;
+    z-index: var(--z-dialog);
+    min-width: 200px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(8px) scale(0.95);
+    pointer-events: none;
+    transition: opacity 0.2s ease-out, visibility 0s linear 0.2s, transform 0.2s ease-out;
+    will-change: opacity, transform;
+  }
+
+  .tree-info-panel.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+    transition: opacity 0.3s ease-out, visibility 0s linear 0s, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .tree-info-panel .tree-status {
+    @apply text-xs px-2 py-1 rounded-full inline-flex items-center gap-1 opacity-70;
+  }
+
+  .tree-info-panel .tree-status.draft {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+
+  .tree-info-panel .tree-status.live {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .tree-info-panel .tree-status.archived {
+    @apply bg-gray-100 text-gray-800;
+  }
+
+  .tree-info-panel .tree-name {
+    @apply text-lg font-medium text-zinc-900 dark:text-zinc-200;
+  }
+
+  .tree-info-panel .tree-meta {
+    @apply text-xs text-zinc-500 dark:text-zinc-300;
+  }
+}
+
+.tree-marker-icon {
+  cursor: pointer;
+  fill: var(--foreground);
+  filter: invert(1);
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.tree-marker-container::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 70%;
+  left: 15%;
+  height: 70%;
+  backdrop-filter: blur(var(--glass-blur));
+  background-color: color-mix(in srgb,  black 5%, transparent);
+  opacity: 1;
+  z-index: 0;
+  border-radius: 50%;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.tree-marker-icon:hover {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.maplibregl-canvas-container:has(button:hover) {
+  .maplibregl-canvas {
+    pointer-events: none;
   }
 }

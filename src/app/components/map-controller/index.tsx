@@ -9,83 +9,10 @@ import { usePathname, useRouter } from 'next/navigation'
 import './map-controller.css'
 import { generateId } from '@/lib/id'
 import { useLiveTrees } from '../treebeds/live-trees'
-import type { TreeStatus } from '@/server/routers/tree-router'
-
-interface MapControllerProps {
-  initialCenter?: {
-    latitude: number
-    longitude: number
-  }
-  initialZoom?: number
-  className?: string
-}
-
-interface IpLocation {
-  latitude: number
-  longitude: number
-  city: string
-}
-
-interface IpApiResponse {
-  latitude: number
-  longitude: number
-  city: string
-  error?: boolean
-}
-
-interface Pin {
-  id: string
-  lat: number
-  lng: number
-  type?: string
-  data?: any
-}
-
-interface Tree {
-  id: string
-  name: string
-  status: TreeStatus
-  _loc_lat: number
-  _loc_lng: number
-  _meta_created_by: string
-  _meta_updated_at: Date
-  _meta_created_at: Date
-}
-
-const getMapStyle = (theme: string) => {
-  let mapStyle = '07c51949-e44b-4615-a124-2b43121fc1d3'
-  if (theme === 'dark') {
-    mapStyle = '07c51949-e44b-4615-a124-2b43121fc1d3'
-  }
-  return `https://api.maptiler.com/maps/`
-  + `${mapStyle}/style.json`
-  + `?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`
-}
-
-async function getIpLocation(defaultLocation: { latitude: number, longitude: number }): Promise<IpLocation> {
-  try {
-    const response = await fetch('https://ipapi.co/json/')
-    const data = await response.json() as IpApiResponse
-    
-    if (data.error || !data.latitude || !data.longitude || !data.city) {
-      throw new Error('Invalid location data')
-    }
-
-    return {
-      latitude: data.latitude,
-      longitude: data.longitude,
-      city: data.city
-    }
-  } catch (error) {
-    console.error('Failed to get location from IP:', error)
-    // Default to New York if IP location fails
-    return {
-      latitude: defaultLocation.latitude,
-      longitude: defaultLocation.longitude,
-      city: 'New York'
-    }
-  }
-}
+import type { Tree } from '../treebeds/live-trees'
+import { Markers } from './markers'
+import { getMapStyle, getIpLocation } from './utils'
+import type { MapControllerProps, IpLocation } from './types'
 
 export const MapController = ({
   initialCenter = {
@@ -109,8 +36,10 @@ export const MapController = ({
   const [isButtonVisible, setIsButtonVisible] = useState(false)
   const [isButtonLeaving, setIsButtonLeaving] = useState(false)
   const [isMapMoving, _setIsMapMoving] = useState(false)
-  const [pins, setPins] = useState<Map<string, Pin>>(new Map())
-  const { nearbyTrees, isLoadingTrees } = useLiveTrees()
+  const { visibleTrees } = useLiveTrees()
+  const previousTrees = useRef<Tree[]>([])
+  const updateTimeout = useRef<NodeJS.Timeout | undefined>(undefined)
+  const [isMarkerNearCenter, setIsMarkerNearCenter] = useState(false)
 
   // Calculate header offset
   useEffect(() => {
@@ -146,25 +75,23 @@ export const MapController = ({
     if (!map.current) return
     const bounds = map.current.getBounds()
     window.dispatchEvent(new CustomEvent<{
-      top: number
-      left: number
-      bottom: number
-      right: number
+      north: number
+      south: number
+      east: number
+      west: number
     }>('map:newBounds', {
       detail: {
-        top: bounds.getNorth(),
-        left: bounds.getWest(),
-        bottom: bounds.getSouth(),
-        right: bounds.getEast()
+        north: bounds.getNorth(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        west: bounds.getWest()
       }
     }))
   }
 
   const setIsMapMoving = (value: boolean) => {
     _setIsMapMoving(value)
-
     if (!map.current) return
-
     sendBounds()
   }
 
@@ -217,6 +144,61 @@ export const MapController = ({
     }
   }, [location])
 
+  // Initialize layers function - moving it outside effects to reuse
+  const initializeLayers = async () => {
+    if (!map.current) {
+      console.log('Map not initialized yet')
+      return
+    }
+    console.log('Map style loaded, adding markers')
+
+    try {
+      // Remove existing layers and source if they exist
+      const treeStates = ['draft', 'live', 'archived'] as const
+      treeStates.forEach(status => {
+        const labelLayerId = `trees-${status}-label`
+        if (map.current?.getLayer(labelLayerId)) {
+          map.current.removeLayer(labelLayerId)
+        }
+      })
+
+      if (map.current.getSource('trees')) {
+        map.current.removeSource('trees')
+      }
+
+      // Wait for the style to be loaded
+      if (!map.current.isStyleLoaded()) {
+        await new Promise<void>(resolve => {
+          map.current!.once('style.load', () => resolve())
+        })
+      }
+
+      // Create or update the GeoJSON source
+      map.current.addSource('trees', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: visibleTrees.map((tree: Tree) => ({
+            type: 'Feature' as const,
+            geometry: {
+              type: 'Point' as const,
+              coordinates: [tree._loc_lng, tree._loc_lat]
+            },
+            properties: {
+              id: tree.id,
+              name: tree.name,
+              status: tree.status,
+              created_at: tree._meta_created_at.toISOString(),
+              created_by: tree._meta_created_by
+            }
+          }))
+        }
+      })
+    } catch (error) {
+      console.error('Error initializing layers:', error)
+    }
+  }
+
   // Handle theme changes
   useEffect(() => {
     if (!map.current || !isMapLoaded) return
@@ -236,6 +218,12 @@ export const MapController = ({
         map.current!.setZoom(zoom)
         map.current!.setBearing(bearing)
         map.current!.setPitch(pitch)
+
+        // Wait for style to load then reinitialize layers
+        map.current!.once('style.load', () => {
+          console.log('Style loaded after theme change, reinitializing layers')
+          initializeLayers()
+        })
       } finally {
         setIsStyleChanging(false)
       }
@@ -325,110 +313,82 @@ export const MapController = ({
     }
   }
 
-  // Initialize map pins layer
+  // Update source data when trees change
   useEffect(() => {
-    if (!map.current || !isMapLoaded) return
-
-    // Add a source for pins if it doesn't exist
-    if (!map.current.getSource('pins')) {
-      map.current.addSource('pins', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: []
-        }
-      })
+    if (!map.current || !isMapLoaded) {
+      console.log('Map not ready for data update')
+      return
     }
 
-    // Add a layer for pins if it doesn't exist
-    if (!map.current.getLayer('pins-layer')) {
-      map.current.addLayer({
-        id: 'pins-layer',
-        type: 'symbol',
-        source: 'pins',
-        layout: {
-          'text-field': '📍',
-          'text-size': 24,
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-          'text-anchor': 'bottom'
-        }
-      })
+    // Clear any pending update
+    if (updateTimeout.current) {
+      clearTimeout(updateTimeout.current)
     }
 
-    // Update the pins source when pins state changes
-    const updatePinsSource = () => {
-      if (!map.current) return
+    // Check if the trees have actually changed
+    const treesChanged = visibleTrees.length !== previousTrees.current.length ||
+      visibleTrees.some((tree, index) => {
+        const prevTree = previousTrees.current[index]
+        return !prevTree || 
+          tree.id !== prevTree.id ||
+          tree.status !== prevTree.status ||
+          tree._loc_lat !== prevTree._loc_lat ||
+          tree._loc_lng !== prevTree._loc_lng ||
+          tree.name !== prevTree.name
+      })
 
-      const features = Array.from(pins.values()).map(pin => ({
+    if (!treesChanged) return
+
+    // Debounce the update
+    updateTimeout.current = setTimeout(() => {
+      // If style is not loaded or source doesn't exist, initialize layers
+      if (!map.current?.isStyleLoaded() || !map.current?.getSource('trees')) {
+        console.log('Style not loaded or source missing, reinitializing layers')
+        if (map.current?.isStyleLoaded()) {
+          initializeLayers()
+        } else {
+          map.current?.once('style.load', initializeLayers)
+        }
+        return
+      }
+
+      const source = map.current.getSource('trees') as maplibregl.GeoJSONSource
+      if (!source) {
+        console.log('Trees source not found after check, something went wrong')
+        return
+      }
+
+      const features = visibleTrees.map((tree: Tree) => ({
         type: 'Feature' as const,
         geometry: {
           type: 'Point' as const,
-          coordinates: [pin.lng, pin.lat]
+          coordinates: [tree._loc_lng, tree._loc_lat]
         },
         properties: {
-          id: pin.id,
-          type: pin.type,
-          ...pin.data
+          id: tree.id,
+          name: tree.name,
+          status: tree.status,
+          created_at: tree._meta_created_at.toISOString(),
+          created_by: tree._meta_created_by
         }
       }))
 
-      const source = map.current.getSource('pins') as maplibregl.GeoJSONSource
-      source?.setData({
+      console.log('Updating source with features:', features)
+      source.setData({
         type: 'FeatureCollection',
         features
       })
-    }
 
-    // Subscribe to pin updates
-    const handlePinUpdate = (e: CustomEvent<Pin>) => {
-      setPins(prev => {
-        const next = new Map(prev)
-        next.set(e.detail.id, e.detail)
-        return next
-      })
-    }
-
-    const handlePinRemove = (e: CustomEvent<{ id: string }>) => {
-      setPins(prev => {
-        const next = new Map(prev)
-        next.delete(e.detail.id)
-        return next
-      })
-    }
-
-    window.addEventListener('pin:update', handlePinUpdate as EventListener)
-    window.addEventListener('pin:remove', handlePinRemove as EventListener)
-
-    // Initial update
-    updatePinsSource()
+      // Update previous trees reference
+      previousTrees.current = visibleTrees
+    }, 100) // 100ms debounce
 
     return () => {
-      window.removeEventListener('pin:update', handlePinUpdate as EventListener)
-      window.removeEventListener('pin:remove', handlePinRemove as EventListener)
+      if (updateTimeout.current) {
+        clearTimeout(updateTimeout.current)
+      }
     }
-  }, [isMapLoaded, pins])
-
-  // Update pins when trees change
-  useEffect(() => {
-    if (!nearbyTrees || !Array.isArray(nearbyTrees)) return
-
-    // Convert trees to pins
-    nearbyTrees.forEach((tree: Tree) => {
-      window.dispatchEvent(new CustomEvent('pin:update', {
-        detail: {
-          id: tree.id,
-          lat: tree._loc_lat,
-          lng: tree._loc_lng,
-          type: 'tree',
-          data: {
-            name: tree.name,
-            status: tree.status
-          }
-        }
-      }))
-    })
-  }, [nearbyTrees])
+  }, [isMapLoaded, visibleTrees])
 
   return (
     <div className="map-container">
@@ -478,18 +438,22 @@ export const MapController = ({
         </button>
       </div>
 
-      {isPlacingTree && (
-        <div className="pin-container">
+      {isPlacingTree && isMapLoaded && (
+        <div className={cn(
+          "pin-container",
+          isMarkerNearCenter ? "hidden" : "",
+          isUserInteracting || isMapMoving ? "user-interacting" : ""
+        )}>
           <i 
             className={cn(
               "pin fa-solid fa-map-pin",
-              "transition-all duration-300 ease-out"
+              "transition-all"
             )}
             style={{ 
               filter: `drop-shadow(0 ${isUserInteracting || isMapMoving ? 8 : 4}px ${isUserInteracting || isMapMoving ? 4 : 2}px rgb(0 0 0 / ${isUserInteracting || isMapMoving ? 0.15 : 0.1}))`,
               transform: `translateY(${isUserInteracting || isMapMoving ? -24 : 0}px)`,
-              opacity: isUserInteracting || isMapMoving ? 0.6 : 1,
-              willChange: 'transform'
+              opacity: isUserInteracting || isMapMoving ? 0.6 : isMapLoaded ? 1 : 0,
+              willChange: 'transform, opacity'
             }}
             aria-hidden="true" 
           />
@@ -499,7 +463,7 @@ export const MapController = ({
               isUserInteracting || isMapMoving ? "opacity-100 scale-100" : "opacity-20 scale-90"
             )}
           />
-          {isButtonVisible && (
+          {isButtonVisible && !isMarkerNearCenter && (
             <button 
               className={cn(
                 "manage-trees-button frosted-glass",
@@ -519,6 +483,14 @@ export const MapController = ({
             </button>
           )}
         </div>
+      )}
+
+      {map.current && isMapLoaded && (
+        <Markers 
+          trees={visibleTrees} 
+          map={map.current} 
+          onMarkerNearCenter={setIsMarkerNearCenter}
+        />
       )}
     </div>
   )

@@ -29,6 +29,20 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning className={newsreader.variable}>
         <head>
+          {/* <link
+            rel="preload"
+            href="/parkbeat.svg"
+            as="image"
+            type="image/svg+xml"
+            fetchPriority="high"
+          />
+          <link
+            rel="preload"
+            href="/mask-no-background.png"
+            as="image"
+            type="image/png"
+            fetchPriority="high"
+          /> */}
           <script
             src="https://kit.fontawesome.com/aaef78e0d5.js"
             crossOrigin="anonymous"

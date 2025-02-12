@@ -14,10 +14,10 @@ declare global {
 declare global {
   interface WindowEventMap {
     'map:newBounds': CustomEvent<{
-      top: number
-      left: number
-      bottom: number
-      right: number
+      north: number
+      south: number
+      east: number
+      west: number
     }>
   }
 }

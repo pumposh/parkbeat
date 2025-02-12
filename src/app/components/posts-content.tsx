@@ -25,9 +25,9 @@ export const PostsContent = ({ children }: { children: React.ReactNode }) => {
               </h1>
 
               <p className="text-zinc-600 dark:text-[#c7cdc6] text-lg/7 md:text-xl/8 text-pretty sm:text-wrap sm:text-center text-center max-w-xl">
-                Share your thoughts in real-time.{" "}
+                Stay connected with your community, {" "}
                 <span className="inline sm:block">
-                  Connect with the world, one beat at a time.
+                    one beat at a time.
                 </span>
               </p>
 
@@ -38,4 +38,4 @@ export const PostsContent = ({ children }: { children: React.ReactNode }) => {
       </div>
     </main>
   )
-} 
+}

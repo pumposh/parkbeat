@@ -4,6 +4,8 @@ import { useState, useEffect } from "react"
 import { useMap } from "@/hooks/use-map"
 import { useLiveTrees } from "./live-trees"
 import { useRouter } from "next/navigation"
+import { getLocationInfo } from "@/app/components/map-controller/utils"
+import type { LocationInfo } from "@/app/components/map-controller/types"
 
 type TreeBedFormData = {
   name: string
@@ -12,6 +14,7 @@ type TreeBedFormData = {
     lat: number
     lng: number
   } | null
+  locationInfo?: LocationInfo
 }
 
 export const PlaceTreeForm = (props: {
@@ -22,25 +25,57 @@ export const PlaceTreeForm = (props: {
   const [formData, setFormData] = useState<TreeBedFormData>({
     name: "",
     description: "",
-    location: {
-      lat: props.lat || 0,
-      lng: props.lng || 0
-    }
+    location: props.lat && props.lng ? {
+      lat: props.lat,
+      lng: props.lng
+    } : null
   })
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false)
 
   const { map, isLoaded, error } = useMap()
   const { setTree, isPending } = useLiveTrees()
 
+  // Fetch location info when coordinates are set
   useEffect(() => {
-    if (!map) return
+    if (!formData.location) return
 
-    if (props.lat && props.lng) {
-      formData.location = {
-        lat: props.lat,
-        lng: props.lng
+    const fetchLocationInfo = async () => {
+      setIsLoadingLocation(true)
+      try {
+        const info = await getLocationInfo(formData.location!.lat, formData.location!.lng)
+        setFormData(prev => ({
+          ...prev,
+          locationInfo: info,
+          // If no name is set yet, suggest one based on the location
+          name: prev.name || `Tree at ${info.address?.street || 'Unknown Location'}`
+        }))
+      } catch (error) {
+        console.error('Failed to fetch location info:', error)
+      } finally {
+        setIsLoadingLocation(false)
       }
     }
-  }, [map])
+
+    fetchLocationInfo()
+  }, [formData.location?.lat, formData.location?.lng])
+
+  // Listen for location updates from the map
+  useEffect(() => {
+    const handleLocationUpdate = (e: CustomEvent<{ lat: number; lng: number }>) => {
+      setFormData(prev => ({
+        ...prev,
+        location: {
+          lat: e.detail.lat,
+          lng: e.detail.lng
+        }
+      }))
+    }
+
+    window.addEventListener('treebed:location', handleLocationUpdate as EventListener)
+    return () => {
+      window.removeEventListener('treebed:location', handleLocationUpdate as EventListener)
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -87,9 +122,6 @@ export const PlaceTreeForm = (props: {
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-4">
         <div>
-          <label htmlFor="name" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Tree bed name
-          </label>
           <input
             type="text"
             id="name"
@@ -120,11 +152,44 @@ export const PlaceTreeForm = (props: {
           <span className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
             Location
           </span>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            {formData.location 
-              ? `Selected: ${formData.location.lat.toFixed(6)}, ${formData.location.lng.toFixed(6)}`
-              : "Click on the map to select a location"}
-          </p>
+          {isLoadingLocation ? (
+            <div className="mt-2 flex items-center gap-2 text-sm text-zinc-500">
+              <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />
+              <span>Loading location details...</span>
+            </div>
+          ) : formData.locationInfo ? (
+            <div className="mt-2 space-y-1">
+              <p className="text-sm text-zinc-900 dark:text-zinc-100">
+                {formData.locationInfo.displayName}
+              </p>
+              {formData.locationInfo.address && (
+                <div className="text-xs space-y-0.5 text-zinc-500 dark:text-zinc-400">
+                  {formData.locationInfo.address.street && (
+                    <p>Street: {formData.locationInfo.address.street}</p>
+                  )}
+                  {formData.locationInfo.address.neighborhood && (
+                    <p>Neighborhood: {formData.locationInfo.address.neighborhood}</p>
+                  )}
+                  <p>
+                    {[
+                      formData.locationInfo.address.city,
+                      formData.locationInfo.address.state,
+                      formData.locationInfo.address.postalCode
+                    ].filter(Boolean).join(', ')}
+                  </p>
+                </div>
+              )}
+              <p className="text-xs text-zinc-400">
+                Coordinates: {formData.location?.lat.toFixed(6)}, {formData.location?.lng.toFixed(6)}
+              </p>
+            </div>
+          ) : (
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              {formData.location 
+                ? `Selected: ${formData.location.lat.toFixed(6)}, ${formData.location.lng.toFixed(6)}`
+                : "Click on the map to select a location"}
+            </p>
+          )}
         </div>
       </div>
 

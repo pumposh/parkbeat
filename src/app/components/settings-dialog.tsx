@@ -41,7 +41,7 @@ export const SettingsDialog = () => {
           style={{ backgroundColor: '#F2F0E630' }}
         >
           <SignedIn>
-            <div className="flex items-center gap-2 pointer-events-none">
+            <div className="flex items-center gap-2 pointer-events-none scale-[140%] outline-4 outline-white rounded-full">
               <UserButton />
             </div>
           </SignedIn>
@@ -85,7 +85,6 @@ export const SettingsDialog = () => {
                   
                   <SignedIn>
                     <div className="space-y-2">
-                      <h3 className="text-sm font-medium text-zinc-800 dark:text-zinc-200">Account</h3>
                       <div className="px-1">
                         <UserProfile routing="hash" />
                       </div>

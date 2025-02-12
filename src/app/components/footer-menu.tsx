@@ -29,8 +29,8 @@ const footerActions: FooterAction[] = [
   },
   {
     href: "/manage-trees",
-    icon: "fa-solid fa-map-pin",
-    label: "Place Tree",
+    icon: "fa-solid fa-tree-city",
+    label: "Admin",
     adminOnly: true
   },
   {
