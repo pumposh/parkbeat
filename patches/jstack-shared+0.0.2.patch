@@ -1,0 +1,60 @@
+diff --git a/node_modules/jstack-shared/dist/index.cjs b/node_modules/jstack-shared/dist/index.cjs
+index 27d9524..47b2fd7 100644
+--- a/node_modules/jstack-shared/dist/index.cjs
++++ b/node_modules/jstack-shared/dist/index.cjs
+@@ -4351,10 +4351,13 @@ var EventEmitter = class {
+   }
+   handleEvent(eventName, data) {
+     const handlers = this.eventHandlers.get(eventName);
++    console.log("handlers", handlers);
+     if (!handlers?.length) {
+-      logger.warn(
+-        `No handlers registered for event "${eventName}". Did you forget to call .on("${eventName}", handler)?`
+-      );
++      if (eventName !== "ping") {
++        logger.warn(
++          `No handlers registered for event "${eventName}". Did you forget to call .on("${eventName}", handler)?`
++        );
++      }
+       return;
+     }
+     let validatedData = data;
+@@ -4415,7 +4418,7 @@ var EventEmitter = class {
+   on(event, callback) {
+     if (!callback) {
+       logger.error(
+-        `No callback provided for event handler "${event.toString()}". Ppass a callback to handle this event.`
++        `No callback provided for event handler "${event.toString()}". Pass a callback to handle this event.`
+       );
+       return;
+     }
+diff --git a/node_modules/jstack-shared/dist/index.js b/node_modules/jstack-shared/dist/index.js
+index 032fb2b..ba68037 100644
+--- a/node_modules/jstack-shared/dist/index.js
++++ b/node_modules/jstack-shared/dist/index.js
+@@ -4342,10 +4342,13 @@ var EventEmitter = class {
+   }
+   handleEvent(eventName, data) {
+     const handlers = this.eventHandlers.get(eventName);
++    console.log("handlers", handlers);
+     if (!handlers?.length) {
+-      logger.warn(
+-        `No handlers registered for event "${eventName}". Did you forget to call .on("${eventName}", handler)?`
+-      );
++      if (eventName !== "ping") {
++        logger.warn(
++          `No handlers registered for event "${eventName}". Did you forget to call .on("${eventName}", handler)?`
++        );
++      }
+       return;
+     }
+     let validatedData = data;
+@@ -4406,7 +4409,7 @@ var EventEmitter = class {
+   on(event, callback) {
+     if (!callback) {
+       logger.error(
+-        `No callback provided for event handler "${event.toString()}". Ppass a callback to handle this event.`
++        `No callback provided for event handler "${event.toString()}". Pass a callback to handle this event.`
+       );
+       return;
+     }

@@ -8,11 +8,12 @@ import { setMapInstance } from '@/hooks/use-map'
 import { usePathname, useRouter } from 'next/navigation'
 import './map-controller.css'
 import { generateId } from '@/lib/id'
-import { useLiveTrees } from '../treebeds/live-trees'
-import type { Tree } from '../treebeds/live-trees'
+import { useLiveTrees } from '@/hooks/use-tree-sockets'
+import type { Tree } from '@/hooks/use-tree-sockets'
 import { Markers } from './markers'
 import { getMapStyle, getIpLocation } from './utils'
-import type { MapControllerProps, IpLocation } from './types'
+import type { MapControllerProps, IpLocation } from '@/types/types'
+import { boundsToGeohash } from '@/lib/geo/geohash'
 
 export const MapController = ({
   initialCenter = {
@@ -36,7 +37,7 @@ export const MapController = ({
   const [isButtonVisible, setIsButtonVisible] = useState(false)
   const [isButtonLeaving, setIsButtonLeaving] = useState(false)
   const [isMapMoving, _setIsMapMoving] = useState(false)
-  const { visibleTrees } = useLiveTrees()
+  const { treeMap } = useLiveTrees()
   const previousTrees = useRef<Tree[]>([])
   const updateTimeout = useRef<NodeJS.Timeout | undefined>(undefined)
   const [isMarkerNearCenter, setIsMarkerNearCenter] = useState(false)
@@ -74,18 +75,22 @@ export const MapController = ({
   const sendBounds = () => {
     if (!map.current) return
     const bounds = map.current.getBounds()
-    window.dispatchEvent(new CustomEvent<{
-      north: number
-      south: number
-      east: number
-      west: number
-    }>('map:newBounds', {
-      detail: {
-        north: bounds.getNorth(),
-        south: bounds.getSouth(),
-        east: bounds.getEast(),
-        west: bounds.getWest()
-      }
+    const boundsDetail = {
+      north: bounds.getNorth(),
+      south: bounds.getSouth(),
+      east: bounds.getEast(),
+      west: bounds.getWest()
+    };
+
+    // Store the bounds detail in window object
+    window.mapBounds = boundsDetail;
+
+    // Calculate and store geohash
+    const geohash = boundsToGeohash(boundsDetail);
+    window.currentGeohash = geohash;
+
+    window.dispatchEvent(new CustomEvent<typeof boundsDetail>('map:newBounds', {
+      detail: boundsDetail
     }))
   }
 
@@ -178,7 +183,7 @@ export const MapController = ({
         type: 'geojson',
         data: {
           type: 'FeatureCollection',
-          features: visibleTrees.map((tree: Tree) => ({
+          features: Array.from(treeMap.values()).map((tree: Tree) => ({
             type: 'Feature' as const,
             geometry: {
               type: 'Point' as const,
@@ -188,7 +193,7 @@ export const MapController = ({
               id: tree.id,
               name: tree.name,
               status: tree.status,
-              created_at: tree._meta_created_at.toISOString(),
+              created_at: tree._meta_created_at ? tree._meta_created_at.toISOString() : null,
               created_by: tree._meta_created_by
             }
           }))
@@ -326,8 +331,8 @@ export const MapController = ({
     }
 
     // Check if the trees have actually changed
-    const treesChanged = visibleTrees.length !== previousTrees.current.length ||
-      visibleTrees.some((tree, index) => {
+    const treesChanged = Array.from(treeMap.values()).length !== previousTrees.current.length ||
+      Array.from(treeMap.values()).some((tree, index) => {
         const prevTree = previousTrees.current[index]
         return !prevTree || 
           tree.id !== prevTree.id ||
@@ -358,9 +363,9 @@ export const MapController = ({
         return
       }
 
-      const features = visibleTrees.map((tree: Tree) => ({
+      const features = Array.from(treeMap.values()).map((tree: Tree) => ({
         type: 'Feature' as const,
-        geometry: {
+        geometry: { 
           type: 'Point' as const,
           coordinates: [tree._loc_lng, tree._loc_lat]
         },
@@ -368,7 +373,7 @@ export const MapController = ({
           id: tree.id,
           name: tree.name,
           status: tree.status,
-          created_at: tree._meta_created_at.toISOString(),
+          created_at: tree._meta_created_at ? tree._meta_created_at.toISOString() : null,
           created_by: tree._meta_created_by
         }
       }))
@@ -380,7 +385,7 @@ export const MapController = ({
       })
 
       // Update previous trees reference
-      previousTrees.current = visibleTrees
+      previousTrees.current = Array.from(treeMap.values())
     }, 100) // 100ms debounce
 
     return () => {
@@ -388,7 +393,7 @@ export const MapController = ({
         clearTimeout(updateTimeout.current)
       }
     }
-  }, [isMapLoaded, visibleTrees])
+  }, [isMapLoaded, treeMap])
 
   return (
     <div className="map-container">
@@ -486,8 +491,8 @@ export const MapController = ({
       )}
 
       {map.current && isMapLoaded && (
-        <Markers 
-          trees={visibleTrees} 
+        <Markers
+          trees={Array.from(treeMap.values())} 
           map={map.current} 
           onMarkerNearCenter={setIsMarkerNearCenter}
         />

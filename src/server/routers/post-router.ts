@@ -69,7 +69,7 @@ export const postRouter = j.router({
         })
 
         socket.on('message', (data: Partial<Post>) => {
-          console.log('Server: Received message:', data)
+          console.log('Server: Received message.')
         })
 
         // Register post event handler

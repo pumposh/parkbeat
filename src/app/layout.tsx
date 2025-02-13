@@ -1,9 +1,9 @@
 import type { Metadata } from "next"
 import { Providers } from "./components/providers"
 import { ClerkProvider } from "@clerk/nextjs"
-import { Header } from "./components/header"
+import { Header } from "./components/nav/header"
 import { MapController } from "./components/map-controller/index"
-import { FooterMenu } from "./components/footer-menu"
+import { FooterMenu } from "./components/nav/footer"
 import { Newsreader } from "next/font/google"
 
 import "./globals.css"

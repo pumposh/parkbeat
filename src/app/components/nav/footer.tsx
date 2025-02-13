@@ -5,7 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useState, useEffect } from "react"
-import { SettingsDialog } from "./settings-dialog"
+import { SettingsDialog } from "../settings-dialog"
 import { UserButton } from "@clerk/nextjs"
 
 type FooterAction = {

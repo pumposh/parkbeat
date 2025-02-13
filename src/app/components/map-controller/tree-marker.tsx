@@ -1,26 +1,30 @@
-import { useState, useEffect } from 'react'
+'use client'
+
+import type { Tree } from '@/hooks/use-tree-sockets'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import type { Tree } from '../treebeds/live-trees'
-import type maplibregl from 'maplibre-gl'
 import { TreeInfoPanel } from './tree-info-panel'
+import type maplibregl from 'maplibre-gl'
+import { TreeGroup } from '@/lib/geo/threshGrouping'
 
 interface TreeMarkerProps {
-  tree: Tree
+  tree?: Tree
+  group?: TreeGroup
   position: { x: number; y: number }
-  isNearCenter: boolean
+  isNearCenter?: boolean
   map: maplibregl.Map
 }
 
-export const TreeMarker = ({ tree, position, isNearCenter, map }: TreeMarkerProps) => {
-  const [showInfo, setShowInfo] = useState(false)
+export const TreeMarker = ({ tree, group, position, isNearCenter, map }: TreeMarkerProps) => {
+  const [showInfoPanel, setShowInfoPanel] = useState(false)
 
   useEffect(() => {
     if (!isNearCenter) {
-      setShowInfo(false)
+      setShowInfoPanel(false)
     } else {
       // Small delay before showing to allow for smooth transitions
       const timeout = setTimeout(() => {
-        setShowInfo(true)
+        setShowInfoPanel(true)
       }, 50)
       return () => clearTimeout(timeout)
     }
@@ -30,9 +34,10 @@ export const TreeMarker = ({ tree, position, isNearCenter, map }: TreeMarkerProp
     <>
       {createPortal(
         <TreeInfoPanel 
-          tree={tree} 
-          position={position}
-          isVisible={showInfo}
+          tree={tree}
+          group={group}
+          position={position}   
+          isVisible={showInfoPanel}
         />,
         map.getCanvasContainer()
       )}
@@ -44,10 +49,16 @@ export const TreeMarker = ({ tree, position, isNearCenter, map }: TreeMarkerProp
         onClick={(e) => {
           e.stopPropagation()
           e.preventDefault()
+
+          const lat = tree?._loc_lat ?? group?._loc_lat ?? 0
+          const lng = tree?._loc_lng ?? group?._loc_lng ?? 0
+
+          const zoom = map.getZoom();
+          console.log(`[TreeMarker] Zoom: ${zoom}`);
           
           map.flyTo({
-            center: [tree._loc_lng, tree._loc_lat],
-            zoom: 16,
+            zoom: zoom < 11 ? 12 : undefined,
+            center: [lng, lat],
             duration: 1000,
             essential: true
           })
@@ -58,7 +69,7 @@ export const TreeMarker = ({ tree, position, isNearCenter, map }: TreeMarkerProp
             className="tree-marker-container duration-200 ease-out group-hover:scale-110"
             style={{ 
               filter: 'drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1)) invert(1) brightness(0.15)',
-              opacity: tree.status === 'archived' ? 0.6 : 1,
+              opacity: tree?.status === 'draft' ? 0.6 : 1,
             }}
           >
             <img 

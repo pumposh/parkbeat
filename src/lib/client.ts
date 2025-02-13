@@ -5,7 +5,7 @@ import { createClient } from "jstack"
 // In production, use Next.js API routes
 const baseUrl = process.env.NODE_ENV === "development" 
   ? "http://localhost:8080/api"
-  : "/api"
+  : "https://parkbeat.pumposh.workers.dev/api"
 
 /**
  * Your type-safe API client

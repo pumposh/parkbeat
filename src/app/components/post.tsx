@@ -15,35 +15,35 @@ type Post = {
 }
 
 // Subscribe to real-time updates
-const ws = client.post.live.$ws()
+// const ws = client.post.live.$ws()
 
 export const RecentPost = () => {
   const [name, setName] = useState<string>("")
   const queryClient = useQueryClient()
 
-  useWebSocket(ws, {
-    message: (data: Post) => {
-      // Only handle actual post updates
-      if (data && typeof data === 'object' && 'id' in data) {
-        console.log('Client: Received post update:', data)
-        if (data.id !== "0") { // Skip the connection confirmation message
-          queryClient.setQueryData(["get-recent-post"], data)
-        }
-      }
-    },
-    ping: () => {
-      console.log('Client: Ping received')
-    },
-    post: (data: { id: string; name: string }) => {
-      console.log('Client: Received post name:', data.name)
-    },
-    onConnect: () => {
-      console.log('Client: Connected to WebSocket')
-    },
-    onError: (error: Error) => {
-      console.error('Client: WebSocket error:', error)
-    },
-  })
+  // useWebSocket(ws, {
+  //   message: (data: Post) => {
+  //     // Only handle actual post updates
+  //     if (data && typeof data === 'object' && 'id' in data) {
+  //       console.log('Client: Received post update:', data)
+  //       if (data.id !== "0") { // Skip the connection confirmation message
+  //         queryClient.setQueryData(["get-recent-post"], data)
+  //       }
+  //     }
+  //   },
+  //   ping: () => {
+  //     console.log('Client: Ping received')
+  //   },
+  //   post: (data: { id: string; name: string }) => {
+  //     console.log('Client: Received post name:', data.name)
+  //   },
+  //   onConnect: () => {
+  //     console.log('Client: Connected to WebSocket')
+  //   },
+  //   onError: (error: Error) => {
+  //     console.error('Client: WebSocket error:', error)
+  //   },
+  // })
 
   const { data: recentPost, isPending: isLoadingPosts } = useQuery({
     queryKey: ["get-recent-post"],
@@ -61,7 +61,7 @@ export const RecentPost = () => {
       console.log("Client: Creating post with name:", name)
       try {
         // Emit the post event and wait for response
-        ws.emit('post', { id, name })
+        // ws?.emit('post', { id, name })
         // The actual post will be received through the message event handler
         return name
       } catch (error) {

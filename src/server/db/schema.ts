@@ -18,11 +18,13 @@ export const trees = pgTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
+    description: text("description"),
     status: text("status").notNull(),
     _loc_lat: numeric("_loc_lat").notNull(),
     _loc_lng: numeric("_loc_lng").notNull(),
     _loc_geohash: text("_loc_geohash").notNull(),
     _meta_created_by: text("_meta_created_by").notNull(),
+    _meta_updated_by: text("_meta_updated_by").notNull(),
     _meta_updated_at: timestamp("_meta_updated_at").defaultNow().notNull(),
     _meta_created_at: timestamp("_meta_created_at").defaultNow().notNull(),
   }, (table) => [

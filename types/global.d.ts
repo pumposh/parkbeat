@@ -21,3 +21,15 @@ declare global {
     }>
   }
 }
+
+declare global {
+  interface Window {
+    mapBounds?: {
+      north: number
+      south: number
+      east: number
+      west: number
+    }
+    currentGeohash?: string
+  }
+}

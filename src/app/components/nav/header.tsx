@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Logo } from "./ui/logo"
+import { Logo } from "../ui/logo"
 import { cn } from "@/lib/utils"
 
 export const Header = () => {

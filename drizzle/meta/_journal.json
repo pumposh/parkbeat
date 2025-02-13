@@ -33,8 +33,22 @@
     {
       "idx": 4,
       "version": "7",
-      "when": 1739304439279,
-      "tag": "0004_hard_prodigy",
+      "when": 1739274972279,
+      "tag": "0004_shallow_hex",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1739433277646,
+      "tag": "0005_left_sway",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1739471675722,
+      "tag": "0006_mighty_fat_cobra",
       "breakpoints": true
     }
   ]

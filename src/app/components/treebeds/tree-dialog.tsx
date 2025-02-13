@@ -5,10 +5,13 @@ import { PlaceTreeForm } from './place-tree-form'
 import { cn } from '@/lib/utils'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useState } from 'react'
-
+import type { LocationInfo } from '@/types/types'
+import type { Tree } from '@/server/routers/tree-router'
 export function TreeDialog(props: {
   lat?: number
   lng?: number
+  info?: LocationInfo
+  tree?: Tree
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(true)
@@ -41,7 +44,7 @@ export function TreeDialog(props: {
                     Place a tree bed
                   </Dialog.Title>
                 </div>
-                <PlaceTreeForm lat={props.lat} lng={props.lng}  />
+                <PlaceTreeForm lat={props.lat} lng={props.lng} info={props.info} tree={props.tree} />
               </div>
             </div>
           </div>

@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useMap } from "@/hooks/use-map"
-import { useLiveTrees } from "./live-trees"
+import { Tree, useLiveTrees } from "../../../hooks/use-tree-sockets"
 import { useRouter } from "next/navigation"
-import { getLocationInfo } from "@/app/components/map-controller/utils"
-import type { LocationInfo } from "@/app/components/map-controller/types"
+import type { LocationInfo } from "@/types/types"
+import { useParams } from "next/navigation"
+import { LocationInfoCard } from "./components/location-info-card"
 
 type TreeBedFormData = {
   name: string
@@ -20,62 +21,141 @@ type TreeBedFormData = {
 export const PlaceTreeForm = (props: {
   lat?: number
   lng?: number
+  info?: LocationInfo
+  tree?: Tree
 }) => {
   const router = useRouter()
+  const params = useParams()
+  const treeId = params.treeId as string
+  const { map, isLoaded, error } = useMap()
+  const { setTree, isPending, treeMap } = useLiveTrees()
+
+  // Add initialization tracking
+  const [isInitialized, setIsInitialized] = useState(false)
+  const existingTreeRef = useRef<typeof treeMap.get extends (key: any) => infer R ? R : never>(
+    treeMap.get(treeId) || props.tree
+  )
+
+  // Form state
   const [formData, setFormData] = useState<TreeBedFormData>({
-    name: "",
-    description: "",
-    location: props.lat && props.lng ? {
-      lat: props.lat,
-      lng: props.lng
-    } : null
+    name: existingTreeRef.current?.name || props.info?.address?.street || "",
+    description: existingTreeRef.current?.description || "",
+    location: null  // Start with no location to prevent premature updates
   })
   const [isLoadingLocation, setIsLoadingLocation] = useState(false)
-
-  const { map, isLoaded, error } = useMap()
-  const { setTree, isPending } = useLiveTrees()
-
-  // Fetch location info when coordinates are set
+  
+  // Load or initialize tree data
   useEffect(() => {
-    if (!formData.location) return
-
-    const fetchLocationInfo = async () => {
-      setIsLoadingLocation(true)
-      try {
-        const info = await getLocationInfo(formData.location!.lat, formData.location!.lng)
+    const existingTree = treeMap.get(treeId)
+    console.log('existingTree', existingTree)
+    
+    // Store the existing tree reference for use in other effects
+    existingTreeRef.current = existingTree || undefined
+    
+    const initializeTree = async () => {
+      if (existingTree) {
+        console.log('Loading existing tree:', existingTree.id)
+        // Load existing tree data
+        setFormData({
+          name: existingTree.name,
+          description: existingTree.description || "",
+          location: { 
+            lat: existingTree._loc_lat,
+            lng: existingTree._loc_lng
+          }
+        })
+      } else if (props.lat && props.lng && !isInitialized) {
+        // Only initialize new tree with coordinates if not already initialized
+        console.log('Initializing new tree with coordinates')
         setFormData(prev => ({
           ...prev,
-          locationInfo: info,
-          // If no name is set yet, suggest one based on the location
-          name: prev.name || `Tree at ${info.address?.street || 'Unknown Location'}`
+          location: {
+            lat: props.lat!,
+            lng: props.lng!
+          }
         }))
+      }
+      setIsInitialized(true)
+    }
+
+    initializeTree()
+  }, [])
+
+  // Fetch location info when coordinates change
+  useEffect(() => {
+    // Don't run until initialization is complete
+    console.log('isInitialized', isInitialized)
+    if (!formData.location || isLoadingLocation || !isInitialized) return
+
+    let cancelled = false
+    const fetchLocation = async () => {
+      setIsLoadingLocation(true)
+      try {
+        if (cancelled) return
+
+        const newName = !formData.name.trim() && props.info?.address?.street 
+          ? `Tree at ${props.info.address.street}`
+          : formData.name
+
+        setFormData(prev => ({
+          ...prev,
+          locationInfo: props.info,
+          name: newName
+        }))
+
+        // Sync with server
+        await setTree({
+          id: treeId,
+          name: newName,
+          lat: formData.location!.lat,
+          lng: formData.location!.lng,
+          status: existingTreeRef.current ? existingTreeRef.current.status : 'draft'
+        })
       } catch (error) {
         console.error('Failed to fetch location info:', error)
       } finally {
-        setIsLoadingLocation(false)
+        if (!cancelled) {
+          setIsLoadingLocation(false)
+        }
       }
     }
 
-    fetchLocationInfo()
-  }, [formData.location?.lat, formData.location?.lng])
-
-  // Listen for location updates from the map
-  useEffect(() => {
-    const handleLocationUpdate = (e: CustomEvent<{ lat: number; lng: number }>) => {
-      setFormData(prev => ({
-        ...prev,
-        location: {
-          lat: e.detail.lat,
-          lng: e.detail.lng
-        }
-      }))
-    }
-
-    window.addEventListener('treebed:location', handleLocationUpdate as EventListener)
+    const timeoutId = setTimeout(fetchLocation, 300)
     return () => {
-      window.removeEventListener('treebed:location', handleLocationUpdate as EventListener)
+      cancelled = true
+      clearTimeout(timeoutId)
     }
-  }, [])
+  }, [isInitialized])
+
+  // Handle form changes
+  const debounceControl = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dataToWrite = useRef<Partial<TreeBedFormData>>({})
+  const handleFormChange = useCallback(async (changes: Partial<TreeBedFormData>) => {
+    if (!isInitialized) return
+
+    setFormData(prev => ({ ...prev, ...changes }))
+    dataToWrite.current = { ...dataToWrite.current, ...changes }
+
+    // Only sync non-location changes immediately
+    // (location changes are handled by the location effect)
+    if (debounceControl.current) {
+      clearTimeout(debounceControl.current)
+      debounceControl.current = null
+    }
+
+    debounceControl.current = setTimeout(async () => {
+      if (!dataToWrite.current.location && formData.location) {
+        await setTree({
+          id: treeId,
+          name: dataToWrite.current.name || formData.name,
+          description: dataToWrite.current.description || formData.description,
+          lat: formData.location?.lat || props.lat || 0,
+          lng: formData.location?.lng || props.lng || 0,
+          status: existingTreeRef.current ? existingTreeRef.current.status : 'draft'
+        })
+      }
+    }, 400)
+  }, [treeId, existingTreeRef.current, formData.location, formData.name, setTree])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -83,13 +163,12 @@ export const PlaceTreeForm = (props: {
     
     try {
       await setTree({
+        id: treeId,
         name: formData.name,
         lat: formData.location.lat,
         lng: formData.location.lng,
         status: 'live'
       })
-      
-      // Navigate back after successful creation
       router.back()
     } catch (err) {
       console.error("Failed to create tree bed:", err)
@@ -122,11 +201,14 @@ export const PlaceTreeForm = (props: {
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-4">
         <div>
+          <label htmlFor="name" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Tree bed name
+          </label>
           <input
             type="text"
             id="name"
             value={formData.name}
-            onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+            onChange={(e) => handleFormChange({ name: e.target.value })}
             className="input w-full"
             placeholder="e.g. Oak Tree on Main St"
             required
@@ -140,7 +222,7 @@ export const PlaceTreeForm = (props: {
           <textarea
             id="description"
             value={formData.description}
-            onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+            onChange={(e) => handleFormChange({ description: e.target.value })}
             rows={3}
             className="input w-full"
             placeholder="Describe the tree bed location and any special care instructions..."
@@ -152,44 +234,11 @@ export const PlaceTreeForm = (props: {
           <span className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
             Location
           </span>
-          {isLoadingLocation ? (
-            <div className="mt-2 flex items-center gap-2 text-sm text-zinc-500">
-              <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />
-              <span>Loading location details...</span>
-            </div>
-          ) : formData.locationInfo ? (
-            <div className="mt-2 space-y-1">
-              <p className="text-sm text-zinc-900 dark:text-zinc-100">
-                {formData.locationInfo.displayName}
-              </p>
-              {formData.locationInfo.address && (
-                <div className="text-xs space-y-0.5 text-zinc-500 dark:text-zinc-400">
-                  {formData.locationInfo.address.street && (
-                    <p>Street: {formData.locationInfo.address.street}</p>
-                  )}
-                  {formData.locationInfo.address.neighborhood && (
-                    <p>Neighborhood: {formData.locationInfo.address.neighborhood}</p>
-                  )}
-                  <p>
-                    {[
-                      formData.locationInfo.address.city,
-                      formData.locationInfo.address.state,
-                      formData.locationInfo.address.postalCode
-                    ].filter(Boolean).join(', ')}
-                  </p>
-                </div>
-              )}
-              <p className="text-xs text-zinc-400">
-                Coordinates: {formData.location?.lat.toFixed(6)}, {formData.location?.lng.toFixed(6)}
-              </p>
-            </div>
-          ) : (
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              {formData.location 
-                ? `Selected: ${formData.location.lat.toFixed(6)}, ${formData.location.lng.toFixed(6)}`
-                : "Click on the map to select a location"}
-            </p>
-          )}
+          <LocationInfoCard
+            isLoading={isLoadingLocation}
+            location={formData.location}
+            locationInfo={formData.locationInfo || props.info}
+          />
         </div>
       </div>
 
