@@ -108,6 +108,7 @@ export function StepFormDialog({
         const contentElement = Array.from(entry.target.children).find(
           child => child instanceof HTMLElement && child.offsetHeight > 0
         )
+        console.log('[step-form-dialog] height', contentElement?.getBoundingClientRect().height)
         if (contentElement instanceof HTMLElement) {
           const height = contentElement.getBoundingClientRect().height
           setContentHeight(height)

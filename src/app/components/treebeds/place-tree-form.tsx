@@ -53,14 +53,14 @@ export const PlaceTreeForm = (props: {
   // Load or initialize tree data
   useEffect(() => {
     const existingTree = treeMap.get(treeId)
-    console.log('existingTree', existingTree)
+    console.log('[PlaceTreeForm] existingTree', existingTree)
     
     // Store the existing tree reference for use in other effects
     existingTreeRef.current = existingTree || undefined
     
     const initializeTree = async () => {
       if (existingTree) {
-        console.log('Loading existing tree:', existingTree.id)
+        console.log('[PlaceTreeForm] Loading existing tree:', existingTree.id)
         // Load existing tree data
         setFormData({
           name: existingTree.name,
@@ -72,7 +72,7 @@ export const PlaceTreeForm = (props: {
         })
       } else if (props.lat && props.lng && !isInitialized) {
         // Only initialize new tree with coordinates if not already initialized
-        console.log('Initializing new tree with coordinates')
+        console.log('[PlaceTreeForm] Initializing new tree with coordinates')
         setFormData(prev => ({
           ...prev,
           location: {
@@ -85,13 +85,11 @@ export const PlaceTreeForm = (props: {
     }
 
     initializeTree()
-  }, [])
+  }, [treeMap, treeId, props.lat, props.lng])
 
   // Fetch location info when coordinates change
   useEffect(() => {
-    // Don't run until initialization is complete
-    console.log('isInitialized', isInitialized)
-    if (!formData.location || isLoadingLocation || !isInitialized) return
+    if (!formData.location || isLoadingLocation) return
 
     let cancelled = false
     const fetchLocation = async () => {
@@ -123,7 +121,7 @@ export const PlaceTreeForm = (props: {
           status
         })
       } catch (error) {
-        console.error('Failed to fetch location info:', error)
+        console.error('[PlaceTreeForm] Failed to fetch location info:', error)
       } finally {
         if (!cancelled) {
           setIsLoadingLocation(false)
@@ -136,14 +134,12 @@ export const PlaceTreeForm = (props: {
       cancelled = true
       clearTimeout(timeoutId)
     }
-  }, [isInitialized])
+  }, [formData.location, props.info, treeId, setTree])
 
   // Handle form changes
   const debounceControl = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dataToWrite = useRef<Partial<TreeBedFormData>>({})
   const handleFormChange = useCallback(async (changes: Partial<TreeBedFormData>) => {
-    if (!isInitialized) return
-
     setFormData(prev => ({ ...prev, ...changes }))
     dataToWrite.current = { ...dataToWrite.current, ...changes }
 
@@ -155,23 +151,24 @@ export const PlaceTreeForm = (props: {
     }
 
     debounceControl.current = setTimeout(async () => {
-      if (formData.location) {
-        try {
-          await setTree({
-            id: treeId,
-            name: dataToWrite.current.name || formData.name,
-            description: dataToWrite.current.description || formData.description,
-            lat: formData.location?.lat || props.lat || 0,
-            lng: formData.location?.lng || props.lng || 0,
-            // Preserve existing status or default to draft for new trees
-            status: props.tree?.status || existingTreeRef.current?.status || 'draft'
-          })
-        } catch (error) {
-          console.error('Failed to save tree:', error)
-        }
+      // if ()
+      try {
+        await setTree({
+          id: treeId,
+          name: dataToWrite.current.name || formData.name,
+          description: dataToWrite.current.description || formData.description,
+          lat: formData.location?.lat || props.lat || 0,
+          lng: formData.location?.lng || props.lng || 0,
+          // Preserve existing status or default to draft for new trees
+          status: props.tree?.status || existingTreeRef.current?.status || 'draft'
+        })
+        // Clear the data to write after successful save
+        dataToWrite.current = {}
+      } catch (error) {
+        console.error('[PlaceTreeForm] Failed to save tree:', error)
       }
     }, 400)
-  }, [treeId, existingTreeRef.current, formData.location, formData.name, setTree])
+  }, [treeId, props.lat, props.lng, setTree])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

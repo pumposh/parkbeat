@@ -50,6 +50,13 @@
       "when": 1739471675722,
       "tag": "0006_mighty_fat_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1739527037352,
+      "tag": "0007_sparkling_the_captain",
+      "breakpoints": true
     }
   ]
 }

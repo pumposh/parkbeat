@@ -30,6 +30,7 @@ export const MapController = ({
   const [position, setPosition] = useState({ top: 0, left: 0 })
   const [isMapLoaded, setIsMapLoaded] = useState(false)
   const [isStyleChanging, setIsStyleChanging] = useState(false)
+  const [mapError, setMapError] = useState<string | null>(null)
   const pathname = usePathname()
   const router = useRouter()
   const isPlacingTree = pathname === '/manage-trees'
@@ -104,47 +105,111 @@ export const MapController = ({
   useEffect(() => {
     if (map.current || !location) return
 
-    map.current = new maplibregl.Map({
-      container: mapContainer.current!,
-      style: getMapStyle(resolvedTheme || 'light'),
-      center: [location.longitude, location.latitude],
-      zoom: initialZoom,
-      attributionControl: false
-    })
+    try {
+      if (!mapContainer.current) {
+        throw new Error('Map container not found')
+      }
 
-    const setupMapEvents = () => {
-      if (!map.current) return
-      setIsMapLoaded(true)
-      setMapInstance(map.current)
+      // Check for existing WebGL contexts and force cleanup if needed
+      const existingCanvas = mapContainer.current.querySelector('canvas')
+      if (existingCanvas) {
+        const gl = existingCanvas.getContext('webgl') || existingCanvas.getContext('webgl2')
+        if (gl) {
+          gl.getExtension('WEBGL_lose_context')?.loseContext()
+        }
+        existingCanvas.remove()
+      }
 
-      // Add movement listeners
-      map.current.on('movestart', () => setIsMapMoving(true))
-      map.current.on('moveend', () => setIsMapMoving(false))
-      map.current.on('mousedown', () => setIsUserInteracting(true))
-      map.current.on('mouseup', () => setIsUserInteracting(false))
-      map.current.on('dragstart', () => setIsUserInteracting(true))
-      map.current.on('dragend', () => setIsUserInteracting(false))
-      map.current.on('zoomstart', () => setIsMapMoving(true))
-      map.current.on('zoomend', () => setIsMapMoving(false))
+      map.current = new maplibregl.Map({
+        container: mapContainer.current,
+        style: getMapStyle(resolvedTheme || 'light'),
+        center: [location.longitude, location.latitude],
+        zoom: initialZoom,
+        attributionControl: false
+      } as maplibregl.MapOptions)
 
-      sendBounds()
+      const setupMapEvents = () => {
+        if (!map.current) return
+        setIsMapLoaded(true)
+        setMapError(null)
+        setMapInstance(map.current)
+
+        // Add movement listeners
+        map.current.on('movestart', () => setIsMapMoving(true))
+        map.current.on('moveend', () => setIsMapMoving(false))
+        map.current.on('mousedown', () => setIsUserInteracting(true))
+        map.current.on('mouseup', () => setIsUserInteracting(false))
+        map.current.on('dragstart', () => setIsUserInteracting(true))
+        map.current.on('dragend', () => setIsUserInteracting(false))
+        map.current.on('zoomstart', () => setIsMapMoving(true))
+        map.current.on('zoomend', () => setIsMapMoving(false))
+        map.current.on('error', (e) => {
+          console.error('Map error:', e)
+          setMapError('Something went wrong with the map')
+        })
+        
+        // Handle WebGL context events
+        const canvas = mapContainer.current?.querySelector('canvas')
+        if (canvas) {
+          canvas.addEventListener('webglcontextlost', (e) => {
+            console.error('WebGL context lost:', e)
+            e.preventDefault()
+            setMapError('Map context was lost. Please refresh the page.')
+          })
+
+          canvas.addEventListener('webglcontextrestored', () => {
+            console.log('WebGL context restored')
+            setMapError(null)
+            map.current?.resize()
+          })
+        }
+
+        sendBounds()
+      }
+
+      map.current.once('load', setupMapEvents)
+      map.current.on('style.error', (e) => {
+        console.error('Style error:', e)
+        setMapError('Failed to load map style')
+      })
+
+    } catch (error) {
+      console.error('Error initializing map:', error)
+      setMapError('Failed to initialize map')
     }
-
-    map.current.once('load', setupMapEvents)
 
     return () => {
       if (map.current) {
-        map.current.off('movestart', () => setIsMapMoving(true))
-        map.current.off('moveend', () => setIsMapMoving(false))
-        map.current.off('mousedown', () => setIsUserInteracting(true))
-        map.current.off('mouseup', () => setIsUserInteracting(false))
-        map.current.off('dragstart', () => setIsUserInteracting(true))
-        map.current.off('dragend', () => setIsUserInteracting(false))
-        map.current.off('zoomstart', () => setIsMapMoving(true))
-        map.current.off('zoomend', () => setIsMapMoving(false))
-        map.current.remove()
-        setMapInstance(null)
-        map.current = null
+        try {
+          // Force cleanup of WebGL context
+          const canvas = mapContainer.current?.querySelector('canvas')
+          if (canvas) {
+            const gl = canvas.getContext('webgl') || canvas.getContext('webgl2')
+            if (gl) {
+              gl.getExtension('WEBGL_lose_context')?.loseContext()
+            }
+          }
+
+          map.current.off('movestart', () => setIsMapMoving(true))
+          map.current.off('moveend', () => setIsMapMoving(false))
+          map.current.off('mousedown', () => setIsUserInteracting(true))
+          map.current.off('mouseup', () => setIsUserInteracting(false))
+          map.current.off('dragstart', () => setIsUserInteracting(true))
+          map.current.off('dragend', () => setIsUserInteracting(false))
+          map.current.off('zoomstart', () => setIsMapMoving(true))
+          map.current.off('zoomend', () => setIsMapMoving(false))
+          map.current.off('error', () => {})
+          map.current.off('style.error', () => {})
+          map.current.off('webglcontextlost', () => {})
+          map.current.off('webglcontextrestored', () => {})
+          
+          // Remove the map instance and force garbage collection
+          map.current.remove()
+          setMapInstance(null)
+          map.current = null
+        } catch (error) {
+          console.error('Error cleaning up map:', error)
+        }
       }
     }
   }, [location])
@@ -397,105 +462,115 @@ export const MapController = ({
 
   return (
     <div className="map-container">
-      <div 
-        ref={mapContainer} 
-        className={cn(
-          "map-view",
-          isMapLoaded ? "opacity-100" : "opacity-0",
-          isStyleChanging && "opacity-0"
-        )}
-      />
-      
-      {/* Map Controls */}
-      <div 
-        ref={controlsRef}
-        className={cn(
-          "map-controls",
-          isMapLoaded ? "opacity-100" : "opacity-0",
-          isStyleChanging && "opacity-0"
-        )}
-        style={{ 
-          top: `${position.top}px`
-        }}
-      >
-        <button
-          onClick={() => handleZoom(-1)}
-          className="map-control-button frosted-glass"
-          aria-label="Zoom out"
-        >
-          <i className="fa-solid fa-minus" aria-hidden="true" />
-        </button>
-
-        <button
-          onClick={() => handleZoom(1)}
-          className="map-control-button frosted-glass"
-          aria-label="Zoom in"
-        >
-          <i className="fa-solid fa-plus" aria-hidden="true" />
-        </button>
-
-        <button
-          onClick={handleCenterMap}
-          className="map-control-button frosted-glass"
-          aria-label="Center map"
-        >
-          <i className="fa-solid fa-location-crosshairs" aria-hidden="true" />
-        </button>
-      </div>
-
-      {isPlacingTree && isMapLoaded && (
-        <div className={cn(
-          "pin-container",
-          isMarkerNearCenter ? "hidden" : "",
-          isUserInteracting || isMapMoving ? "user-interacting" : ""
-        )}>
-          <i 
+      {mapError ? (
+        <div className="flex flex-col items-center justify-center w-full h-full min-h-[400px] text-center p-8 text-zinc-500 dark:text-zinc-400 space-y-2">
+          <i className="fa-solid fa-map-marked-alt text-3xl mb-2" aria-hidden="true" />
+          <i className="fa-regular fa-face-frown text-2xl" aria-hidden="true" />
+          <p>{mapError}</p>
+        </div>
+      ) : (
+        <>
+          <div 
+            ref={mapContainer} 
             className={cn(
-              "pin fa-solid fa-map-pin",
-              "transition-all"
+              "map-view",
+              isMapLoaded ? "opacity-100" : "opacity-0",
+              isStyleChanging && "opacity-0"
+            )}
+          />
+          
+          {/* Map Controls */}
+          <div 
+            ref={controlsRef}
+            className={cn(
+              "map-controls",
+              isMapLoaded ? "opacity-100" : "opacity-0",
+              isStyleChanging && "opacity-0"
             )}
             style={{ 
-              filter: `drop-shadow(0 ${isUserInteracting || isMapMoving ? 8 : 4}px ${isUserInteracting || isMapMoving ? 4 : 2}px rgb(0 0 0 / ${isUserInteracting || isMapMoving ? 0.15 : 0.1}))`,
-              transform: `translateY(${isUserInteracting || isMapMoving ? -24 : 0}px)`,
-              opacity: isUserInteracting || isMapMoving ? 0.6 : isMapLoaded ? 1 : 0,
-              willChange: 'transform, opacity'
+              top: `${position.top}px`
             }}
-            aria-hidden="true" 
-          />
-          <div 
-            className={cn(
-              "pin-shadow",
-              isUserInteracting || isMapMoving ? "opacity-100 scale-100" : "opacity-20 scale-90"
-            )}
-          />
-          {isButtonVisible && !isMarkerNearCenter && (
-            <button 
-              className={cn(
-                "manage-trees-button frosted-glass",
-                "z-10",
-                isButtonLeaving ? "manage-trees-button-leave" : "manage-trees-button-enter"
-              )}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                openTreeDialog()
-              }}
+          >
+            <button
+              onClick={() => handleZoom(-1)}
+              className="map-control-button frosted-glass"
+              aria-label="Zoom out"
             >
-              <div className="manage-trees-button-text text-sm p-2 px-3 min-w-[145px] flex items-center justify-between gap-2">
-                <div className="manage-trees-button-text-text">New project</div>
-                <i className="fa-solid fa-plus text-md" aria-hidden="true" />
-              </div>
+              <i className="fa-solid fa-minus" aria-hidden="true" />
             </button>
-          )}
-        </div>
-      )}
 
-      {map.current && isMapLoaded && (
-        <Markers
-          trees={Array.from(treeMap.values())} 
-          map={map.current} 
-          onMarkerNearCenter={setIsMarkerNearCenter}
-        />
+            <button
+              onClick={() => handleZoom(1)}
+              className="map-control-button frosted-glass"
+              aria-label="Zoom in"
+            >
+              <i className="fa-solid fa-plus" aria-hidden="true" />
+            </button>
+
+            <button
+              onClick={handleCenterMap}
+              className="map-control-button frosted-glass"
+              aria-label="Center map"
+            >
+              <i className="fa-solid fa-location-crosshairs" aria-hidden="true" />
+            </button>
+          </div>
+
+          {isPlacingTree && isMapLoaded && (
+            <div className={cn(
+              "pin-container",
+              isMarkerNearCenter ? "hidden" : "",
+              isUserInteracting || isMapMoving ? "user-interacting" : ""
+            )}>
+              <i 
+                className={cn(
+                  "pin fa-solid fa-map-pin",
+                  "transition-all"
+                )}
+                style={{ 
+                  filter: `drop-shadow(0 ${isUserInteracting || isMapMoving ? 8 : 4}px ${isUserInteracting || isMapMoving ? 4 : 2}px rgb(0 0 0 / ${isUserInteracting || isMapMoving ? 0.15 : 0.1}))`,
+                  transform: `translateY(${isUserInteracting || isMapMoving ? -24 : 0}px)`,
+                  opacity: isUserInteracting || isMapMoving ? 0.6 : isMapLoaded ? 1 : 0,
+                  willChange: 'transform, opacity'
+                }}
+                aria-hidden="true" 
+              />
+              <div 
+                className={cn(
+                  "pin-shadow",
+                  isUserInteracting || isMapMoving ? "opacity-100 scale-100" : "opacity-20 scale-90"
+                )}
+              />
+              {isButtonVisible && !isMarkerNearCenter && (
+                <button 
+                  className={cn(
+                    "manage-trees-button frosted-glass",
+                    "z-10",
+                    isButtonLeaving ? "manage-trees-button-leave" : "manage-trees-button-enter"
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    openTreeDialog()
+                  }}
+                >
+                  <div className="manage-trees-button-text text-sm p-2 px-3 min-w-[145px] flex items-center justify-between gap-2">
+                    <div className="manage-trees-button-text-text">New project</div>
+                    <i className="fa-solid fa-plus text-md" aria-hidden="true" />
+                  </div>
+                </button>
+              )}
+            </div>
+          )}
+
+          {map.current && isMapLoaded && (
+            <Markers
+              trees={Array.from(treeMap.values())} 
+              map={map.current} 
+              onMarkerNearCenter={setIsMarkerNearCenter}
+            />
+          )}
+        </>
       )}
     </div>
   )

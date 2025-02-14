@@ -146,3 +146,25 @@ export const getTreeGroupsViaPrecision = (trees: Tree[], targetPrecision: string
 
   return result;
 }
+
+export const iterateLatLng = (lat: number, lng: number, direction: string, steps: number) => {
+  const directions = {
+    'N': { lat: -1, lng: 0 },
+    'S': { lat: 1, lng: 0 },
+    'E': { lat: 0, lng: 1 },
+    'W': { lat: 0, lng: -1 }
+  }
+  console.log('direction', direction)
+  console.log('steps', steps)
+  console.log('directions', directions)
+
+  const fuzzy = direction.split('')[0]?.toUpperCase() as keyof typeof directions
+  console.log('fuzzy', fuzzy)
+  const newLatLng = {
+    lat: lat + directions[fuzzy]?.lat * steps,
+    lng: lng + directions[fuzzy]?.lng * steps
+  }
+  console.log('newLatLng', newLatLng)
+
+  return newLatLng
+}

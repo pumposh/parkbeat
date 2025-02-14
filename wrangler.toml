@@ -1,10 +1,18 @@
 name = "parkbeat"
-compatibility_date = "2024-08-06"
+compatibility_date = "2025-01-29"
+compatibility_flags = ["nodejs_compat"]
 main = "src/server/index.ts"
+
+# Bind R2 bucket
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "parkbeat-images"
+preview_bucket_name = "parkbeat-images-dev"
 
 [vars]
 # Reference environment variables without exposing them in the file
-DATABASE_URL = "postgresql://neondb_owner:npg_o87aWciLIkMY@ep-little-scene-a4147jz4-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
+DATABASE_URL = ""
+R2_BUCKET_NAME = "parkbeat-images"
 
 [dev]
 port = 8080

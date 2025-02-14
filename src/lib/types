@@ -1,0 +1,120 @@
+/**
+ * Pauses execution for a specified number of milliseconds.
+ * Convenience function for `setTimeout`.
+ * @param ms - The number of milliseconds to pause.
+ * @returns A promise that resolves after the specified time.
+ */
+export const asyncTimeout = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+/**
+ * Type helper to get nested property type
+ */
+type NestedProperty<T, K extends (keyof any)[]> = K extends [infer First, ...infer Rest]
+  ? First extends keyof T
+    ? Rest extends (keyof any)[]
+      ? NestedProperty<T[First], Rest>
+      : T[First]
+    : never
+  : T;
+
+/**
+ * Type helper for path array
+ */
+type PathArray<T> = T extends object
+  ? { [K in keyof T]: [K] | [K, ...PathArray<T[K]>] }[keyof T]
+  : never;
+
+/**
+ * Creates a shallow copy of an object or array
+ */
+const shallowCopy = <T extends object>(obj: T): T =>
+  Array.isArray(obj) ? ([...obj] as T) : { ...obj };
+
+/**
+ * Typesafe deep set that creates a new object with the updated value.
+ * Perfect for use with React setState to update nested state.
+ *
+ * @param obj - The source object
+ * @param value - The value to set
+ * @param path - The path of keys to the value
+ * @returns A new object with the updated value
+ */
+export const deepSet = <T extends object, K extends (keyof any)[], V extends NestedProperty<T, K>>(
+  obj: T,
+  value: V,
+  ...path: K
+): T => {
+  if (path.length === 0) return obj;
+
+  const [first, ...rest] = path;
+  const result = shallowCopy(obj);
+
+  if (rest.length === 0) {
+    (result as Record<string | number | symbol, unknown>)[first] = value;
+  } else {
+    const currentValue = obj[first as keyof T];
+    if (currentValue && typeof currentValue === 'object') {
+      (result as Record<string | number | symbol, unknown>)[first] = deepSet(
+        currentValue as object,
+        value as object,
+        ...rest
+      );
+    }
+  }
+
+  return result;
+};
+
+// Example usage:
+/*
+interface DeepObject {
+    collectedData: {
+        [programId: string]: {
+            measurements: {
+                [measurementType: string]: string;
+            };
+        };
+    };
+}
+
+const state: DeepObject = {
+    collectedData: {
+        "program1": {
+            measurements: {
+                "type1": "old"
+            }
+        }
+    }
+};
+
+// Instead of:
+setState(prev => ({
+    ...prev,
+    collectedData: {
+        ...prev.collectedData,
+        program1: {
+            ...prev.collectedData.program1,
+            measurements: {
+                ...prev.collectedData.program1.measurements,
+                type1: "new"
+            }
+        }
+    }
+}));
+
+// You can now do:
+setState(prev => 
+    deepSet(prev, "new", "collectedData", "program1", "measurements", "type1")
+);
+In a typesafe way.
+*/
+
+export const mapObject = <T extends object, K extends keyof T, V>(
+  obj: T, fn: (value: T[K], key?: K) => V
+): Record<K, V> => {
+  return Object.fromEntries(
+    Object.entries(obj).map(
+      ([key, value]) => [key, fn(value, key as K)]
+    )
+  ) as Record<K, V>;
+};

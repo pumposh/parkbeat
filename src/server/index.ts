@@ -2,7 +2,7 @@ import { j } from "./jstack"
 import { postRouter } from "./routers/post-router"
 import { cors } from "hono/cors"
 import { treeRouter } from "./routers/tree-router"
-
+import { aiRouter } from "./routers/ai-router"
 /**
  * WebSocket Durable Object for handling real-time connections
  */
@@ -43,6 +43,7 @@ const api = j
 const appRouter = j.mergeRouters(api, {
   post: postRouter,
   tree: treeRouter,
+  ai: aiRouter,
 })
 
 export type AppRouter = typeof appRouter
