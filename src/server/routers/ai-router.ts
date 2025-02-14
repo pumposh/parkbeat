@@ -8,6 +8,7 @@ import { env } from "hono/adapter"
 import { Storage } from '@google-cloud/storage'
 import { iterateLatLng } from "./tree-helpers/geo"
 import { ImageSource } from "maplibre-gl"
+import { getLocationInfo } from "@/lib/location"
 // Project categories
 const PROJECT_CATEGORIES = [
   'urban_greening',
@@ -164,52 +165,27 @@ export const aiRouter = j.router({
           const imageBuffer = await imageResponse.arrayBuffer()
           console.log('Image buffer size:', imageBuffer.byteLength)
 
-          // // Upload to R2 if it's a Street View image
-          // let publicImageUrl = imageUrl
-          // if (imageSource.type === 'streetView') {
-          //   try {
-          //     // Generate a unique filename
-          //     const fileName = `street-view/${generateId()}-${imageSource.params.lat}-${imageSource.params.lng}.jpg`
+          // Get location info for better context
+          const locationInfo = await getLocationInfo(
+            imageSource.type === 'streetView' ? imageSource.params.lat : 0,
+            imageSource.type === 'streetView' ? imageSource.params.lng : 0
+          )
 
-          //     // Fetch the image
-          //     console.log('Fetching Street View image...')
-          //     const imageResponse = await fetch(imageUrl)
-          //     if (!imageResponse.ok) {
-          //       console.error('Failed to fetch Street View image:', {
-          //         status: imageResponse.status,
-          //         statusText: imageResponse.statusText
-          //       })
-          //       throw new Error(`Failed to fetch Street View image: ${imageResponse.statusText}`)
-          //     }
+          // Prepare rich location context
+          const locationContext = locationInfo.address ? [
+            locationInfo.address.street && `Located on ${locationInfo.address.street}`,
+            locationInfo.address.neighborhood && `in the ${locationInfo.address.neighborhood} neighborhood`,
+            locationInfo.address.city && 
+              (locationInfo.address.city.toLowerCase().includes('new york') 
+                ? locationInfo.address.neighborhood 
+                : `in ${locationInfo.address.city}`),
+          ].filter(Boolean).join(' ') : ''
 
-          //     // Upload to R2
-          //     console.log('Uploading to R2:', { fileName, bucketName: R2_BUCKET_NAME })
-          //     const imageBuffer = await imageResponse.arrayBuffer()
-          //     console.log('Image buffer size:', imageBuffer.byteLength)
-
-          //     const result = await r2.put(fileName, imageBuffer, {
-          //       httpMetadata: {
-          //         contentType: 'image/jpeg',
-          //       },
-          //       customMetadata: {
-          //         streetViewParams: JSON.stringify(imageSource.params),
-          //         uploadedAt: new Date().toISOString(),
-          //         fundraiserId,
-          //       }
-          //     })
-          //     console.log('R2 upload completed:', result)
-
-          //     // Get the public URL (using R2 public bucket URL)
-          //     publicImageUrl = `https://${R2_BUCKET_NAME}.r2.dev/${fileName}`
-          //     console.log('Generated public URL:', publicImageUrl)
-          //   } catch (uploadError) {
-          //     console.error('Error uploading to R2:', uploadError)
-          //     return c.json({ 
-          //       error: 'Failed to store image',
-          //       details: uploadError instanceof Error ? uploadError.message : 'Unknown error'
-          //     }, 500)
-          //   }
-          // }
+          // Combine with user-provided context
+          const enrichedContext = [
+            locationContext,
+            context
+          ].filter(Boolean).join('\n')
 
           // Initialize Gemini Vision model
           const genAI = new GoogleGenerativeAI(GOOGLE_AI_API_KEY)
@@ -229,6 +205,8 @@ export const aiRouter = j.router({
     It's very important that you keep your responses concise and to the point.
     I'll at times ask for a structured response, and you should always follow that request.
     Prioritize aesthetic appeal and frugality. Be down to earth and practical. 
+    Try not to assume community members will volunteer their time to help but
+    the labor cost estimation should be low.
 
     These are the categories of projects you can recommend:
     ${PROJECT_CATEGORIES.toSorted(() => Math.random() - 0.5).join(', ')}
@@ -318,6 +296,10 @@ export const aiRouter = j.router({
               },
               async () => {
                 const imageResponse = await fetch(newUrl)
+                  .then(res => {
+                    console.log('res.url', res.url)
+                    return res;
+                  })
                 const imageBuffer = await imageResponse.arrayBuffer()
                 console.log('Image buffer size:', imageBuffer.byteLength)
                 const fileName = `sv/${generateId()}-${newLatLng.lat}-${newLatLng.lng}.jpg`
@@ -337,14 +319,21 @@ export const aiRouter = j.router({
           // Analyze image and generate recommendations
           const result = await model.generateContent([
             imageUrl,
-            `Analyze this location image and suggest potential community improvement projects. 
+            `Analyze this location image and suggest potential community improvement projects.
+            ${enrichedContext ? `Location Context: ${enrichedContext}` : ''}
+            
+            Consider the following when naming the project:
+            - If in a neighborhood, reference it (e.g. "Williamsburg Tree Garden")
+            - If on a specific street, incorporate it (e.g. "Bedford Ave Green Space")
+            - If near a landmark, mention it (e.g. "McCarren Park Edge")
+            - Keep names short, memorable, and location-specific
+            
             Prioritize landscape projects that are easy to maintain, and have a high aesthetic appeal.
-            If a tree is present, possibly suggest a tree bed. 
-            ${context || ''}
+            If a tree is present, possibly suggest a tree bed.
 
             RESPONSE STRUCTURE:
             1: CATEGORY
-            2: FRIENDLY TITLE
+            2: FRIENDLY TITLE (using location context from above)
             3: DESCRIPTION
             4: IMAGE GENERATION PROMPT FOR THE OUTCOME OF THE PROJECT. BE VERY SPECIFIC
               ABOUT WHAT YOU SEE IN THE INPUT IMAGE AND WHERE YOU THINK THE PROJECT
@@ -355,6 +344,8 @@ export const aiRouter = j.router({
                 - Labor     $approx_cost
                 - Total     $approx_cost
             6: REASONING CONTEXT
+
+            Remember to keep the title local and specific to where this project would be.
             `
           ])
           const response = await result.response
@@ -371,7 +362,7 @@ export const aiRouter = j.router({
                 analysis,
                 streetViewParams: imageSource.type === 'streetView' ? imageSource.params : undefined
               },
-              metadata: { context }
+              metadata: { context: enrichedContext }
             })
           }
 

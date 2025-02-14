@@ -173,10 +173,16 @@
     .cl-header, .cl-footer, .cl-navbar, .cl-navbarMobileMenuRow {
       display: none !important;
     }
-    .cl-formFieldInput, .cl-input, .cl-formFieldInput__identifier, .cl-input__identifier, .cl-required {
-      margin-left: -16px;
-      z-index: 0;
-      padding-left: 20px;
+    .cl-phoneInputBox {
+      .cl-formFieldInput,
+      .cl-input,
+      .cl-formFieldInput__identifier,
+      .cl-input__identifier,
+      .cl-required {
+        margin-left: -16px;
+        z-index: 0;
+        padding-left: 20px;
+      }
     }
     .cl-cardBox {
         max-width: unset;

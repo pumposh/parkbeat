@@ -22,7 +22,10 @@ export const LocationInfoCard = ({ isLoading, location, locationInfo, children }
     if (locationInfo?.address) {
       const { street, neighborhood, city, state } = locationInfo.address
       const mainLocation = street || neighborhood
-      const subLocation = city && state ? `${city}, ${state}` : city || state
+      const isNYC = city?.toLowerCase().includes('new york') || city?.toLowerCase().includes('new york city')
+      const subLocation = isNYC 
+        ? neighborhood 
+        : city && state ? `${city}, ${state}` : city || state
 
       return (
         <div className="flex items-center justify-start gap-3">

@@ -1,18 +1,17 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import * as Dialog from '@radix-ui/react-dialog'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { LocationInfo } from '@/types/types'
 import type { Tree, TreeStatus } from '@/server/routers/tree-router'
 import { StepFormDialog } from '../ui/step-form-dialog'
 import { LocationInfoCard } from './components/location-info-card'
-import { StreetViewCard } from './components/street-view-card'
 import { useToast } from '@/app/components/toast'
 import { useLiveTrees } from '@/hooks/use-tree-sockets'
 import { useParams } from 'next/navigation'
 import { client } from '@/lib/client'
 import { useAuth } from '@clerk/nextjs'
+import { StreetViewCard } from './components/street-view-card'
 
 interface TreeFormData {
   name: string
