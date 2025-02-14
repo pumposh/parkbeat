@@ -40,10 +40,9 @@ type ClientSocket = ReturnType<typeof client.tree.live.$ws>
 type TreeSocketInitializer = NonNullable<typeof client.tree.live.$ws>
 
 type TreeSocketConfig = Parameters<TreeSocketInitializer>[0]
-type SocketConfig = NestedNonNullable<NonNullable<TreeSocketConfig>>
 
 type SystemEventName = 'ping' | 'pong';
-type TreeEventName = 'setTree' | 'newTree' | 'subscribe' | 'unsubscribe';
+type TreeEventName = 'setTree' | 'newTree' | 'subscribe' | 'unsubscribe' | 'deleteTree';
 type EventName = SystemEventName | TreeEventName;
 
 type EventPayloadMap = {
@@ -53,6 +52,7 @@ type EventPayloadMap = {
   unsubscribe: { geohash: string };
   ping: undefined;
   pong: undefined;
+  deleteTree: { id: string };
 };
 
 // Update ExpectedArgument type to use the EventPayloadMap
@@ -425,6 +425,17 @@ const useTree: {
     
     return [value, setValue];
   },
+  deleteTree: (defaultValue: { id: string }) => {
+    const [value, setValue] = useState<{ id: string }>(defaultValue);
+    const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
+    
+    useEffect(() => {
+      wsManager.registerHook('deleteTree', setValue);
+      return () => wsManager.unregisterHook('deleteTree', setValue);
+    }, [wsManager]);
+    
+    return [value, setValue];
+  },
   newTree: (defaultValue: TreePayload) => {
     const [value, setValue] = useState<TreePayload>(defaultValue);
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
@@ -495,6 +506,7 @@ export function useLiveTrees() {
   const [newTreeData] = useTree.newTree({} as TreePayload);
   const [setTreeData] = useTree.setTree({} as TreePayload);
   const [subscribeData] = useTree.subscribe([{ geohash: '' }, [], []]);
+  const [deleteTreeData] = useTree.deleteTree({ id: '' });
 
   // Register handler on mount and handle connection state
   useEffect(() => {
@@ -552,6 +564,20 @@ export function useLiveTrees() {
     
     logger.log('debug', `Tree ${processedTree.id} updated in client state via setTree`);
   }, [setTreeData, logger]);
+
+  // Handle delete tree updates
+  useEffect(() => {
+    if (!deleteTreeData || !('id' in deleteTreeData)) return;
+    if (deleteTreeData.id === "0") return;
+
+    setTreeMap(prev => {
+      const next = new Map(prev);
+      next.delete(deleteTreeData.id);
+      return next;
+    });
+
+    logger.log('debug', `Tree ${deleteTreeData.id} removed from client state via deleteTree`);
+  }, [deleteTreeData, logger]);
 
   // Handle subscription updates
   useEffect(() => {
@@ -626,6 +652,14 @@ export function useLiveTrees() {
       }
     };
   }, [currentGeohash]);
+
+
+  const { mutate: deleteTree, isPending: isDeletePending } = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      await wsManager.emit('deleteTree', { id });
+      return { id };
+    }
+  })
 
   // Tree mutation handler
   const { mutate: setTree, isPending } = useMutation({
@@ -704,7 +738,9 @@ export function useLiveTrees() {
     treeMap,
     treeGroups,
     setTree,
+    deleteTree,
     isPending,
+    isDeletePending,
     connectionState
   };
 }

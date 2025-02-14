@@ -273,6 +273,50 @@
   }
 
   /* Dialog animations */
+  @keyframes toastShowMobile {
+    from {
+      transform: translate(-50%, 16px);
+      opacity: 0;
+    }
+    to {
+      transform: translate(-50%, 0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes toastHideMobile {
+    from {
+      transform: translate(-50%, 0);
+      opacity: 1;
+    }
+    to {
+      transform: translate(-50%, 16px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes toastShowDesktop {
+    from {
+      transform: translateX(16px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes toastHideDesktop {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(16px);
+      opacity: 0;
+    }
+  }
+
   @keyframes overlayShow {
     from {
       backdrop-filter: blur(0);
@@ -340,14 +384,20 @@
   }
 
   .dialog-overlay[data-state="open"] {
-    animation: overlayShow var(--transition-duration) var(--transition-ease);
+    animation: overlayShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
     backdrop-filter: blur(4px);
     opacity: 1;
     z-index: var(--z-dialog);
   }
+  .dark .dialog-overlay[data-state="open"] {
+    @apply fixed inset-0 bg-black/50 backdrop-blur-sm;
+  }
+  .light .dialog-overlay[data-state="open"] {
+    @apply fixed inset-0 bg-white/20 backdrop-blur-sm;
+  }
 
   .dialog-overlay[data-state="closed"] {
-    animation: overlayHide var(--transition-duration) var(--transition-ease);
+    animation: overlayHide 150ms cubic-bezier(0.16, 1, 0.3, 1);
     backdrop-filter: blur(0);
     opacity: 0;
     z-index: var(--z-dialog);
@@ -442,18 +492,48 @@
   .input, input, textarea {
     padding: 0.25rem 0.5rem;
     border-radius: 10px;
-    color: var(--foreground)/100;
+    color: var(--foreground);
     font-weight: 500;
-    border: 1px solid color-mix(in srgb, var(--foreground) var(--glass-bg), transparent) !important;
-    background-color: color-mix(in srgb, var(--background) 20%, transparent) !important;
+    border: 1px solid color-mix(in srgb, var(--foreground) 20%, transparent) !important;
+    background-color: color-mix(in srgb, var(--background) 40%, transparent) !important;
   }
 
   .input:focus-visible {
-    outline: 1px solid color-mix(in srgb, var(--foreground) 40%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--foreground) 40%, transparent);
+    outline-offset: -1px;
   }
   
   .input::placeholder {
-    color: color-mix(in srgb, var(--foreground) 40%, transparent);
+    color: color-mix(in srgb, var(--foreground) 50%, transparent);
     font-weight: 400;
+  }
+
+  .dark .input, .dark input, .dark textarea {
+    background-color: color-mix(in srgb, var(--background) 20%, transparent) !important;
+    border: 1px solid color-mix(in srgb, var(--foreground) var(--glass-bg), transparent) !important;
+  }
+
+  /* Toast animations */
+  .toast-enter {
+    animation: toastShowMobile 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .toast-exit {
+    animation: toastHideMobile 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @media (min-width: 768px) {
+    .toast-enter {
+      animation: toastShowDesktop 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .toast-exit {
+      animation: toastHideDesktop 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+  }
+
+  .StreetViewCard > div:nth-child(2) > div:nth-child(16) {
+    /* scale: 1 !important; */
+    opacity: 0.1 !important;
   }
 }

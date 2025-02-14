@@ -24,7 +24,12 @@ const api = j
   .router()
   .basePath("/api")
   .use(cors({
-    origin: ["http://localhost:3000", "http://localhost:8080"],
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:8080",
+      "http://192.168.1.226:3000",
+      "http://192.168.1.226:8080",
+    ],
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: ["Content-Type", "Upgrade-Insecure-Requests"],
     credentials: true,

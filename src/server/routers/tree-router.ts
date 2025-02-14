@@ -52,6 +52,9 @@ const wsEvents = z.object({
   ping: z.undefined(),
   pong: z.void(),
   newTree: treeSchema,
+  deleteTree: z.object({
+    id: z.string(),
+  }),
   setTree: treeSchema,
   unsubscribe: z.object({
     geohash: z.string(),
@@ -133,7 +136,6 @@ export const treeRouter = j.router({
           removeSocketSubscription,
           cleanup,
           getActiveSubscribers,
-          getMostRecentSubscription,
         } = getTreeHelpers({ ctx, logger })
 
         let socketId: string | null = null
@@ -228,6 +230,49 @@ export const treeRouter = j.router({
                 await removeSocketSubscription(geohash, socketId)
               } catch (error) {
                 logger.error('Error in unsubscribe handler:', error)
+                throw error
+              }
+            })
+
+            socket.on('deleteTree', async (data: {
+              id: string
+            }) => {
+              logger.info(`Processing tree deletion: ${data.id}`)
+              const { db } = ctx
+
+              const [tree] = await db
+                .select()
+                .from(trees)
+                .where(eq(trees.id, data.id))
+                .limit(1)
+      
+              if (!tree) {
+                throw new Error('Tree not found')
+              }
+        
+              if (tree.status === 'live') {
+                throw new Error('Cannot delete a live tree')
+              }
+        
+              await db.delete(trees).where(eq(trees.id, data.id))
+        
+              const {
+                getActiveSubscribers,
+              } = getTreeHelpers({ ctx, logger })
+        
+              // Emit to all parent geohashes
+              for (let precision = tree._loc_geohash.length; precision > 0; precision--) {
+                const parentHash = tree._loc_geohash.substring(0, precision)
+                const activeSocketIds = await getActiveSubscribers(parentHash, socketId ? [socketId] : [])
+                for (const socketId of activeSocketIds) {
+                  await io.to(`geohash:${socketId}`).emit('deleteTree', { id: data.id })
+                }
+              }
+
+              try {
+                await db.delete(trees).where(eq(trees.id, data.id))
+              } catch (error) {
+                logger.error('Error in deleteTree handler:', error)
                 throw error
               }
             })

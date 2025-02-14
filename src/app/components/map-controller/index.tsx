@@ -482,7 +482,7 @@ export const MapController = ({
               }}
             >
               <div className="manage-trees-button-text text-sm p-2 px-3 min-w-[145px] flex items-center justify-between gap-2">
-                <div className="manage-trees-button-text-text">Add tree bed</div>
+                <div className="manage-trees-button-text-text">New project</div>
                 <i className="fa-solid fa-plus text-md" aria-hidden="true" />
               </div>
             </button>

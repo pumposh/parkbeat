@@ -4,7 +4,8 @@ import type { Tree } from '@/hooks/use-tree-sockets'
 import type { TreeGroup } from '@/lib/geo/threshGrouping'
 import { useUser } from '@clerk/nextjs'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useToast } from '../toast'
 
 interface TreeInfoPanelProps {
   tree?: Tree
@@ -22,9 +23,14 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
   const isAdmin = user?.organizationMemberships?.some(
     (membership) => membership.role === "org:admin"
   )
-
+  const { show } = useToast()
   // Reset navigation state when pathname or search params change
+  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
+    if (timeout.current) {
+      clearTimeout(timeout.current)
+      timeout.current = null
+    }
     setIsNavigating(false)
   }, [pathname, searchParams])
 
@@ -38,6 +44,15 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
     if (!tree) return
     setIsNavigating(true)
     router.push(`/manage-trees/${tree.id}?lat=${tree._loc_lat}&lng=${tree._loc_lng}`)
+
+    /** Timeout in case of SSR issues */
+    timeout.current = setTimeout(() => {
+      show({
+        message: 'There was an issue loading this tree\'s details. Please try again.',
+        type: 'error',
+      })
+      setIsNavigating(false)
+    }, 5000)
   }
 
   return (
@@ -85,10 +100,12 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
                   "w-6 h-6 flex items-center justify-center",
                   isNavigating && "cursor-wait"
                 )}
-                aria-label="Edit tree"
+                aria-label={tree.status === 'live' ? "View tree details" : "Edit tree"}
               >
                 {isNavigating ? (
                   <i className="fa-solid fa-circle-notch fa-spin text-sm" />
+                ) : tree.status === 'live' ? (
+                  <i className="fa-solid fa-chevron-right text-sm" />
                 ) : (
                   <i className="fa-solid fa-pencil text-sm" />
                 )}

@@ -7,6 +7,9 @@ import { useRouter } from "next/navigation"
 import type { LocationInfo } from "@/types/types"
 import { useParams } from "next/navigation"
 import { LocationInfoCard } from "./components/location-info-card"
+import { StreetViewCard } from "./components/street-view-card"
+import { useToast } from "@/app/components/toast"
+import { cn } from "@/lib/utils"
 
 type TreeBedFormData = {
   name: string
@@ -23,12 +26,15 @@ export const PlaceTreeForm = (props: {
   lng?: number
   info?: LocationInfo
   tree?: Tree
+  onClose?: () => void
 }) => {
   const router = useRouter()
   const params = useParams()
   const treeId = params.treeId as string
   const { map, isLoaded, error } = useMap()
   const { setTree, isPending, treeMap } = useLiveTrees()
+  const { show: showToast } = useToast()
+  const isReadOnly = props.tree?.status === 'live'
 
   // Add initialization tracking
   const [isInitialized, setIsInitialized] = useState(false)
@@ -103,13 +109,18 @@ export const PlaceTreeForm = (props: {
           name: newName
         }))
 
+        // Only set status to draft for new trees
+        const status = props.tree?.status
+          || existingTreeRef.current?.status
+          || 'draft'
+
         // Sync with server
         await setTree({
           id: treeId,
           name: newName,
           lat: formData.location!.lat,
           lng: formData.location!.lng,
-          status: existingTreeRef.current ? existingTreeRef.current.status : 'draft'
+          status
         })
       } catch (error) {
         console.error('Failed to fetch location info:', error)
@@ -144,15 +155,20 @@ export const PlaceTreeForm = (props: {
     }
 
     debounceControl.current = setTimeout(async () => {
-      if (!dataToWrite.current.location && formData.location) {
-        await setTree({
-          id: treeId,
-          name: dataToWrite.current.name || formData.name,
-          description: dataToWrite.current.description || formData.description,
-          lat: formData.location?.lat || props.lat || 0,
-          lng: formData.location?.lng || props.lng || 0,
-          status: existingTreeRef.current ? existingTreeRef.current.status : 'draft'
-        })
+      if (formData.location) {
+        try {
+          await setTree({
+            id: treeId,
+            name: dataToWrite.current.name || formData.name,
+            description: dataToWrite.current.description || formData.description,
+            lat: formData.location?.lat || props.lat || 0,
+            lng: formData.location?.lng || props.lng || 0,
+            // Preserve existing status or default to draft for new trees
+            status: props.tree?.status || existingTreeRef.current?.status || 'draft'
+          })
+        } catch (error) {
+          console.error('Failed to save tree:', error)
+        }
       }
     }, 400)
   }, [treeId, existingTreeRef.current, formData.location, formData.name, setTree])
@@ -169,9 +185,17 @@ export const PlaceTreeForm = (props: {
         lng: formData.location.lng,
         status: 'live'
       })
-      router.back()
+      showToast({
+        message: 'Tree bed created successfully',
+        type: 'success'
+      })
+      props.onClose?.()
     } catch (err) {
       console.error("Failed to create tree bed:", err)
+      showToast({
+        message: 'Failed to create tree bed',
+        type: 'error'
+      })
     }
   }
 
@@ -199,64 +223,82 @@ export const PlaceTreeForm = (props: {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-4">
+      <div className="space-y-6">
         <div>
-          <label htmlFor="name" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Tree bed name
-          </label>
-          <input
-            type="text"
-            id="name"
-            value={formData.name}
-            onChange={(e) => handleFormChange({ name: e.target.value })}
-            className="input w-full"
-            placeholder="e.g. Oak Tree on Main St"
-            required
-          />
-        </div>
-
-        <div>
-          <label htmlFor="description" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Description
-          </label>
-          <textarea
-            id="description"
-            value={formData.description}
-            onChange={(e) => handleFormChange({ description: e.target.value })}
-            rows={3}
-            className="input w-full"
-            placeholder="Describe the tree bed location and any special care instructions..."
-            required
-          />
-        </div>
-
-        <div>
-          <span className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Location
-          </span>
           <LocationInfoCard
             isLoading={isLoadingLocation}
             location={formData.location}
             locationInfo={formData.locationInfo || props.info}
           />
         </div>
+
+        {formData.location && (
+          <div>
+            <StreetViewCard
+              lat={formData.location.lat}
+              lng={formData.location.lng}
+              isLoading={isLoadingLocation}
+            />
+          </div>
+        )}
+
+        <div className="space-y-0">
+          <div>
+            <input
+              type="text"
+              id="name"
+              value={formData.name}
+              onChange={(e) => handleFormChange({ name: e.target.value })}
+              className={cn(
+                "input w-full text-lg py-4 px-6 rounded-b-none",
+                isReadOnly && "cursor-default"
+              )}
+              placeholder="Tree bed name"
+              required
+              readOnly={isReadOnly}
+            />
+          </div>
+
+          <div>
+            <textarea
+              id="description"
+              value={formData.description}
+              onChange={(e) => handleFormChange({ description: e.target.value })}
+              rows={3}
+              className={cn(
+                "input w-full px-6 rounded-t-none pt-6 border-t-0",
+                isReadOnly && "cursor-default"
+              )}
+              placeholder="Describe the tree bed location and any special care instructions..."
+              required
+              readOnly={isReadOnly}
+            />
+          </div>
+        </div>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex gap-3">
         <button
-          type="submit"
-          disabled={!formData.location || isPending}
-          className="w-full rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 px-10 py-3 text-zinc-800 dark:text-zinc-100 font-medium transition hover:bg-white/90 dark:hover:bg-black/60"
+          type="button"
+          onClick={() => {
+            props.onClose?.()
+          }}
+          disabled={isPending}
+          className="flex-1 rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 flex items-center justify-center text-zinc-800 dark:text-zinc-100 text-xl disabled:cursor-not-allowed disabled:hover:ring-0"
+          aria-label="Close"
         >
-          {isPending ? (
-            <>
-              <i className="fa-solid fa-circle-notch fa-spin" aria-hidden="true" />
-              <span>Creating...</span>
-            </>
-          ) : (
-            'Create Tree Bed'
-          )}
+          <i className="fa-solid fa-xmark transition-opacity" aria-hidden="true" />
         </button>
+        {!isReadOnly && (
+          <button
+            type="submit"
+            disabled={!formData.location || !formData.name || !formData.description || isPending}
+            className="flex-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 h-12 flex items-center justify-center text-white text-xl disabled:cursor-not-allowed disabled:bg-emerald-500/50"
+            aria-label="Create Tree"
+          >
+            <i className={`fa-solid ${isPending ? 'fa-circle-notch fa-spin' : !formData.location ? 'fa-location-dot' : !formData.name || !formData.description ? 'fa-pen' : 'fa-check'} transition-opacity`} aria-hidden="true" />
+          </button>
+        )}
       </div>
     </form>
   )
