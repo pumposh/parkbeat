@@ -4,14 +4,15 @@ import { ClerkProvider } from "@clerk/nextjs"
 import { Header } from "./components/nav/header"
 import { MapController } from "./components/map-controller/index"
 import { FooterMenu } from "./components/nav/footer"
-import { Newsreader } from "next/font/google"
+import { Bree_Serif } from "next/font/google"
 
 import "./globals.css"
 
-const newsreader = Newsreader({ 
+const breeSerif = Bree_Serif({ 
   subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-display'
+  display: 'block',
+  variable: '--font-display',
+  weight: '400'
 })
 
 export const metadata: Metadata = {
@@ -27,7 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en" suppressHydrationWarning className={newsreader.variable}>
+      <html lang="en" suppressHydrationWarning className={breeSerif.variable}>
         <head>
           {/* <link
             rel="preload"

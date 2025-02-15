@@ -82,7 +82,7 @@ export const FooterMenu = () => {
                   )}
                 >
                   <i className={cn(action.icon, "text-lg")} aria-hidden="true" />
-                  <span className="text-xs font-medium">{action.label}</span>
+                  <span className="text-xs font-light font-display tracking-wide">{action.label}</span>
                 </Link>
               )
             ))}
