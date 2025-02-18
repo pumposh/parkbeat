@@ -1,17 +1,18 @@
 import { projects } from "@/server/db/schema"
-import { desc, eq, like } from "drizzle-orm"
+import { desc, eq, InferInsertModel, like } from "drizzle-orm"
 import { z } from "zod"
 import { j, publicProcedure } from "../jstack"
 import geohash from 'ngeohash'
 import { getTreeHelpers } from "./tree-helpers/context"
 import { logger } from "@/lib/logger"
-export type TreeStatus = 'draft' | 'live' | 'archived'
 
-export type BaseTree = {
+export type ProjectStatus = 'draft' | 'active' | 'funded' | 'completed' | 'archived'
+
+export type BaseProject = {
   id: string
   name: string  
   description?: string
-  status: TreeStatus
+  status: ProjectStatus
   _loc_lat: number
   _loc_lng: number
   _meta_created_by: string
@@ -24,7 +25,7 @@ export type BaseTree = {
 }
 
 // Define the tree type
-export type Tree = Omit<BaseTree, '_meta_updated_at' | '_meta_created_at'> & {
+export type Project = Omit<BaseProject, '_meta_updated_at' | '_meta_created_at'> & {
   ["_meta_updated_at"]: Date
   ["_meta_created_at"]: Date
 }
@@ -33,15 +34,15 @@ const killActiveSocketsSchema = z.object({
   socketId: z.string(),
 })
 
-const getTreeSchema = z.object({
+const getProjectSchema = z.object({
   id: z.string(),
 })
 
-const treeSchema = z.object({
+const projectSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().optional(),
-  status: z.enum(['draft', 'live', 'archived']),
+  status: z.enum(['draft', 'active', 'funded', 'completed', 'archived']),
   _loc_lat: z.number(),
   _loc_lng: z.number(),
   _meta_created_by: z.string(),
@@ -57,17 +58,17 @@ const treeSchema = z.object({
 const wsEvents = z.object({
   ping: z.undefined(),
   pong: z.void(),
-  newTree: treeSchema,
-  deleteTree: z.object({
+  newProject: projectSchema,
+  deleteProject: z.object({
     id: z.string(),
   }),
-  setTree: treeSchema,
+  setProject: projectSchema,
   unsubscribe: z.object({
     geohash: z.string(),
   }),
   subscribe: z.tuple([
     z.object({ geohash: z.string() }),
-    z.array(treeSchema),
+    z.array(projectSchema),
     /**
      * Represents a collection of trees when viewing
      * map from a low precision geohash This is used
@@ -98,31 +99,31 @@ export const treeRouter = j.router({
       }
     }),
 
-  getTree: publicProcedure
-    .input(getTreeSchema)
+  getProject: publicProcedure
+    .input(getProjectSchema)
     .query(async ({ c, ctx, input }) => {
       const { id } = input
       const { db } = ctx
 
-      const [tree] = await db
+      const [project] = await db
         .select()
         .from(projects)
         .where(eq(projects.id, id))
         .limit(1)
 
-      if (!tree) throw new Error('Tree not found')
+      if (!project) throw new Error('Project not found')
 
       return c.json({
-        id: tree.id,
-        name: tree.name,
-        description: tree.description || undefined,
-        status: tree.status as TreeStatus,
-        _loc_lat: parseFloat(tree._loc_lat),
-        _loc_lng: parseFloat(tree._loc_lng),
-        _meta_created_by: tree._meta_created_by,
-        _meta_updated_by: tree._meta_updated_by,
-        _meta_updated_at: tree._meta_updated_at.toISOString(),
-        _meta_created_at: tree._meta_created_at.toISOString()
+        id: project.id,
+        name: project.name,
+        description: project.description || undefined,
+        status: project.status as ProjectStatus,
+        _loc_lat: parseFloat(project._loc_lat),
+        _loc_lng: parseFloat(project._loc_lng),
+        _meta_created_by: project._meta_created_by,
+        _meta_updated_by: project._meta_updated_by,
+        _meta_updated_at: project._meta_updated_at.toISOString(),
+        _meta_created_at: project._meta_created_at.toISOString()
       })
     }),
 
@@ -183,37 +184,37 @@ export const treeRouter = j.router({
                 
                 if (socketId) await setSocketSubscription(socketId, geohash)
 
-                const nearbyTrees = await db
+                const nearbyProjects = await db
                   .select()
                   .from(projects)
                   .where(like(projects._loc_geohash, `${geohash}%`))
                   .orderBy(desc(projects._loc_geohash))
 
-                const individualTrees = nearbyTrees
-                  .map(tree => ({
-                    id: tree.id,
-                    name: tree.name,
-                    status: tree.status as TreeStatus,
-                    _loc_lat: parseFloat(tree._loc_lat),
-                    _loc_lng: parseFloat(tree._loc_lng),
-                    _meta_created_by: tree._meta_created_by,
-                    _meta_updated_by: tree._meta_updated_by,
-                    _meta_updated_at: tree._meta_updated_at.toISOString(),
-                    _meta_created_at: tree._meta_created_at.toISOString()
+                const individualProjects = nearbyProjects
+                  .map(project => ({
+                    id: project.id,
+                    name: project.name,
+                    status: project.status as ProjectStatus,
+                    _loc_lat: parseFloat(project._loc_lat),
+                    _loc_lng: parseFloat(project._loc_lng),
+                    _meta_created_by: project._meta_created_by,
+                    _meta_updated_by: project._meta_updated_by,
+                    _meta_updated_at: project._meta_updated_at.toISOString(),
+                    _meta_created_at: project._meta_created_at.toISOString()
                   }))
 
-                if (individualTrees.length > 0) {
+                if (individualProjects.length > 0) {
                   // Convert dates to proper format for emission
-                  const treesToEmit = individualTrees.map(tree => ({
-                    ...tree,
-                    _meta_updated_at: new Date(tree._meta_updated_at).toISOString(),
-                    _meta_created_at: new Date(tree._meta_created_at).toISOString()
+                  const projectsToEmit = individualProjects.map(project => ({
+                    ...project,
+                    _meta_updated_at: new Date(project._meta_updated_at).toISOString(),
+                    _meta_created_at: new Date(project._meta_created_at).toISOString()
                   }));
 
-                  await io.to(`geohash:${geohash}`).emit('subscribe', [{ geohash }, treesToEmit, []])
+                  await io.to(`geohash:${geohash}`).emit('subscribe', [{ geohash }, projectsToEmit, []])
                 }
 
-                logger.info(`Subscription complete for geohash:${geohash} - Found ${nearbyTrees.length} trees, emitted ${individualTrees.length} trees`)
+                logger.info(`Subscription complete for geohash:${geohash} - Found ${nearbyProjects.length} projects, emitted ${individualProjects.length} projects`)
               } catch (error) {
                 logger.error('Error in subscription handler:', error)
                 throw error
@@ -239,24 +240,24 @@ export const treeRouter = j.router({
               }
             })
 
-            socket.on('deleteTree', async (data: {
+            socket.on('deleteProject', async (data: {
               id: string
             }) => {
-              logger.info(`Processing tree deletion: ${data.id}`)
+              logger.info(`Processing project deletion: ${data.id}`)
               const { db } = ctx
 
-              const [tree] = await db
+              const [project] = await db
                 .select()
                 .from(projects)
                 .where(eq(projects.id, data.id))
                 .limit(1)
       
-              if (!tree) {
-                throw new Error('Tree not found')
+              if (!project) {
+                throw new Error('Project not found')
               }
         
-              if (tree.status === 'live') {
-                throw new Error('Cannot delete a live tree')
+              if (project.status === 'active') {
+                throw new Error('Cannot delete an active project')
               }
         
               await db.delete(projects).where(eq(projects.id, data.id))
@@ -266,54 +267,63 @@ export const treeRouter = j.router({
               } = getTreeHelpers({ ctx, logger })
         
               // Emit to all parent geohashes
-              for (let precision = tree._loc_geohash.length; precision > 0; precision--) {
-                const parentHash = tree._loc_geohash.substring(0, precision)
+              for (let precision = project._loc_geohash.length; precision > 0; precision--) {
+                const parentHash = project._loc_geohash.substring(0, precision)
                 const activeSocketIds = await getActiveSubscribers(parentHash, socketId ? [socketId] : [])
                 for (const socketId of activeSocketIds) {
-                  await io.to(`geohash:${socketId}`).emit('deleteTree', { id: data.id })
+                  await io.to(`geohash:${socketId}`).emit('deleteProject', { id: data.id })
                 }
               }
 
               try {
                 await db.delete(projects).where(eq(projects.id, data.id))
               } catch (error) {
-                logger.error('Error in deleteTree handler:', error)
+                logger.error('Error in deleteProject handler:', error)
                 throw error
               }
             })
 
-            socket.on('setTree', async (data: {
+            socket.on('setProject', async (data: {
               id: string
               name: string
               description?: string
-              status: TreeStatus
+              status: ProjectStatus
               _loc_lat: number
               _loc_lng: number
               _meta_updated_by: string
               _meta_created_by: string
               _meta_updated_at: string
               _meta_created_at: string
+              _view_heading?: number
+              _view_pitch?: number
+              _view_zoom?: number
             }) => {
-              logger.info(`Processing tree update: ${data.name} (${data.id})`)
+              logger.info(`Processing project update: ${data.name} (${data.id})`)
               const { db } = ctx
 
               try {
                 const hash = geohash.encode(data._loc_lat, data._loc_lng)
-                const treeData = {
+                console.log(data)
+                console.log('created by', data._meta_created_by);
+                const projectData: InferInsertModel<typeof projects> = {
                   id: data.id,
                   name: data.name,
-                  description: data.description,
+                  description: data.description || null,
                   status: data.status,
+                  fundraiser_id: data._meta_created_by,
                   _loc_lat: data._loc_lat.toString(),
                   _loc_lng: data._loc_lng.toString(),
                   _loc_geohash: hash,
                   _meta_created_by: data._meta_created_by,
                   _meta_updated_by: data._meta_updated_by,
                   _meta_updated_at: new Date(data._meta_updated_at),
-                  _meta_created_at: new Date(data._meta_created_at)
+                  _meta_created_at: new Date(data._meta_created_at),
+                  _view_heading: data._view_heading?.toString() || null,
+                  _view_pitch: data._view_pitch?.toString() || null,
+                  _view_zoom: data._view_zoom?.toString() || null
                 } as const;
 
-                const existingTree = await db
+                const existingProject = await db
                   .select()
                   .from(projects)
                   .where(eq(projects.id, data.id))
@@ -321,32 +331,32 @@ export const treeRouter = j.router({
                   .then(rows => rows[0]);
 
                 let result;
-                if (existingTree) {
-                  const [updatedTree] = await db
+                if (existingProject) {
+                  const [updatedProject] = await db
                     .update(projects)
-                    .set(treeData)
+                    .set(projectData)
                     .where(eq(projects.id, data.id))
                     .returning();
-                  if (!updatedTree) throw new Error('Failed to update tree');
-                  result = updatedTree;
+                  if (!updatedProject) throw new Error('Failed to update project');
+                  result = updatedProject;
                 } else {
-                  const [newTree] = await db
+                  const [newProject] = await db
                     .insert(projects)
-                    .values(treeData)
+                    .values(projectData)
                     .returning();
-                  if (!newTree) throw new Error('Failed to insert tree');
-                  result = newTree;
+                  if (!newProject) throw new Error('Failed to insert project');
+                  result = newProject;
                 }
 
                 if (!result) {
-                  throw new Error('Failed to upsert tree')
+                  throw new Error('Failed to upsert project')
                 }
 
-                const treeToEmit: BaseTree = {
+                const projectToEmit: BaseProject = {
                   id: result.id,
                   name: result.name,
                   description: result?.description || undefined,
-                  status: result.status as TreeStatus,
+                  status: result.status as ProjectStatus,
                   _loc_lat: parseFloat(result._loc_lat),
                   _loc_lng: parseFloat(result._loc_lng),
                   _meta_created_by: result._meta_created_by,
@@ -355,7 +365,7 @@ export const treeRouter = j.router({
                   _meta_created_at: result._meta_created_at.toISOString()
                 }
 
-                const treeHash = hash
+                const projectHash = hash
                 socketId = getSocketId(socket)
 
                 // Track metrics for geohash emissions
@@ -364,13 +374,13 @@ export const treeRouter = j.router({
                 let totalSubscribers = 0
 
                 // Emit to all parent geohashes
-                for (let precision = treeHash.length; precision > 0; precision--) {
-                  const parentHash = treeHash.substring(0, precision)
+                for (let precision = projectHash.length; precision > 0; precision--) {
+                  const parentHash = projectHash.substring(0, precision)
                   const activeSocketIds = await getActiveSubscribers(parentHash, socketId ? [socketId] : [])
                   totalSubscribers += activeSocketIds.length
                   
                   if (activeSocketIds.length > 0) {
-                    await io.to(`geohash:${parentHash}`).emit('newTree', treeToEmit)
+                    await io.to(`geohash:${parentHash}`).emit('newProject', projectToEmit)
                     emittedCount++
                   } else {
                     skippedCount++
@@ -378,14 +388,14 @@ export const treeRouter = j.router({
                 }
 
                 logger.info(
-                  `Tree ${existingTree ? 'updated' : 'created'}: ${result.id} - ` +
+                  `Project ${existingProject ? 'updated' : 'created'}: ${result.id} - ` +
                   `Emitted to ${emittedCount} geohashes (${totalSubscribers} total subscribers), ` +
                   `skipped ${skippedCount} empty geohashes`
                 )
 
-                return treeToEmit
+                return projectToEmit
               } catch (error) {
-                logger.error('Error processing tree update:', error)
+                logger.error('Error processing project update:', error)
                 throw error
               }
             })

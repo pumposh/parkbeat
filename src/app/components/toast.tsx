@@ -5,10 +5,11 @@ type ToastProps = {
   message: string
   type?: 'success' | 'error' | 'info'
   duration?: number
+  persistent?: boolean
   onClose: () => void
 }
 
-export function Toast({ message, type = 'info', duration = 3000, onClose }: ToastProps) {
+export function Toast({ message, type = 'info', duration = 3000, persistent = false, onClose }: ToastProps) {
   const [isVisible, setIsVisible] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
   const [bottomOffset, setBottomOffset] = useState(16) // default 4rem
@@ -21,13 +22,14 @@ export function Toast({ message, type = 'info', duration = 3000, onClose }: Toas
       setBottomOffset(footerHeight + 8) // Add 16px padding above footer
     }
 
-    const timer = setTimeout(() => {
-      setIsVisible(false)
-      setTimeout(onClose, 300) // Wait for fade out animation
-    }, duration)
-
-    return () => clearTimeout(timer)
-  }, [duration, onClose])
+    if (!persistent) {
+      const timer = setTimeout(() => {
+        setIsVisible(false)
+        setTimeout(onClose, 300) // Wait for fade out animation
+      }, duration)
+      return () => clearTimeout(timer)
+    }
+  }, [duration, onClose, persistent])
 
   if (!isMounted || typeof window === 'undefined') return null
 
@@ -58,6 +60,18 @@ export function Toast({ message, type = 'info', duration = 3000, onClose }: Toas
       <div className="rounded-lg shadow-lg flex items-center gap-3 px-4 py-3 min-w-[320px] max-w-md">
         <i className={`fa-solid fa-${icon} text-lg ${colorClass}`} aria-hidden="true" />
         <p className="text-sm text-zinc-800 dark:text-zinc-200">{message}</p>
+        {persistent && (
+          <button
+            onClick={() => {
+              setIsVisible(false)
+              setTimeout(onClose, 300)
+            }}
+            className="ml-auto text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+            aria-label="Close"
+          >
+            <i className="fa-solid fa-xmark" aria-hidden="true" />
+          </button>
+        )}
       </div>
     </div>,
     document.getElementById('toast-portal') || document.body

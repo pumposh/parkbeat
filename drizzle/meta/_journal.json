@@ -64,6 +64,27 @@
       "when": 1739854212907,
       "tag": "0008_friendly_korvac",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1739904169291,
+      "tag": "0009_motionless_scourge",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1739904401214,
+      "tag": "0010_organic_warbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1739907507314,
+      "tag": "0011_colossal_warpath",
+      "breakpoints": true
     }
   ]
 }

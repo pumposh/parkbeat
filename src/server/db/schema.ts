@@ -13,6 +13,9 @@ export const posts = pgTable(
   ]
 )
 
+// Project status enum
+export const projectStatusEnum = pgEnum('project_status', ['draft', 'active', 'funded', 'completed', 'archived'])
+
 /** Renamed from 'trees' */
 export const projects = pgTable(
   "projects",
@@ -20,7 +23,8 @@ export const projects = pgTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     description: text("description"),
-    status: text("status").notNull(),
+    status: projectStatusEnum("status").notNull(),
+    fundraiser_id: text("fundraiser_id").notNull(),
     _loc_lat: numeric("_loc_lat").notNull(),
     _loc_lng: numeric("_loc_lng").notNull(),
     _loc_geohash: text("_loc_geohash").notNull(),
@@ -32,14 +36,13 @@ export const projects = pgTable(
     _view_pitch: numeric("_view_pitch"),
     _view_zoom: numeric("_view_zoom"),
   }, (table) => [
-    index("project_geohash_idx").on(table._loc_geohash)
+    index("project_geohash_idx").on(table._loc_geohash),
+    index("project_status_idx").on(table.status),
+    index("project_fundraiser_idx").on(table.fundraiser_id)
   ])
 
 // User roles enum
 export const userRoleEnum = pgEnum('user_role', ['donor', 'fundraiser', 'both'])
-
-// Project status enum
-export const projectStatusEnum = pgEnum('project_status', ['draft', 'active', 'funded', 'completed', 'archived'])
 
 // Project categories for better organization and discovery
 export const projectCategoryEnum = pgEnum('project_category', [
@@ -53,48 +56,21 @@ export const projectCategoryEnum = pgEnum('project_category', [
   'other'
 ])
 
-// Projects table
-export const projectsTable = pgTable(
-  "projects",
-  {
-    id: text("id").primaryKey(),
-    title: text("title").notNull(),
-    description: text("description").notNull(),
-    category: projectCategoryEnum("category").notNull(),
-    status: projectStatusEnum("status").notNull().default('draft'),
-    fundraiserId: text("fundraiser_id").notNull(),
-    targetAmount: numeric("target_amount").notNull(),
-    currentAmount: numeric("current_amount").default('0').notNull(),
-    _loc_lat: numeric("_loc_lat").notNull(),
-    _loc_lng: numeric("_loc_lng").notNull(),
-    _loc_geohash: text("_loc_geohash").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-    metadata: jsonb("metadata"), // For flexible additional data
-  },
-  (table) => [
-    index("project_fundraiser_idx").on(table.fundraiserId),
-    index("project_status_idx").on(table.status),
-    index("project_category_idx").on(table.category),
-    index("project_location_idx").on(table._loc_geohash)
-  ]
-)
-
 // Project Images table
 export const projectImages = pgTable(
   "project_images",
   {
     id: text("id").primaryKey(),
-    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+    project_id: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
     type: text("type").notNull(), // 'current', 'vision', 'progress'
-    imageUrl: text("image_url").notNull(),
-    aiGeneratedUrl: text("ai_generated_url"), // For AI-enhanced/modified versions
-    aiAnalysis: jsonb("ai_analysis"), // Store AI's image analysis results
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    image_url: text("image_url").notNull(),
+    ai_generated_url: text("ai_generated_url"), // For AI-enhanced/modified versions
+    ai_analysis: jsonb("ai_analysis"), // Store AI's image analysis results
+    created_at: timestamp("created_at").defaultNow().notNull(),
     metadata: jsonb("metadata"), // For flexible additional data
   },
   (table) => [
-    index("image_project_idx").on(table.projectId)
+    index("image_project_idx").on(table.project_id)
   ]
 )
 
@@ -103,17 +79,17 @@ export const aiRecommendations = pgTable(
   "ai_recommendations",
   {
     id: text("id").primaryKey(),
-    fundraiserId: text("fundraiser_id").notNull(),
+    fundraiser_id: text("fundraiser_id").notNull(),
     title: text("title").notNull(),
     description: text("description").notNull(),
     category: projectCategoryEnum("category").notNull(),
-    estimatedCost: jsonb("estimated_cost").notNull(), // Detailed cost breakdown
+    estimated_cost: jsonb("estimated_cost").notNull(), // Detailed cost breakdown
     confidence: numeric("confidence").notNull(), // AI's confidence in the recommendation
-    inspirationImages: jsonb("inspiration_images"), // Array of image URLs that inspired this
-    suggestedLocation: jsonb("suggested_location"), // Suggested coordinates and area
-    reasoningContext: text("reasoning_context").notNull(), // AI's explanation for the recommendation
+    inspiration_images: jsonb("inspiration_images"), // Array of image URLs that inspired this
+    suggested_location: jsonb("suggested_location"), // Suggested coordinates and area
+    reasoning_context: text("reasoning_context").notNull(), // AI's explanation for the recommendation
     status: text("status").notNull().default('pending'), // 'pending', 'accepted', 'rejected'
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    created_at: timestamp("created_at").defaultNow().notNull(),
     metadata: jsonb("metadata"),
   },
 )
@@ -123,17 +99,17 @@ export const costEstimates = pgTable(
   "cost_estimates",
   {
     id: text("id").primaryKey(),
-    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+    project_id: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
     version: numeric("version").notNull().default('1'),
-    totalEstimate: numeric("total_estimate").notNull(),
+    total_estimate: numeric("total_estimate").notNull(),
     breakdown: jsonb("breakdown").notNull(), // Detailed cost categories
     assumptions: jsonb("assumptions").notNull(), // AI's assumptions in making estimates
-    confidenceScores: jsonb("confidence_scores"), // AI confidence per category
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    confidence_scores: jsonb("confidence_scores"), // AI confidence per category
+    created_at: timestamp("created_at").defaultNow().notNull(),
     metadata: jsonb("metadata"),
   },
   (table) => [
-    index("estimate_project_idx").on(table.projectId),
+    index("estimate_project_idx").on(table.project_id),
     index("estimate_version_idx").on(table.version)
   ]
 )

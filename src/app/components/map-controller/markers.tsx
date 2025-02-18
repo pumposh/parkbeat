@@ -1,20 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import type { Tree } from '@/hooks/use-tree-sockets'
-import type { TreeGroup } from '@/lib/geo/threshGrouping'
+import type { Project, ProjectGroup } from '@/hooks/use-tree-sockets'
 import type maplibregl from 'maplibre-gl'
-import { TreeMarker } from './tree-marker'
+import { ProjectMarker } from './tree-marker'
 
 const PROXIMITY_THRESHOLD = 50; // pixels
 
 interface MarkersProps {
-  trees: Tree[]
-  treeGroups?: TreeGroup[]
+  projects: Project[]
+  projectGroups?: ProjectGroup[]
   map: maplibregl.Map
   onMarkerNearCenter: (isNear: boolean) => void
 }
 
-export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersProps) => {
+export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter }: MarkersProps) => {
   const [markers, setMarkers] = useState<{ [key: string]: { position: { x: number; y: number }, isNearCenter: boolean } }>({})
   const [groupMarkers, setGroupMarkers] = useState<{ [key: string]: { position: { x: number; y: number }, isNearCenter: boolean } }>({})
   const mapCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -34,9 +33,9 @@ export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersP
       let closestMarkerId: string | null = null;
       let minDistance = Infinity;
 
-      // Update individual tree markers
-      [...trees, ...(treeGroups || [])].forEach(tree => {
-        const point = map.project([tree._loc_lng, tree._loc_lat])
+      // Update individual project markers
+      [...projects, ...(projectGroups || [])].forEach(project => {
+        const point = map.project([project._loc_lng, project._loc_lat])
         const dx = point.x - mapCenter.current.x
         const dy = point.y - mapCenter.current.y
         const distance = Math.sqrt(dx * dx + dy * dy)
@@ -46,19 +45,19 @@ export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersP
           isAnyMarkerNearCenter = true
           if (distance < minDistance) {
             minDistance = distance
-            closestMarkerId = tree.id
+            closestMarkerId = project.id
           }
         }
 
-        const isTree = 'status' in tree;
+        const isProject = 'status' in project;
 
-        if (!isTree) {
-          newGroupMarkers[tree.id] = {
+        if (!isProject) {
+          newGroupMarkers[project.id] = {
             position: { x: point.x, y: point.y },
             isNearCenter  
           }
         } else {
-          newMarkers[tree.id] = {
+          newMarkers[project.id] = {
             position: { x: point.x, y: point.y },
             isNearCenter
           }
@@ -81,16 +80,16 @@ export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersP
       map.off('move', updateMarkerPositions)
       map.off('zoom', updateMarkerPositions)
     }
-  }, [trees, treeGroups, map, onMarkerNearCenter])
+  }, [projects, projectGroups, map, onMarkerNearCenter])
 
   return createPortal(
     <div className="absolute inset-0 pointer-events-none">
-      {/* Render tree group markers */}
-      {treeGroups?.map(group => {
+      {/* Render project group markers */}
+      {projectGroups?.map(group => {
         const marker = groupMarkers[group.id]
         if (!marker) return null
         return (
-          <TreeMarker
+          <ProjectMarker
             key={group.id}
             group={group}
             position={marker.position}
@@ -100,16 +99,16 @@ export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersP
         )
       })}
 
-      {/* Render individual tree markers */}
-      {trees.map(tree => {
-        const marker = markers[tree.id]
+      {/* Render individual project markers */}
+      {projects.map(project => {
+        const marker = markers[project.id]
         if (!marker) return null
         return (
-          <TreeMarker
-            key={tree.id}
-            tree={tree}
+          <ProjectMarker
+            key={project.id}
+            project={project}
             position={marker.position}
-            isNearCenter={marker.isNearCenter && focusedMarkerId === tree.id}
+            isNearCenter={marker.isNearCenter && focusedMarkerId === project.id}
             map={map}
           />
         )

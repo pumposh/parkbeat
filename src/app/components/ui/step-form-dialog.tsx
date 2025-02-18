@@ -19,6 +19,7 @@ interface CancelAction {
   deleteTitle: string
   subtitle: string
   onSaveAsDraft?: () => void
+  onDelete?: () => void
   isDeleting?: boolean
 }
 
@@ -28,6 +29,10 @@ interface StepFormDialogProps {
   steps: {
     title: string
     content: ReactNode
+    canProgress?: boolean
+    style?: {
+      fullHeight?: boolean
+    }
   }[]
   currentStep: number
   onStepChange?: (step: number) => void
@@ -38,6 +43,7 @@ interface StepFormDialogProps {
   canSubmit?: boolean
   cancelConfirmation?: CancelConfirmation
   cancelAction?: CancelAction
+  isDeleting?: boolean
 }
 
 interface StepState {
@@ -187,6 +193,13 @@ export function StepFormDialog({
 
   const handleStepChange = (nextStep: number) => {
     if (isTransitioning) return
+    
+    // Check if current step allows progression
+    const currentStepData = steps[currentStep]
+    if (nextStep > currentStep && currentStepData?.canProgress === false) {
+      return
+    }
+    
     onStepChange?.(nextStep)
   }
 
@@ -280,57 +293,69 @@ export function StepFormDialog({
                 </div>
               </div>
 
-              <div className="p-8 pt-0 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (currentStep > 0) {
-                      handleStepChange(currentStep - 1)
-                    } else {
-                      handleCancel()
-                    }
-                  }}
-                  disabled={isSubmitting || isTransitioning}
-                  className="flex-1 rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 flex items-center justify-center text-zinc-800 dark:text-zinc-100 text-xl disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label={currentStep > 0 ? "Previous step" : "Close"}
-                >
-                  <i 
-                    className={cn(
-                      "fa-solid",
-                      currentStep > 0 ? "fa-arrow-left" : "fa-xmark",
-                      "transition-opacity"
-                    )} 
-                    aria-hidden="true" 
-                  />
-                </button>
-                {isLastStep ? (
+              <div className="p-8 flex items-center justify-between gap-3">
+                {currentStep === 0 ? (
                   <button
                     type="button"
-                    onClick={onSubmit}
-                    disabled={isSubmitting || !canSubmit || isTransitioning}
-                    className="flex-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 h-12 flex items-center justify-center text-white text-xl disabled:cursor-not-allowed disabled:bg-emerald-500/50"
-                    aria-label="Submit"
+                    onClick={handleCancel}
+                    className="rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 flex items-center justify-center text-zinc-800 dark:text-zinc-100 text-xl disabled:cursor-not-allowed disabled:hover:ring-0 px-6"
+                    aria-label="Cancel"
                   >
-                    <i 
-                      className={cn(
-                        "fa-solid",
-                        isSubmitting ? "fa-circle-notch fa-spin" : "fa-check",
-                        "transition-opacity"
-                      )} 
-                      aria-hidden="true" 
-                    />
+                    <i className="fa-solid fa-xmark transition-opacity" aria-hidden="true" />
                   </button>
                 ) : (
                   <button
                     type="button"
-                    onClick={() => handleStepChange(currentStep + 1)}
-                    disabled={isSubmitting || isTransitioning}
-                    className="flex-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 h-12 flex items-center justify-center text-white text-xl disabled:cursor-not-allowed disabled:bg-emerald-500/50"
-                    aria-label="Next step"
+                    onClick={() => handleStepChange(currentStep - 1)}
+                    disabled={isTransitioning}
+                    className="rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 flex items-center justify-center text-zinc-800 dark:text-zinc-100 text-xl disabled:cursor-not-allowed disabled:hover:ring-0 px-6"
+                    aria-label="Previous step"
                   >
-                    <i className="fa-solid fa-arrow-right transition-opacity" aria-hidden="true" />
+                    <i className="fa-solid fa-arrow-left transition-opacity" aria-hidden="true" />
                   </button>
                 )}
+                <div className="flex items-center gap-3">
+                  {isLastStep ? (
+                    <button
+                      type="submit"
+                      onClick={onSubmit}
+                      disabled={!canSubmit || isSubmitting}
+                      className="rounded-lg bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 h-12 flex items-center justify-center text-white text-xl disabled:cursor-not-allowed disabled:bg-emerald-500/50 px-6"
+                      aria-label="Submit"
+                    >
+                      <i className={`fa-solid ${isSubmitting ? 'fa-circle-notch fa-spin' : 'fa-check'} transition-opacity ${isSubmitting || !canSubmit ? 'opacity-60' : 'opacity-100'}`} aria-hidden="true" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleStepChange(currentStep + 1)}
+                      disabled={isTransitioning || steps[currentStep]?.canProgress === false}
+                      className={cn(
+                        "rounded-lg h-12 flex items-center justify-center text-xl px-6 transition-all",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+                        "disabled:cursor-not-allowed",
+                        steps[currentStep]?.canProgress ? [
+                          "bg-emerald-500 hover:bg-emerald-600",
+                          "focus-visible:ring-emerald-500",
+                          "text-white",
+                          "disabled:bg-emerald-500/50"
+                        ] : [
+                          "frosted-glass",
+                          "focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100",
+                          "hover:ring-zinc-300 dark:hover:ring-zinc-100",
+                          "text-zinc-800 dark:text-zinc-100",
+                          "disabled:hover:ring-0"
+                        ]
+                      )}
+                      aria-label="Next step"
+                    >
+                      <i className={cn(
+                        "fa-solid fa-arrow-right transition-opacity",
+                        (isTransitioning || steps[currentStep]?.canProgress === false) ? "opacity-60" : "opacity-100"
+                      )} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -365,7 +390,7 @@ export function StepFormDialog({
                       </button>
                       <button
                         type="button"
-                        onClick={handleConfirmCancel}
+                        onClick={cancelAction.onDelete}
                         className="w-full rounded-lg bg-red-500 hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 h-12 flex items-center justify-center text-white"
                       >
                         {cancelAction.deleteTitle}

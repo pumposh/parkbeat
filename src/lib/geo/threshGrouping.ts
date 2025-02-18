@@ -1,4 +1,4 @@
-import { Tree } from "@/hooks/use-tree-sockets";
+import { Project } from "@/hooks/use-tree-sockets";  
 import geohash from 'ngeohash';
 
 export type BaseTreeGroup = {
@@ -17,7 +17,7 @@ export type TreeGroup = Omit<BaseTreeGroup, 'treeIds'> & {
 
 export type TreeGroupingResult = {
   groups: BaseTreeGroup[];
-  individualTrees: Tree[];
+  individualTrees: Project[];
 }
 
 // Constants for grouping logic
@@ -53,7 +53,7 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return Math.sqrt(x * x + y * y);
 }
 
-function findCentroid(trees: Tree[]): { lat: number; lng: number } {
+function findCentroid(trees: Project[]): { lat: number; lng: number } {
   const sum = trees.reduce((acc, tree) => ({
     lat: acc.lat + tree._loc_lat,
     lng: acc.lng + tree._loc_lng
@@ -65,7 +65,7 @@ function findCentroid(trees: Tree[]): { lat: number; lng: number } {
   };
 }
 
-export const getTreeGroupsViaPrecision = (trees: Tree[], targetPrecision: string): TreeGroupingResult => {
+export const getTreeGroupsViaPrecision = (trees: Project[], targetPrecision: string): TreeGroupingResult => {
   const result: TreeGroupingResult = {
     groups: [],
     individualTrees: []
@@ -92,9 +92,9 @@ export const getTreeGroupsViaPrecision = (trees: Tree[], targetPrecision: string
   const firstTree = sortedTrees[0];
   if (!firstTree) return result;
 
-  let currentGroup: Tree[] = [firstTree];
-  let lastTree: Tree = firstTree;
-  let ungroupedTrees: Tree[] = [];
+  let currentGroup: Project[] = [firstTree];
+  let lastTree: Project = firstTree;
+  let ungroupedTrees: Project[] = [];
 
   // Group trees based on proximity
   for (let i = 1; i < sortedTrees.length; i++) {

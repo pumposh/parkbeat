@@ -160,6 +160,28 @@ export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) 
   const [isValidating, setIsValidating] = useState(false)
   const { show } = useToast()
 
+  // Centralized error handling
+  const handleError = (error: ValidationError, options?: Partial<ValidationOptions>) => {
+    console.error('[StreetViewValidation] Error:', {
+      ...error,
+      timestamp: error.timestamp || new Date().toISOString()
+    })
+
+    // Call the error callback
+    if (options?.onError) {
+      options.onError(error)
+    }
+
+    // Only show toast for non-validation errors (since we handle those in the UI)
+    if (error.type !== 'invalid_input') {
+      show({
+        message: formatErrorMessage(error),
+        type: 'error',
+        duration: 3000
+      })
+    }
+  }
+
   const validateStreetView = async (
     params: StreetViewParams,
     overrideOptions?: Partial<ValidationOptions>
@@ -197,14 +219,14 @@ export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) 
           details: parseError,
           timestamp: new Date().toISOString()
         }
-        handleError(error)
+        handleError(error, options)
         return false
       }
 
       // Handle error responses
       if (!res.ok || isValidationError(response)) {
         const error = parseErrorResponse(response, res.status)
-        handleError(error)
+        handleError(error, options)
         return false
       }
 
@@ -232,7 +254,7 @@ export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) 
     } catch (error) {
       const parsedError = parseErrorResponse(error, 400)
       if (isValidationError(parsedError)) {
-        handleError(parsedError)
+        handleError(parsedError, options)
         return false
       }
       
@@ -242,28 +264,11 @@ export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) 
         details: error,
         timestamp: new Date().toISOString()
       }
-      handleError(validationError)
+      handleError(validationError, options)
       return false
     } finally {
       setIsValidating(false)
     }
-  }
-
-  // Centralized error handling
-  const handleError = (error: ValidationError) => {
-    console.error('[StreetViewValidation] Error:', {
-      ...error,
-      timestamp: error.timestamp || new Date().toISOString()
-    })
-
-    defaultOptions.onError?.(error)
-
-    // Show toast with appropriate message and duration
-    show({
-      message: formatErrorMessage(error),
-      type: error.type === 'invalid_input' ? 'info' : 'error',
-      duration: error.type === 'invalid_input' ? 5000 : 3000
-    })
   }
 
   return {

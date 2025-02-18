@@ -9,7 +9,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import './map-controller.css'
 import { generateId } from '@/lib/id'
 import { useLiveTrees } from '@/hooks/use-tree-sockets'
-import type { Tree } from '@/hooks/use-tree-sockets'
+import type { Project } from '@/hooks/use-tree-sockets'
 import { Markers } from './markers'
 import { getMapStyle, getIpLocation } from './utils'
 import type { MapControllerProps, IpLocation } from '@/types/types'
@@ -38,8 +38,8 @@ export const MapController = ({
   const [isButtonVisible, setIsButtonVisible] = useState(false)
   const [isButtonLeaving, setIsButtonLeaving] = useState(false)
   const [isMapMoving, _setIsMapMoving] = useState(false)
-  const { treeMap } = useLiveTrees()
-  const previousTrees = useRef<Tree[]>([])
+  const { projectMap } = useLiveTrees()
+  const previousProjects = useRef<Project[]>([])
   const updateTimeout = useRef<NodeJS.Timeout | undefined>(undefined)
   const [isMarkerNearCenter, setIsMarkerNearCenter] = useState(false)
   const [isControlsExpanded, setIsControlsExpanded] = useState(false)
@@ -250,18 +250,18 @@ export const MapController = ({
         type: 'geojson',
         data: {
           type: 'FeatureCollection',
-          features: Array.from(treeMap.values()).map((tree: Tree) => ({
+          features: Array.from(projectMap.values()).map((project: Project) => ({
             type: 'Feature' as const,
             geometry: {
               type: 'Point' as const,
-              coordinates: [tree._loc_lng, tree._loc_lat]
+              coordinates: [project._loc_lng, project._loc_lat]
             },
             properties: {
-              id: tree.id,
-              name: tree.name,
-              status: tree.status,
-              created_at: tree._meta_created_at ? tree._meta_created_at.toISOString() : null,
-              created_by: tree._meta_created_by
+              id: project.id,
+              name: project.name,
+              status: project.status,
+              created_at: project._meta_created_at ? project._meta_created_at.toISOString() : null,
+              created_by: project._meta_created_by
             }
           }))
         }
@@ -397,19 +397,19 @@ export const MapController = ({
       clearTimeout(updateTimeout.current)
     }
 
-    // Check if the trees have actually changed
-    const treesChanged = Array.from(treeMap.values()).length !== previousTrees.current.length ||
-      Array.from(treeMap.values()).some((tree, index) => {
-        const prevTree = previousTrees.current[index]
-        return !prevTree || 
-          tree.id !== prevTree.id ||
-          tree.status !== prevTree.status ||
-          tree._loc_lat !== prevTree._loc_lat ||
-          tree._loc_lng !== prevTree._loc_lng ||
-          tree.name !== prevTree.name
+    // Check if the projects have actually changed
+    const projectsChanged = Array.from(projectMap.values()).length !== previousProjects.current.length ||
+      Array.from(projectMap.values()).some((project, index) => {
+        const prevProject = previousProjects.current[index]
+        return !prevProject || 
+          project.id !== prevProject.id ||
+          project.status !== prevProject.status ||
+          project._loc_lat !== prevProject._loc_lat ||
+          project._loc_lng !== prevProject._loc_lng ||
+          project.name !== prevProject.name
       })
 
-    if (!treesChanged) return
+    if (!projectsChanged) return
 
     // Debounce the update
     updateTimeout.current = setTimeout(() => {
@@ -430,18 +430,18 @@ export const MapController = ({
         return
       }
 
-      const features = Array.from(treeMap.values()).map((tree: Tree) => ({
+      const features = Array.from(projectMap.values()).map((project: Project) => ({
         type: 'Feature' as const,
         geometry: { 
           type: 'Point' as const,
-          coordinates: [tree._loc_lng, tree._loc_lat]
+          coordinates: [project._loc_lng, project._loc_lat]
         },
         properties: {
-          id: tree.id,
-          name: tree.name,
-          status: tree.status,
-          created_at: tree._meta_created_at ? tree._meta_created_at.toISOString() : null,
-          created_by: tree._meta_created_by
+          id: project.id,
+          name: project.name,
+          status: project.status,
+          created_at: project._meta_created_at ? project._meta_created_at.toISOString() : null,
+          created_by: project._meta_created_by
         }
       }))
 
@@ -451,8 +451,8 @@ export const MapController = ({
         features
       })
 
-      // Update previous trees reference
-      previousTrees.current = Array.from(treeMap.values())
+      // Update previous projects reference
+      previousProjects.current = Array.from(projectMap.values())
     }, 100) // 100ms debounce
 
     return () => {
@@ -460,7 +460,7 @@ export const MapController = ({
         clearTimeout(updateTimeout.current)
       }
     }
-  }, [isMapLoaded, treeMap])
+  }, [isMapLoaded, projectMap])
 
   // Function to handle control expansion
   const handleExpandControls = () => {
@@ -630,7 +630,7 @@ export const MapController = ({
 
           {map.current && isMapLoaded && (
             <Markers
-              trees={Array.from(treeMap.values())} 
+              projects={Array.from(projectMap.values())} 
               map={map.current} 
               onMarkerNearCenter={setIsMarkerNearCenter}
             />

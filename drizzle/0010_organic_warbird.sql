@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "fundraiser_id" text NOT NULL;

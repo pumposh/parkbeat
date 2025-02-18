@@ -225,8 +225,16 @@
     @apply bg-yellow-100 text-yellow-800;
   }
 
-  .tree-info-panel .tree-status.live {
+  .tree-info-panel .tree-status.active {
     @apply bg-green-100 text-green-800;
+  }
+
+  .tree-info-panel .tree-status.funded {
+    @apply bg-blue-100 text-blue-800;
+  }
+
+  .tree-info-panel .tree-status.completed {
+    @apply bg-purple-100 text-purple-800;
   }
 
   .tree-info-panel .tree-status.archived {

@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query"
 import { client } from "@/lib/client"
 import { useWebSocket } from "jstack/client"
 import { generateId } from "@/lib/id"
-import type { TreeStatus, Tree as ServerTree } from "@/server/routers/tree-router"
+import type { ProjectStatus, Project as ServerProject } from "@/server/routers/tree-router"
 import { useEffect, useRef, useState, useCallback, useMemo, Dispatch } from "react"
 import { boundsToGeohash } from "@/lib/geo/geohash"
 import { useAuth } from "@clerk/nextjs"
@@ -12,15 +12,15 @@ import { WebSocketLogger } from "./client-log"
 import { NestedNonNullable } from "@/lib/nullable"
 
 // Define base tree type
-export type BaseTree = ServerTree
+export type BaseProject = ServerProject
 
 // Client-side tree type with Date objects
-export type Tree = BaseTree & {
+export type Project = BaseProject & {
   _meta_updated_at: Date
   _meta_created_at: Date
 }
 
-export type TreeGroup = {
+export type ProjectGroup = {
   id: string
   count: number
   _loc_lat: number
@@ -30,29 +30,25 @@ export type TreeGroup = {
 }
 
 // WebSocket payload type with string dates
-export type TreePayload = Omit<BaseTree, '_meta_updated_at' | '_meta_created_at'> & {
+export type ProjectPayload = Omit<BaseProject, '_meta_updated_at' | '_meta_created_at'> & {
   _meta_updated_at: string
   _meta_created_at: string
 }
 
 type ClientSocket = ReturnType<typeof client.tree.live.$ws>
 
-type TreeSocketInitializer = NonNullable<typeof client.tree.live.$ws>
-
-type TreeSocketConfig = Parameters<TreeSocketInitializer>[0]
-
 type SystemEventName = 'ping' | 'pong';
-type TreeEventName = 'setTree' | 'newTree' | 'subscribe' | 'unsubscribe' | 'deleteTree';
-type EventName = SystemEventName | TreeEventName;
+type ProjectEventName = 'setProject' | 'newProject' | 'subscribe' | 'unsubscribe' | 'deleteProject';
+type EventName = SystemEventName | ProjectEventName;
 
 type EventPayloadMap = {
-  setTree: TreePayload;
-  newTree: TreePayload;
-  subscribe: [{ geohash: string }, TreePayload[], TreeGroup[]];
+  setProject: ProjectPayload;
+  newProject: ProjectPayload;
+  subscribe: [{ geohash: string }, ProjectPayload[], ProjectGroup[]];
   unsubscribe: { geohash: string };
   ping: undefined;
   pong: undefined;
-  deleteTree: { id: string };
+  deleteProject: { id: string };
 };
 
 // Update ExpectedArgument type to use the EventPayloadMap
@@ -129,7 +125,7 @@ class WebSocketManager {
       this.ws.on('pong', noop);
 
       // Initialize all possible events with no-op handlers
-      const eventNames: EventName[] = ['setTree', 'newTree', 'subscribe', 'unsubscribe'];
+      const eventNames: EventName[] = ['setProject', 'newProject', 'subscribe', 'unsubscribe'];
       eventNames.forEach(eventName => {
         this.ws?.on(eventName, (_arg) => {
           console.log(`[WebSocketManager] Received ${eventName} event from server`);
@@ -412,43 +408,43 @@ const useTree: {
     Dispatch<ExpectedArgument<K>>
   ]
 } = {
-  setTree: (defaultValue: TreePayload) => {
+  setProject: (defaultValue: ProjectPayload) => {
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
-    const [value, setValue] = useState<TreePayload>(() => 
-      wsManager.getLatestState('setTree') ?? defaultValue
+    const [value, setValue] = useState<ProjectPayload>(() => 
+      wsManager.getLatestState('setProject') ?? defaultValue
     );
     
     useEffect(() => {
-      wsManager.registerHook('setTree', setValue);
-      return () => wsManager.unregisterHook('setTree', setValue);
+      wsManager.registerHook('setProject', setValue);
+      return () => wsManager.unregisterHook('setProject', setValue);
     }, [wsManager]);
     
     return [value, setValue];
   },
-  deleteTree: (defaultValue: { id: string }) => {
+  deleteProject: (defaultValue: { id: string }) => {
     const [value, setValue] = useState<{ id: string }>(defaultValue);
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
-      wsManager.registerHook('deleteTree', setValue);
-      return () => wsManager.unregisterHook('deleteTree', setValue);
+      wsManager.registerHook('deleteProject', setValue);
+      return () => wsManager.unregisterHook('deleteProject', setValue);
     }, [wsManager]);
     
     return [value, setValue];
   },
-  newTree: (defaultValue: TreePayload) => {
-    const [value, setValue] = useState<TreePayload>(defaultValue);
+  newProject: (defaultValue: ProjectPayload) => {
+    const [value, setValue] = useState<ProjectPayload>(defaultValue);
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
-      wsManager.registerHook('newTree', setValue);
-      return () => wsManager.unregisterHook('newTree', setValue);
+      wsManager.registerHook('newProject', setValue);
+      return () => wsManager.unregisterHook('newProject', setValue);
     }, [wsManager]);
     
     return [value, setValue];
   },
-  subscribe: (defaultValue: [{ geohash: string }, TreePayload[], TreeGroup[]]) => {
-    const [value, setValue] = useState<[{ geohash: string }, TreePayload[], TreeGroup[]]>(defaultValue);
+  subscribe: (defaultValue: [{ geohash: string }, ProjectPayload[], ProjectGroup[]]) => {
+    const [value, setValue] = useState<[{ geohash: string }, ProjectPayload[], ProjectGroup[]]>(defaultValue);
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => { 
@@ -489,10 +485,10 @@ export function useLiveTrees() {
   const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
 
   // Main tree storage with O(1) lookup by ID
-  const [treeMap, setTreeMap] = useState<Map<string, Tree>>(new Map());
+  const [projectMap, setProjectMap] = useState<Map<string, Project>>(new Map());
   
   // Store tree groups separately
-  const [treeGroups, setTreeGroups] = useState<TreeGroup[]>([]);
+  const [projectGroups, setProjectGroups] = useState<ProjectGroup[]>([]);
   
   // Current geohash subscription
   const [currentGeohash, setCurrentGeohash] = useState<string | null>(null);
@@ -503,10 +499,10 @@ export function useLiveTrees() {
   const { userId } = useAuth();
 
   // Use the tree hooks for state updates
-  const [newTreeData] = useTree.newTree({} as TreePayload);
-  const [setTreeData] = useTree.setTree({} as TreePayload);
+  const [newProjectData] = useTree.newProject({} as ProjectPayload);
+  const [setProjectData] = useTree.setProject({} as ProjectPayload);
   const [subscribeData] = useTree.subscribe([{ geohash: '' }, [], []]);
-  const [deleteTreeData] = useTree.deleteTree({ id: '' });
+  const [deleteProjectData] = useTree.deleteProject({ id: '' });
 
   // Register handler on mount and handle connection state
   useEffect(() => {
@@ -527,75 +523,75 @@ export function useLiveTrees() {
 
   // Handle new tree updates
   useEffect(() => {
-    if (!newTreeData || !('id' in newTreeData)) return;
-    if (newTreeData.id === "0") return;
+    if (!newProjectData || !('id' in newProjectData)) return;
+    if (newProjectData.id === "0") return;
 
-    const processedTree: Tree = {
-      ...newTreeData,
-      _meta_updated_at: new Date(newTreeData._meta_updated_at),
-      _meta_created_at: new Date(newTreeData._meta_created_at)
+    const processedProject: Project = {
+      ...newProjectData,
+      _meta_updated_at: new Date(newProjectData._meta_updated_at),
+      _meta_created_at: new Date(newProjectData._meta_created_at)
     };
     
-    setTreeMap(prev => {
+    setProjectMap(prev => {
       const next = new Map(prev);
-      next.set(processedTree.id, processedTree);
+      next.set(processedProject.id, processedProject);
       return next;
     });
     
-    logger.log('debug', `Tree ${processedTree.id} updated in client state via newTree`);
-  }, [newTreeData, logger]);
+    logger.log('debug', `Project ${processedProject.id} updated in client state via newProject`);
+  }, [newProjectData, logger]);
 
   // Handle set tree updates
   useEffect(() => {
-    if (!setTreeData || !('id' in setTreeData)) return;
-    if (setTreeData.id === "0") return;
+    if (!setProjectData || !('id' in setProjectData)) return;
+    if (setProjectData.id === "0") return;
 
-    const processedTree: Tree = {
-      ...setTreeData,
-      _meta_updated_at: new Date(setTreeData._meta_updated_at),
-      _meta_created_at: new Date(setTreeData._meta_created_at)
+    const processedProject: Project = {
+      ...setProjectData,
+      _meta_updated_at: new Date(setProjectData._meta_updated_at),
+      _meta_created_at: new Date(setProjectData._meta_created_at)
     };
     
-    setTreeMap(prev => {
+    setProjectMap(prev => {
       const next = new Map(prev);
-      next.set(processedTree.id, processedTree);
+      next.set(processedProject.id, processedProject);
       return next;
     });
     
-    logger.log('debug', `Tree ${processedTree.id} updated in client state via setTree`);
-  }, [setTreeData, logger]);
+    logger.log('debug', `Project ${processedProject.id} updated in client state via setProject`);
+  }, [setProjectData, logger]);
 
   // Handle delete tree updates
   useEffect(() => {
-    if (!deleteTreeData || !('id' in deleteTreeData)) return;
-    if (deleteTreeData.id === "0") return;
+    if (!deleteProjectData || !('id' in deleteProjectData)) return;
+    if (deleteProjectData.id === "0") return;
 
-    setTreeMap(prev => {
+    setProjectMap(prev => {
       const next = new Map(prev);
-      next.delete(deleteTreeData.id);
+      next.delete(deleteProjectData.id);
       return next;
     });
 
-    logger.log('debug', `Tree ${deleteTreeData.id} removed from client state via deleteTree`);
-  }, [deleteTreeData, logger]);
+    logger.log('debug', `Project ${deleteProjectData.id} removed from client state via deleteProject`);
+  }, [deleteProjectData, logger]);
 
   // Handle subscription updates
   useEffect(() => {
     if (!subscribeData || !Array.isArray(subscribeData)) return;
     
-    const [{ geohash }, trees, groups] = subscribeData;
-    logger.log('info', `[subscribe] Processing subscription data for geohash: ${geohash} (${trees.length} trees, ${groups.length} groups)`);
+    const [{ geohash }, projects, groups] = subscribeData;
+    logger.log('info', `[subscribe] Processing subscription data for geohash: ${geohash} (${projects.length} projects, ${groups.length} groups)`);
 
-      if (Array.isArray(trees)) {
-        const processedTrees = trees.map(tree => ({
-          ...tree,
-          _meta_updated_at: new Date(tree._meta_updated_at),
-          _meta_created_at: new Date(tree._meta_created_at)
+    if (Array.isArray(projects)) {
+      const processedProjects = projects.map(project => ({
+        ...project,
+        _meta_updated_at: new Date(project._meta_updated_at),
+        _meta_created_at: new Date(project._meta_created_at)
       }));
 
-        setTreeMap(prev => {
+        setProjectMap(prev => {
         const next = new Map(prev);
-        processedTrees.forEach(tree => next.set(tree.id, tree));
+        processedProjects.forEach(project => next.set(project.id, project));
         return next;
       });
 
@@ -603,8 +599,8 @@ export function useLiveTrees() {
     }
 
     if (Array.isArray(groups)) {
-      setTreeGroups(groups);
-      logger.log('debug', `Updated tree groups: ${groups.length} groups`);
+      setProjectGroups(groups);
+      logger.log('debug', `Updated project groups: ${groups.length} groups`);
     }
   }, [subscribeData, logger]);
 
@@ -654,15 +650,15 @@ export function useLiveTrees() {
   }, [currentGeohash]);
 
 
-  const { mutate: deleteTree, isPending: isDeletePending } = useMutation({
+  const { mutate: deleteProject, isPending: isDeletePending } = useMutation({
     mutationFn: async ({ id }: { id: string }) => {
-      await wsManager.emit('deleteTree', { id });
+      await wsManager.emit('deleteProject', { id });
       return { id };
     }
   })
 
   // Tree mutation handler
-  const { mutate: setTree, isPending } = useMutation({
+  const { mutate: setProject, isPending } = useMutation({
     mutationFn: async ({
       id,
       name,
@@ -676,14 +672,14 @@ export function useLiveTrees() {
       description?: string
       lat: number
       lng: number
-      status: TreeStatus
+      status: ProjectStatus
     }) => {
-      const treeId = id || generateId();
+      const projectId = id || generateId();
       const now = new Date();
-      logger.log('info', `Creating/updating tree: ${name} at ${lat},${lng}`);
+      logger.log('info', `Creating/updating project: ${name} at ${lat},${lng}`);
       
-      const treeData: TreePayload = {
-        id: treeId,
+      const projectData: ProjectPayload = {
+        id: projectId,
         name,
         description,
         status,
@@ -711,9 +707,9 @@ export function useLiveTrees() {
       }
       
       // Emit with immediate timing
-      const success = wsManager.emit('setTree', treeData);
+      const success = wsManager.emit('setProject', projectData);
       if (!success) {
-        throw new Error('Failed to send tree data - WebSocket not connected');
+        throw new Error('Failed to send project data - WebSocket not connected');
       }
       
       return { name, lat, lng, status };
@@ -735,10 +731,10 @@ export function useLiveTrees() {
   }, []);
 
   return {
-    treeMap,
-    treeGroups,
-    setTree,
-    deleteTree,
+    projectMap,
+    projectGroups,
+    setProject,
+    deleteProject,
     isPending,
     isDeletePending,
     connectionState

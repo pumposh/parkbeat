@@ -1,4 +1,4 @@
-import { aiRecommendations, costEstimates, projectImages } from "@/server/db/schema"
+import { aiRecommendations, costEstimates, projectImages, projects } from "@/server/db/schema"
 import { desc, eq, and } from "drizzle-orm"
 import { z } from "zod"
 import { j, publicProcedure } from "../jstack"
@@ -173,7 +173,7 @@ export const aiRouter = j.router({
       try {
         console.log('Starting analyzeImage with input:', input)
         const { db } = ctx
-        const { imageSource, projectId, context, fundraiserId, id } = input
+        const { imageSource, projectId, context, fundraiserId } = input
         const { GOOGLE_AI_API_KEY, GOOGLE_MAPS_API_KEY } = env<Env>(c)
         
         if (!GOOGLE_AI_API_KEY || !GOOGLE_MAPS_API_KEY) {
@@ -220,12 +220,22 @@ export const aiRouter = j.router({
 
         // Store image analysis if associated with a project
         if (projectId) {
+          const [project] = await db
+            .select()
+            .from(projects)
+            .where(eq(projects.id, projectId))
+            .limit(1)
+
+          if (!project) {
+            throw new Error('Project not found')
+          }
+
           await db.insert(projectImages).values({
             id: generateId(),
-            projectId,
+            project_id: projectId,
             type: 'current',
-            imageUrl,
-            aiAnalysis: { 
+            image_url: imageUrl,
+            ai_analysis: { 
               analysis: result.analysis,
               streetViewParams: imageSource.type === 'streetView' ? imageSource.params : undefined
             },
@@ -239,34 +249,34 @@ export const aiRouter = j.router({
         const existingRecommendationResult = await db
           .select()
           .from(aiRecommendations)
-          .where(eq(aiRecommendations.fundraiserId, fundraiserId))
+          .where(eq(aiRecommendations.fundraiser_id, fundraiserId))
         const existingRecommendation = existingRecommendationResult?.[0]
 
         // Create recommendation from analysis
         const recommendation = {
-          id: id || generateId(),
+          id: input.id || generateId(),
           title: result.recommendation?.title || 'Project Recommendation',
           category: (result.recommendation?.projectTypes[0] || 'other') as ProjectCategory,
-          estimatedCost: { 
+          estimated_cost: { 
             total: result.recommendation?.estimatedCosts.total || 0,
             ...result.recommendation?.estimatedCosts
           },
           description: result.recommendation?.description || result.analysis,
           confidence: '0.8',
-          suggestedLocation: imageSource.type === 'streetView' ? {
+          suggested_location: imageSource.type === 'streetView' ? {
             lat: imageSource.params.lat,
             lng: imageSource.params.lng,
             heading: imageSource.params.heading,
             pitch: imageSource.params.pitch,
             zoom: imageSource.params.zoom,
-          } : null,
-          inspirationImages: [
-            ...(Object.values(existingRecommendation?.inspirationImages ?? [])),
+          } : null, 
+          inspiration_images: [
+            ...(Object.values(existingRecommendation?.inspiration_images ?? [])),
             imageUrl,
           ],
-          reasoningContext: result.analysis,
+          reasoning_context: result.analysis,
           status: 'pending',
-          fundraiserId,
+          fundraiser_id: fundraiserId,
         }
 
         // Store recommendation
@@ -276,7 +286,7 @@ export const aiRouter = j.router({
               ...recommendation,
               metadata: {
                 ...(existingRecommendation.metadata ?? {}),
-                updatedAt: new Date()
+                updated_at: new Date()
               }
             })
             .where(eq(aiRecommendations.id, existingRecommendation.id))
@@ -386,12 +396,12 @@ export const aiRouter = j.router({
         try {
           await db.insert(projectImages).values({
             id: generateId(),
-            projectId,
+            project_id: projectId,
             type: 'initial',
-            imageUrl,
-            aiAnalysis: { 
+            image_url: imageUrl,
+            ai_analysis: { 
               description: validationResult.description,
-              streetViewParams: imageSource.type === 'streetView' ? imageSource.params : undefined
+              street_view_params: imageSource.type === 'streetView' ? imageSource.params : undefined
             },
             metadata: { 
               validatedAt: new Date().toISOString(),
@@ -442,8 +452,8 @@ export const aiRouter = j.router({
         const initialImage = await db
           .select()
           .from(projectImages)
-          .where(eq(projectImages.projectId, projectId))
-          .orderBy(desc(projectImages.createdAt))
+          .where(eq(projectImages.project_id, projectId))
+          .orderBy(desc(projectImages.created_at))
           .limit(1)
 
         if (!initialImage[0]) {
@@ -464,25 +474,25 @@ export const aiRouter = j.router({
         const result = await agent.generateVision({
           imageUrl,
           desiredChanges,
-          initialDescription: (initialImage[0].aiAnalysis as { description: string }).description
+          initialDescription: (initialImage[0].ai_analysis as { description: string }).description
         })
 
         // Store the vision
         const newProjectImage = {
           id: generateId(),
-          projectId,
+          project_id: projectId,
           type: 'vision',
-          imageUrl,
-          aiGeneratedUrl: result.vision.imageUrl || null,
+          image_url: imageUrl,
+          ai_generated_url: result.vision.imageUrl || null,
           aiAnalysis: {
             description: result.vision.description,
             existingElements: result.vision.existingElements,
             newElements: result.vision.newElements,
-            communityBenefits: result.vision.communityBenefits,
-            maintenanceConsiderations: result.vision.maintenanceConsiderations,
-            imagePrompt: result.vision.imagePrompt,
-            desiredChanges,
-            streetViewParams: currentImageSource.type === 'streetView' ? currentImageSource.params : undefined
+            community_benefits: result.vision.communityBenefits,
+            maintenance_considerations: result.vision.maintenanceConsiderations,
+            image_prompt: result.vision.imagePrompt,
+            desired_changes: desiredChanges,
+            street_view_params: currentImageSource.type === 'streetView' ? currentImageSource.params : undefined
           }
         }
         await db.insert(projectImages).values(newProjectImage)
@@ -512,12 +522,12 @@ export const aiRouter = j.router({
         // Store the estimate
         const newCostEstimate: InferInsertModel<typeof costEstimates> = {
           id: generateId(),
-          projectId,
+          project_id: projectId,
           version: '1',
-          totalEstimate: result.estimate.totalEstimate.toString(),
+          total_estimate: result.estimate.totalEstimate.toString(),
           breakdown: result.estimate.breakdown,
           assumptions: result.estimate.assumptions,
-          confidenceScores: { overall: result.estimate.confidenceScore }
+          confidence_scores: { overall: result.estimate.confidenceScore }
         }
         await db.insert(costEstimates).values(newCostEstimate)
 
@@ -544,7 +554,7 @@ export const aiRouter = j.router({
           .select()
           .from(aiRecommendations)
 
-        const conditions = [eq(aiRecommendations.fundraiserId, 'user123')] // TODO: Get from auth
+        const conditions = [eq(aiRecommendations.fundraiser_id, 'user123')] // TODO: Get from auth
 
         if (status) {
           conditions.push(eq(aiRecommendations.status, status))
@@ -555,7 +565,7 @@ export const aiRouter = j.router({
 
         const recommendations = await baseQuery
           .where(and(...conditions))
-          .orderBy(desc(aiRecommendations.createdAt))
+          .orderBy(desc(aiRecommendations.created_at))
           .limit(limit)
 
         return c.json({ recommendations })

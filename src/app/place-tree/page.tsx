@@ -5,7 +5,7 @@ import { useLiveTrees } from "@/hooks/use-tree-sockets"
 import { cn } from "@/lib/utils"
 
 export default function PlaceTreePage() {
-  const { treeMap, setTree, isPending } = useLiveTrees()
+  const { projectMap, setProject, isPending } = useLiveTrees()
 
   if (isPending) {
     return <div>Loading...</div>

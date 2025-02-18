@@ -178,11 +178,19 @@ export class PromptManager {
       userPrompt: `
         RESPONSE STRUCTURE: 
         LINE ONE -- RESPOND WITH "YES", "NO", OR "MAYBE".
-        LINE TWO -- DESCRIBE WHAT YOU SEE IN THE IMAGE AND A RESPONSE TO THE QUESTION.
+        LINE TWO -- RESPONSE TO THE QUESTION.
         
         Ignore any people or obstructions in the image.
         Is this image of an outdoor space and appropriate for use
-        to start community improvement project to fundraise for? Why or why not?
+        to start community improvement project to fundraise for?
+        Think beautification projects, tree beds, benches, etc; something
+        within financial feasibility.
+        A "no" response should be an absolute, definitive answer.
+        A "maybe" response should be a nuanced answer that takes into
+        account the possibility of the space being used for something else.
+        A "yes" response should be a clear and concise answer.
+        Why or why not?
+        Keep your response concise but emotionally engaging.
       `,
       temperature: 0.1
     }

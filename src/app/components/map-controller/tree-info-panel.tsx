@@ -1,20 +1,19 @@
 import { cn } from '@/lib/utils'
 import { capitalize } from '@/lib/str'
-import type { Tree } from '@/hooks/use-tree-sockets'
-import type { TreeGroup } from '@/lib/geo/threshGrouping'
+import type { Project, ProjectGroup } from '@/hooks/use-tree-sockets'
 import { useUser } from '@clerk/nextjs'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
 import { useToast } from '../toast'
 
-interface TreeInfoPanelProps {
-  tree?: Tree
-  group?: TreeGroup
+interface ProjectInfoPanelProps {
+  project?: Project
+  group?: ProjectGroup
   position: { x: number; y: number }
   isVisible: boolean
 }
 
-export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPanelProps) => {
+export const ProjectInfoPanel = ({ project, group, position, isVisible }: ProjectInfoPanelProps) => {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -39,21 +38,21 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
   // Don't render the panel if not on the projects route
   if (!isProjectsRoute) return null
 
-  const formattedDate = tree?._meta_created_at ? new Intl.DateTimeFormat('en-US', {
+  const formattedDate = project?._meta_created_at ? new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric'
-  }).format(tree._meta_created_at) : null
+  }).format(project._meta_created_at) : null
 
   const handleEdit = () => {
-    if (!tree) return
+    if (!project) return
     setIsNavigating(true)
-    router.push(`/projects/${tree.id}?lat=${tree._loc_lat}&lng=${tree._loc_lng}`)
+    router.push(`/projects/${project.id}?lat=${project._loc_lat}&lng=${project._loc_lng}`)
 
     /** Timeout in case of SSR issues */
     timeout.current = setTimeout(() => {
       show({
-        message: 'There was an issue loading this tree\'s details. Please try again.',
+        message: 'There was an issue loading this project\'s details. Please try again.',
         type: 'error',
       })
       setIsNavigating(false)
@@ -67,7 +66,7 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
         "tree-info-panel frosted-glass",
         isVisible && "visible",
         "text-zinc-800 dark:text-zinc-50",
-        (isAdmin || (tree?.status === 'live')) && "cursor-pointer hover:scale-[1.02] active:scale-[0.98]",
+        (isAdmin || (project?.status === 'active')) && "cursor-pointer hover:scale-[1.02] active:scale-[0.98]",
         isNavigating && ["navigating"]
       )}
       style={{ 
@@ -77,7 +76,7 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
         transform: `translate(-50%, calc(-100% - 48px))`,
       }}
       onClick={() => {
-        if (isAdmin || tree?.status === 'live') {
+        if (isAdmin || project?.status === 'active') {
           handleEdit()
         }
       }}
@@ -88,21 +87,23 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
             <i className="fa-solid fa-layer-group" />
             {group.count} trees
           </div>
-        ) : tree && (
+        ) : project && (
           <>
             <div className={cn(
               "tree-status",
-              tree.status
+              project.status
             )}>
               <i className={cn(
                 "fa-solid",
                 {
-                  'fa-seedling': tree.status === 'draft',
-                  'fa-tree': tree.status === 'live',
-                  'fa-archive': tree.status === 'archived'
+                  'fa-seedling': project.status === 'draft',
+                  'fa-tree': project.status === 'active',
+                  'fa-archive': project.status === 'archived',
+                  'fa-coins': project.status === 'funded',
+                  'fa-check-circle': project.status === 'completed'
                 }
               )} />
-              {capitalize(tree.status)}
+              {capitalize(project.status)}
             </div>
             {isAdmin && (
               <div
@@ -114,7 +115,7 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
               >
                 {isNavigating ? (
                   <i className="fa-solid fa-circle-notch fa-spin text-sm" />
-                ) : tree.status === 'live' ? (
+                ) : project.status === 'active' ? (
                   <i className="fa-solid fa-chevron-right text-sm" />
                 ) : (
                   <i className="fa-solid fa-pencil text-sm" />
@@ -128,11 +129,11 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
         {group ? (
           [group.city, group.state].filter(Boolean).join(', ') || 'Unknown Location'
         ) : (
-          tree?.name || 'New tree'
+          project?.name || 'New project'
         )}
       </div>
-      {tree && (
-        <div className="tree-meta">Started {formattedDate}</div>
+      {project && (
+        <div className="project-meta">Started {formattedDate}</div>
       )}
     </div>
   )

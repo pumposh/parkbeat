@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useMap } from "@/hooks/use-map"
-import { Tree, useLiveTrees } from "../../../hooks/use-tree-sockets"
+import { Project, useLiveTrees } from "../../../hooks/use-tree-sockets"
 import { useRouter } from "next/navigation"
 import type { LocationInfo } from "@/types/types"
 import { useParams } from "next/navigation"
@@ -25,54 +25,54 @@ export const PlaceTreeForm = (props: {
   lat?: number
   lng?: number
   info?: LocationInfo
-  tree?: Tree
+  project?: Project
   onClose?: () => void
 }) => {
   const router = useRouter()
   const params = useParams()
-  const treeId = params.treeId as string
+  const projectId = params.treeId as string
   const { map, isLoaded, error } = useMap()
-  const { setTree, isPending, treeMap } = useLiveTrees()
+  const { setProject, isPending, projectMap } = useLiveTrees()
   const { show: showToast } = useToast()
-  const isReadOnly = props.tree?.status === 'live'
+  const isReadOnly = props.project?.status === 'active'
 
   // Add initialization tracking
   const [isInitialized, setIsInitialized] = useState(false)
-  const existingTreeRef = useRef<typeof treeMap.get extends (key: any) => infer R ? R : never>(
-    treeMap.get(treeId) || props.tree
+  const existingProjectRef = useRef<typeof projectMap.get extends (key: any) => infer R ? R : never>(
+    projectMap.get(projectId) || props.project
   )
 
   // Form state
   const [formData, setFormData] = useState<TreeBedFormData>({
-    name: existingTreeRef.current?.name || props.info?.address?.street || "",
-    description: existingTreeRef.current?.description || "",
+    name: existingProjectRef.current?.name || props.info?.address?.street || "",
+    description: existingProjectRef.current?.description || "",
     location: null  // Start with no location to prevent premature updates
   })
   const [isLoadingLocation, setIsLoadingLocation] = useState(false)
   
   // Load or initialize tree data
   useEffect(() => {
-    const existingTree = treeMap.get(treeId)
-    console.log('[PlaceTreeForm] existingTree', existingTree)
+    const existingProject = projectMap.get(projectId)
+    console.log('[PlaceTreeForm] existingProject', existingProject)
     
     // Store the existing tree reference for use in other effects
-    existingTreeRef.current = existingTree || undefined
+    existingProjectRef.current = existingProject || undefined
     
-    const initializeTree = async () => {
-      if (existingTree) {
-        console.log('[PlaceTreeForm] Loading existing tree:', existingTree.id)
-        // Load existing tree data
+    const initializeProject = async () => {
+      if (existingProject) {
+        console.log('[PlaceTreeForm] Loading existing project:', existingProject.id)
+        // Load existing project data
         setFormData({
-          name: existingTree.name,
-          description: existingTree.description || "",
+          name: existingProject.name,
+          description: existingProject.description || "",
           location: { 
-            lat: existingTree._loc_lat,
-            lng: existingTree._loc_lng
+            lat: existingProject._loc_lat,
+            lng: existingProject._loc_lng
           }
         })
       } else if (props.lat && props.lng && !isInitialized) {
-        // Only initialize new tree with coordinates if not already initialized
-        console.log('[PlaceTreeForm] Initializing new tree with coordinates')
+        // Only initialize new project with coordinates if not already initialized
+        console.log('[PlaceTreeForm] Initializing new project with coordinates')
         setFormData(prev => ({
           ...prev,
           location: {
@@ -84,8 +84,8 @@ export const PlaceTreeForm = (props: {
       setIsInitialized(true)
     }
 
-    initializeTree()
-  }, [treeMap, treeId, props.lat, props.lng])
+    initializeProject()
+  }, [projectMap, projectId, props.lat, props.lng])
 
   // Fetch location info when coordinates change
   useEffect(() => {
@@ -107,14 +107,14 @@ export const PlaceTreeForm = (props: {
           name: newName
         }))
 
-        // Only set status to draft for new trees
-        const status = props.tree?.status
-          || existingTreeRef.current?.status
+        // Only set status to draft for new projects
+        const status = props.project?.status
+          || existingProjectRef.current?.status
           || 'draft'
 
         // Sync with server
-        await setTree({
-          id: treeId,
+        await setProject({
+          id: projectId,
           name: newName,
           lat: formData.location!.lat,
           lng: formData.location!.lng,
@@ -134,7 +134,7 @@ export const PlaceTreeForm = (props: {
       cancelled = true
       clearTimeout(timeoutId)
     }
-  }, [formData.location, props.info, treeId, setTree])
+  }, [formData.location, props.info, projectId, setProject])
 
   // Handle form changes
   const debounceControl = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -153,44 +153,44 @@ export const PlaceTreeForm = (props: {
     debounceControl.current = setTimeout(async () => {
       // if ()
       try {
-        await setTree({
-          id: treeId,
+        await setProject({
+          id: projectId,
           name: dataToWrite.current.name || formData.name,
           description: dataToWrite.current.description || formData.description,
           lat: formData.location?.lat || props.lat || 0,
           lng: formData.location?.lng || props.lng || 0,
-          // Preserve existing status or default to draft for new trees
-          status: props.tree?.status || existingTreeRef.current?.status || 'draft'
+          // Preserve existing status or default to draft for new projects
+          status: props.project?.status || existingProjectRef.current?.status || 'draft'
         })
         // Clear the data to write after successful save
         dataToWrite.current = {}
       } catch (error) {
-        console.error('[PlaceTreeForm] Failed to save tree:', error)
+        console.error('[PlaceTreeForm] Failed to save project:', error)
       }
     }, 400)
-  }, [treeId, props.lat, props.lng, setTree])
+  }, [projectId, props.lat, props.lng, setProject])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!map || !formData.location) return
     
     try {
-      await setTree({
-        id: treeId,
+      await setProject({
+        id: projectId,
         name: formData.name,
         lat: formData.location.lat,
         lng: formData.location.lng,
-        status: 'live'
+        status: 'active'
       })
       showToast({
-        message: 'Tree bed created successfully',
+        message: 'Project created successfully',
         type: 'success'
       })
       props.onClose?.()
     } catch (err) {
-      console.error("Failed to create tree bed:", err)
+      console.error("Failed to create project:", err)
       showToast({
-        message: 'Failed to create tree bed',
+        message: 'Failed to create project',
         type: 'error'
       })
     }
@@ -234,9 +234,9 @@ export const PlaceTreeForm = (props: {
             <StreetViewCard
               lat={formData.location.lat}
               lng={formData.location.lng}
-              heading={existingTreeRef.current?._view_heading}
-              pitch={existingTreeRef.current?._view_pitch}
-              zoom={existingTreeRef.current?._view_zoom}
+              heading={existingProjectRef.current?._view_heading}
+              pitch={existingProjectRef.current?._view_pitch}
+              zoom={existingProjectRef.current?._view_zoom}
               isLoading={isLoadingLocation}
             />
           </div>

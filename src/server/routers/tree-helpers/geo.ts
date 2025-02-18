@@ -1,18 +1,9 @@
-import { Tree } from "@/hooks/use-tree-sockets";
+import { Project, ProjectGroup } from "@/hooks/use-tree-sockets";
 import geohash from 'ngeohash';
 
-type TreeGroup = {
-  id: string;
-  count: number;
-  _loc_lat: number;
-  _loc_lng: number;
-  city: string;
-  state: string;
-}
-
-type TreeGroupingResult = {
-  groups: TreeGroup[];
-  individualTrees: Tree[];
+type ProjectGroupingResult = {
+  groups: ProjectGroup[];
+  individualProjects: Project[];
 }
 
 // Constants for grouping logic
@@ -27,7 +18,7 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return Math.sqrt(x * x + y * y);
 }
 
-function findCentroid(trees: Tree[]): { lat: number; lng: number } {
+function findCentroid(trees: Project[]): { lat: number; lng: number } {
   const sum = trees.reduce((acc, tree) => ({
     lat: acc.lat + tree._loc_lat,
     lng: acc.lng + tree._loc_lng
@@ -39,10 +30,10 @@ function findCentroid(trees: Tree[]): { lat: number; lng: number } {
   };
 }
 
-export const getTreeGroupsViaPrecision = (trees: Tree[], targetPrecision: string): TreeGroupingResult => {
-  const result: TreeGroupingResult = {
+export const getTreeGroupsViaPrecision = (trees: Project[], targetPrecision: string): ProjectGroupingResult => {
+  const result: ProjectGroupingResult = {
     groups: [],
-    individualTrees: []
+    individualProjects: []
   };
   
   if (!trees.length) return result;
@@ -51,7 +42,7 @@ export const getTreeGroupsViaPrecision = (trees: Tree[], targetPrecision: string
   if (targetPrecision.length > GROUP_PRECISION_THRESHOLD) {
     return {
       groups: [],
-      individualTrees: trees
+      individualProjects: trees
     };
   }
 
@@ -66,9 +57,9 @@ export const getTreeGroupsViaPrecision = (trees: Tree[], targetPrecision: string
   const firstTree = sortedTrees[0];
   if (!firstTree) return result;
 
-  let currentGroup: Tree[] = [firstTree];
-  let lastTree: Tree = firstTree;
-  let ungroupedTrees: Tree[] = [];
+  let currentGroup: Project[] = [firstTree];
+  let lastTree: Project = firstTree;
+  let ungroupedProjects: Project[] = [];
 
   // Group trees based on proximity
   for (let i = 1; i < sortedTrees.length; i++) {
@@ -106,11 +97,11 @@ export const getTreeGroupsViaPrecision = (trees: Tree[], targetPrecision: string
           });
         } else {
           // If group doesn't match target precision, add trees individually
-          ungroupedTrees.push(...currentGroup);
+          ungroupedProjects.push(...currentGroup);
         }
       } else {
         // Add small groups to ungrouped trees
-        ungroupedTrees.push(...currentGroup);
+        ungroupedProjects.push(...currentGroup);
       }
       
       // Start a new group
@@ -135,14 +126,14 @@ export const getTreeGroupsViaPrecision = (trees: Tree[], targetPrecision: string
         state: "Unknown"
       });
     } else {
-      ungroupedTrees.push(...currentGroup);
+      ungroupedProjects.push(...currentGroup);
     }
   } else {
-    ungroupedTrees.push(...currentGroup);
+    ungroupedProjects.push(...currentGroup);
   }
 
   // Add all ungrouped trees to the result
-  result.individualTrees = ungroupedTrees;
+  result.individualProjects = ungroupedProjects;
 
   return result;
 }
