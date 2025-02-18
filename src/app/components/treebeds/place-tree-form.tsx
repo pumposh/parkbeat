@@ -234,6 +234,9 @@ export const PlaceTreeForm = (props: {
             <StreetViewCard
               lat={formData.location.lat}
               lng={formData.location.lng}
+              heading={existingTreeRef.current?._view_heading}
+              pitch={existingTreeRef.current?._view_pitch}
+              zoom={existingTreeRef.current?._view_zoom}
               isLoading={isLoadingLocation}
             />
           </div>

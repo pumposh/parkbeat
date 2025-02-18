@@ -23,17 +23,17 @@ const footerActions: FooterAction[] = [
     label: "Posts"
   },
   {
-    href: "/",
-    icon: "fa-solid fa-compass",
-    label: "Explore"
-  },
-  {
-    href: "/manage-trees",
+    href: "/projects",
     icon: "fa-solid fa-tree-city",
-    label: "Admin",
-    adminOnly: true
+    label: "Projects",
   },
   {
+    href: "/notifications",
+    icon: "fa-solid fa-bell",
+    label: "Updates"
+  },
+  {
+    href: "/settings",
     icon: "fa-solid fa-gear",
     label: "Settings",
     component: <SettingsDialog />
@@ -82,7 +82,7 @@ export const FooterMenu = () => {
                   )}
                 >
                   <i className={cn(action.icon, "text-lg")} aria-hidden="true" />
-                  <span className="text-xs font-light font-display tracking-wide">{action.label}</span>
+                  <span className="font-light font-display tracking-wide text-[10px]">{action.label}</span>
                 </Link>
               )
             ))}

@@ -34,6 +34,7 @@
     "next-themes": "^0.4.4",
     "ngeohash": "^0.6.3",
     "object-hash": "^3.0.0",
+    "openai": "^4.85.1",
     "postcss": "^8.5.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

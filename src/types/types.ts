@@ -77,5 +77,19 @@ export interface MapTilerResponse {
     context?: {
       neighborhood?: string
     }
+    place_type?: string[]
+    place_name?: string
   }>
-} 
+}
+
+export type SuperLocationInfo = LocationInfo & Partial<NominatimResponse> & Partial<MapTilerResponse>
+
+export type ProjectCategory = 
+  | 'urban_greening'
+  | 'park_improvement'
+  | 'community_garden'
+  | 'playground'
+  | 'public_art'
+  | 'sustainability'
+  | 'accessibility'
+  | 'other' 

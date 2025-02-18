@@ -24,6 +24,8 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
     (membership) => membership.role === "org:admin"
   )
   const { show } = useToast()
+  const isProjectsRoute = pathname === '/projects'
+  
   // Reset navigation state when pathname or search params change
   const timeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
@@ -34,6 +36,9 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
     setIsNavigating(false)
   }, [pathname, searchParams])
 
+  // Don't render the panel if not on the projects route
+  if (!isProjectsRoute) return null
+
   const formattedDate = tree?._meta_created_at ? new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
@@ -43,7 +48,7 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
   const handleEdit = () => {
     if (!tree) return
     setIsNavigating(true)
-    router.push(`/manage-trees/${tree.id}?lat=${tree._loc_lat}&lng=${tree._loc_lng}`)
+    router.push(`/projects/${tree.id}?lat=${tree._loc_lat}&lng=${tree._loc_lng}`)
 
     /** Timeout in case of SSR issues */
     timeout.current = setTimeout(() => {
@@ -57,16 +62,24 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
 
   return (
     <div 
+      data-loading={isNavigating ? "true" : "false"}
       className={cn(
         "tree-info-panel frosted-glass",
         isVisible && "visible",
-        "text-zinc-800 dark:text-zinc-50"
+        "text-zinc-800 dark:text-zinc-50",
+        (isAdmin || (tree?.status === 'live')) && "cursor-pointer hover:scale-[1.02] active:scale-[0.98]",
+        isNavigating && ["navigating"]
       )}
       style={{ 
         position: 'absolute',
         left: position.x,
         top: position.y - 8,
         transform: `translate(-50%, calc(-100% - 48px))`,
+      }}
+      onClick={() => {
+        if (isAdmin || tree?.status === 'live') {
+          handleEdit()
+        }
       }}
     >
       <div className="flex items-center justify-between">
@@ -92,15 +105,12 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
               {capitalize(tree.status)}
             </div>
             {isAdmin && (
-              <button
-                onClick={handleEdit}
-                disabled={isNavigating}
+              <div
                 className={cn(
-                  "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors",
-                  "w-6 h-6 flex items-center justify-center",
-                  isNavigating && "cursor-wait"
+                  "text-zinc-500 dark:text-zinc-400",
+                  "w-6 h-6 flex items-center justify-center"
                 )}
-                aria-label={tree.status === 'live' ? "View tree details" : "Edit tree"}
+                aria-hidden="true"
               >
                 {isNavigating ? (
                   <i className="fa-solid fa-circle-notch fa-spin text-sm" />
@@ -109,7 +119,7 @@ export const TreeInfoPanel = ({ tree, group, position, isVisible }: TreeInfoPane
                 ) : (
                   <i className="fa-solid fa-pencil text-sm" />
                 )}
-              </button>
+              </div>
             )}
           </>
         )}

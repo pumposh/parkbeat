@@ -134,15 +134,67 @@
         background: linear-gradient(to right, rgb(82, 82, 91), rgb(82, 82, 91), rgb(82, 82, 91));
         } */
     }
-    
-    .light .frosted-glass::before {
-        background: white;
+
+    @keyframes frosted-glass-loading {
+      0% {
+        transform: scale(1) translate(-50%, calc(-100% - 48px));
+        opacity: 1;
+      }
+      10% {
+        transform: scale(1.02) translate(-50%, calc(-100% - 48px));
+        opacity: 1;
+      }
+      20% {
+        transform: scale(1) translate(-50%, calc(-100% - 48px));
+        opacity: 1;
+      }
+      100% {
+        transform: scale(1) translate(-50%, calc(-100% - 48px));
+        opacity: 1;
+      }
+    }
+    @keyframes frosted-glass-after-loading {
+      0% {
+        transform: scale(1);
+        opacity: 1;
+      }
+      20% {
+        transform: scale(1.1);
+        opacity: 0.4;
+      }
+      50% {
+        transform: scale(2);
+        opacity: 0;
+      }
+      100% {
+        transform: scale(5);
+        opacity: 0;
+      }
+    }
+    .frosted-glass[data-loading="true"] {
+      animation: frosted-glass-loading 1s infinite;
+      ::after {
+        filter: blur(4px);
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 12px;
         opacity: 0.4;
         z-index: -1;
+        outline: 2px solid rgba(180, 180, 180, 0.2);
+        outline-width: 7px;
+        animation: frosted-glass-after-loading 1s infinite;
+      }
+    }
+    
+    .light .frosted-glass::before {
+      background: white;
+      opacity: 0.4;
+      z-index: -1;
     }
     
     .dark .frosted-glass::before {
-      opacity: 0.4;
+      /* opacity: 0.4; */
       background: linear-gradient(to right, rgb(82, 82, 91), rgb(82, 82, 91), rgb(82, 82, 91));
     } 
 
@@ -391,6 +443,21 @@
     }
     to {
       transform: translateY(100%);
+    }
+  }
+
+  @keyframes bulge {
+    0% {
+      transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+    }
+    33% {
+      transform: matrix3d(1, 0, 0, .007, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+    }
+    66% {
+      transform: matrix3d(1, 0, 0, -.007, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+    }
+    100% {
+      transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
     }
   }
 

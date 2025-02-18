@@ -33,7 +33,7 @@ export const MapController = ({
   const [mapError, setMapError] = useState<string | null>(null)
   const pathname = usePathname()
   const router = useRouter()
-  const isPlacingTree = pathname === '/manage-trees'
+  const isPlacingTree = pathname === '/projects'
   const [isUserInteracting, setIsUserInteracting] = useState(false)
   const [isButtonVisible, setIsButtonVisible] = useState(false)
   const [isButtonLeaving, setIsButtonLeaving] = useState(false)
@@ -42,6 +42,8 @@ export const MapController = ({
   const previousTrees = useRef<Tree[]>([])
   const updateTimeout = useRef<NodeJS.Timeout | undefined>(undefined)
   const [isMarkerNearCenter, setIsMarkerNearCenter] = useState(false)
+  const [isControlsExpanded, setIsControlsExpanded] = useState(false)
+  const collapseTimeout = useRef<NodeJS.Timeout>(null)
 
   // Calculate header offset
   useEffect(() => {
@@ -70,7 +72,7 @@ export const MapController = ({
   const openTreeDialog = () => {
     const id = generateId()
     const center = map.current?.getCenter()
-    router.push(`/manage-trees/${id}?lat=${center?.lat}&lng=${center?.lng}`)
+    router.push(`/projects/${id}?lat=${center?.lat}&lng=${center?.lng}`)
   }
 
   const sendBounds = () => {
@@ -460,6 +462,39 @@ export const MapController = ({
     }
   }, [isMapLoaded, treeMap])
 
+  // Function to handle control expansion
+  const handleExpandControls = () => {
+    if (collapseTimeout.current) {
+      clearTimeout(collapseTimeout.current)
+    }
+    setIsControlsExpanded(true)
+  }
+
+  // Function to start collapse timer
+  const startCollapseTimer = () => {
+    if (collapseTimeout.current) {
+      clearTimeout(collapseTimeout.current)
+    }
+    collapseTimeout.current = setTimeout(() => {
+      setIsControlsExpanded(false)
+    }, 5000)
+  }
+
+  // Reset collapse timer when controls are interacted with
+  const handleControlInteraction = () => {
+    handleExpandControls()
+    startCollapseTimer()
+  }
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (collapseTimeout.current) {
+        clearTimeout(collapseTimeout.current)
+      }
+    }
+  }, [])
+
   return (
     <div className="map-container">
       {mapError ? (
@@ -490,30 +525,60 @@ export const MapController = ({
             style={{ 
               top: `${position.top}px`
             }}
+            onMouseEnter={handleExpandControls}
+            onMouseLeave={startCollapseTimer}
           >
-            <button
-              onClick={() => handleZoom(-1)}
-              className="map-control-button frosted-glass"
-              aria-label="Zoom out"
-            >
-              <i className="fa-solid fa-minus" aria-hidden="true" />
-            </button>
+            <div className={cn(
+              "map-controls-inner",
+              isControlsExpanded && "expanded"
+            )}>
+              <button
+                onClick={() => {
+                  handleControlInteraction()
+                  setIsControlsExpanded(!isControlsExpanded)
+                }}
+                className={cn(
+                  "map-control-button frosted-glass toggle",
+                  isControlsExpanded && "expanded"
+                )}
+                aria-label="Toggle controls"
+              >
+                <i className="fa-solid fa-chevron-down" aria-hidden="true" />
+              </button>
 
-            <button
-              onClick={() => handleZoom(1)}
-              className="map-control-button frosted-glass"
-              aria-label="Zoom in"
-            >
-              <i className="fa-solid fa-plus" aria-hidden="true" />
-            </button>
+              <button
+                onClick={() => {
+                  handleControlInteraction()
+                  handleZoom(-1)
+                }}
+                className="map-control-button frosted-glass zoom-out"
+                aria-label="Zoom out"
+              >
+                <i className="fa-solid fa-minus" aria-hidden="true" />
+              </button>
 
-            <button
-              onClick={handleCenterMap}
-              className="map-control-button frosted-glass"
-              aria-label="Center map"
-            >
-              <i className="fa-solid fa-location-crosshairs" aria-hidden="true" />
-            </button>
+              <button
+                onClick={() => {
+                  handleControlInteraction()
+                  handleZoom(1)
+                }}
+                className="map-control-button frosted-glass zoom-in"
+                aria-label="Zoom in"
+              >
+                <i className="fa-solid fa-plus" aria-hidden="true" />
+              </button>
+
+              <button
+                onClick={() => {
+                  handleControlInteraction()
+                  handleCenterMap()
+                }}
+                className="map-control-button frosted-glass center"
+                aria-label="Center map"
+              >
+                <i className="fa-solid fa-location-crosshairs" aria-hidden="true" />
+              </button>
+            </div>
           </div>
 
           {isPlacingTree && isMapLoaded && (
@@ -544,9 +609,9 @@ export const MapController = ({
               {isButtonVisible && !isMarkerNearCenter && (
                 <button 
                   className={cn(
-                    "manage-trees-button frosted-glass",
+                    "projects-button frosted-glass",
                     "z-10",
-                    isButtonLeaving ? "manage-trees-button-leave" : "manage-trees-button-enter"
+                    isButtonLeaving ? "projects-button-leave" : "projects-button-enter"
                   )}
                   onClick={(e) => {
                     e.stopPropagation()
@@ -554,8 +619,8 @@ export const MapController = ({
                     openTreeDialog()
                   }}
                 >
-                  <div className="manage-trees-button-text text-sm p-2 px-3 min-w-[145px] flex items-center justify-between gap-2">
-                    <div className="manage-trees-button-text-text">New project</div>
+                  <div className="projects-button-text text-sm p-2 px-3 min-w-[145px] flex items-center justify-between gap-2">
+                    <div className="projects-button-text-text">New project</div>
                     <i className="fa-solid fa-plus text-md" aria-hidden="true" />
                   </div>
                 </button>

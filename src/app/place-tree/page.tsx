@@ -1,13 +1,13 @@
 'use client'
 
-import { PlaceTreeForm } from "../components/treebeds/manage-trees-form"
-import { useLiveTrees } from "../../hooks/use-tree-sockets"
+import { PlaceTreeForm } from "@/app/components/treebeds/place-tree-form"
+import { useLiveTrees } from "@/hooks/use-tree-sockets"
 import { cn } from "@/lib/utils"
 
 export default function PlaceTreePage() {
-  const { nearbyTrees, isLoadingTrees, setTree, isPending } = useLiveTrees()
+  const { treeMap, setTree, isPending } = useLiveTrees()
 
-  if (isLoadingTrees) {
+  if (isPending) {
     return <div>Loading...</div>
   }
 

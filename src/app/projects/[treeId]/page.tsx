@@ -3,6 +3,7 @@
 import { client } from '@/lib/client'
 import { getLocationInfo } from "@/lib/location"
 import { TreeDialog } from "@/app/components/treebeds/tree-dialog"
+import { auth } from '@clerk/nextjs/server'
 
 export default async function TreePage({
   params,
@@ -13,6 +14,7 @@ export default async function TreePage({
 }) {
   const { lat, lng } = await searchParams
   const { treeId } = await params
+  const { userId } = await auth()
 
   // Parallel fetch both location info and tree data
   const [info, _tree] = await Promise.all([
@@ -23,7 +25,13 @@ export default async function TreePage({
   ])
 
   const tree = _tree ? {
-    ..._tree,
+    id: _tree.id,
+    name: _tree.name,
+    status: _tree.status,
+    _loc_lat: _tree._loc_lat,
+    _loc_lng: _tree._loc_lng,
+    _meta_created_by: _tree._meta_created_by,
+    _meta_updated_by: _tree._meta_updated_by,
     _meta_updated_at: new Date(_tree._meta_updated_at),
     _meta_created_at: new Date(_tree._meta_created_at)
   } : undefined
@@ -33,7 +41,8 @@ export default async function TreePage({
       lat={Number(lat)} 
       lng={Number(lng)} 
       info={info} 
-      tree={tree} 
+      tree={tree}
+      userId={userId || ''}
     />
   )
 } 

@@ -3,7 +3,6 @@ import { drizzle } from "drizzle-orm/neon-http"
 import { env } from "hono/adapter"
 import { jstack } from "jstack"
 import { Redis } from "@upstash/redis/cloudflare"
-import { auth } from '@clerk/nextjs/server'
 
 interface Env {
   Bindings: { 

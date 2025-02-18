@@ -1,5 +1,10 @@
 import type { LocationInfo, MapTilerResponse, NominatimResponse } from "../types/types"
-export async function getLocationInfo(lat: number, lng: number): Promise<LocationInfo> {
+export async function getLocationInfo(lat: number, lng: number): Promise<LocationInfo & Partial<NominatimResponse> & Partial<MapTilerResponse>> {
+    let partialLocationInfo: LocationInfo = {
+        coordinates: { lat, lng },
+        timestamp: new Date().toISOString()
+    }
+
     try {
       // OpenStreetMap Nominatim API for detailed location data
       const nominatimResponse = await fetch(
@@ -11,6 +16,13 @@ export async function getLocationInfo(lat: number, lng: number): Promise<Locatio
         }
       )
       const nominatimData = await nominatimResponse.json() as NominatimResponse
+      partialLocationInfo.address = nominatimData.address
+      partialLocationInfo.placeType = nominatimData.type
+      partialLocationInfo.displayName = nominatimData.display_name
+      partialLocationInfo.boundingBox = nominatimData.boundingbox
+      partialLocationInfo.importance = nominatimData.importance
+      partialLocationInfo.osmType = nominatimData.osm_type
+      partialLocationInfo.osmId = nominatimData.osm_id
   
       // MapTiler API for additional context like neighborhoods
       const maptilerResponse = await fetch(
@@ -20,35 +32,13 @@ export async function getLocationInfo(lat: number, lng: number): Promise<Locatio
   
       // Combine and normalize the data
       return {
-        coordinates: {
-          lat,
-          lng
-        },
-        address: {
-          street: nominatimData.address?.road || nominatimData.address?.street,
-          houseNumber: nominatimData.address?.house_number,
-          neighborhood: maptilerData.features?.[0]?.context?.neighborhood || nominatimData.address?.suburb,
-          city: nominatimData.address?.city,
-          state: nominatimData.address?.state,
-          country: nominatimData.address?.country,
-          postalCode: nominatimData.address?.postcode,
-        },
-        placeType: nominatimData.type,
-        displayName: nominatimData.display_name,
-        boundingBox: nominatimData.boundingbox,
-        importance: nominatimData.importance,
-        osmType: nominatimData.osm_type,
-        osmId: nominatimData.osm_id,
-        nameDetails: nominatimData.namedetails,
-        timestamp: new Date().toISOString()
+        ...partialLocationInfo,
+        ...maptilerData
       }
     } catch (error) {
       console.error('Error fetching location info:', error)
       // Return basic coordinates if APIs fail
-      return {
-        coordinates: { lat, lng },
-        timestamp: new Date().toISOString()
-      }
+      return partialLocationInfo
     }
   }
   

@@ -3,12 +3,14 @@ import { desc, eq, and } from "drizzle-orm"
 import { z } from "zod"
 import { j, publicProcedure } from "../jstack"
 import { generateId } from "@/lib/id"
-import { GoogleGenerativeAI } from "@google/generative-ai"
 import { env } from "hono/adapter"
 import { Storage } from '@google-cloud/storage'
-import { iterateLatLng } from "./tree-helpers/geo"
-import { ImageSource } from "maplibre-gl"
 import { getLocationInfo } from "@/lib/location"
+import { createAIAgent } from "./ai-helpers/aigent"
+import type { ProjectCategory } from "@/types/types"
+import type { InferInsertModel } from 'drizzle-orm'
+import { Env } from "./ai-helpers/types"
+
 // Project categories
 const PROJECT_CATEGORIES = [
   'urban_greening',
@@ -21,48 +23,12 @@ const PROJECT_CATEGORIES = [
   'other'
 ] as const
 
-// Cloudflare R2 types
-interface R2Bucket {
-  put(key: string, value: ArrayBuffer | ReadableStream, options?: {
-    httpMetadata?: { contentType?: string };
-    customMetadata?: Record<string, string>;
-  }): Promise<R2Object>;
-  get(key: string): Promise<R2Object | null>;
-}
-
-interface R2Object {
-  key: string;
-  version: string;
-  size: number;
-  etag: string;
-  httpEtag: string;
-  body: ReadableStream;
-  writeHttpMetadata(headers: Headers): void;
-  httpMetadata?: { contentType?: string };
-  customMetadata?: Record<string, string>;
-}
-
-// Environment bindings type
-interface Bindings {
-  DATABASE_URL: string;
-  UPSTASH_REDIS_REST_URL: string;
-  UPSTASH_REDIS_REST_TOKEN: string;
-  WEBSOCKET_DO: DurableObjectNamespace;
-  R2_BUCKET: R2Bucket;
-}
-
-// Environment type
-type Env = Record<string, string> & {
-  GOOGLE_AI_API_KEY: string;
-  GOOGLE_MAPS_API_KEY: string;
-  GCP_PROJECT_ID: string;
-  GCP_CLIENT_EMAIL: string;
-  GCP_PRIVATE_KEY: string;
-  R2_BUCKET_NAME: string;
-}
-
 // Initialize GCP Storage
-const createStorageClient = (credentials: { projectId: string, clientEmail: string, privateKey: string }) => {
+const createStorageClient = (credentials: {
+  projectId: string,
+  clientEmail: string,
+  privateKey: string
+}) => {
   return new Storage({
     projectId: credentials.projectId,
     credentials: {
@@ -102,14 +68,14 @@ const imageAnalysisSchema = z.object({
   id: z.string().optional(),
   imageSource: imageSourceSchema,
   projectId: z.string().optional(),
-  context: z.string().optional(), // Additional context about the image or location
+  context: z.string().optional(),
   fundraiserId: z.string(),
 })
 
 const projectVisionSchema = z.object({
   projectId: z.string(),
   currentImageSource: imageSourceSchema,
-  desiredChanges: z.string(), // Description of desired changes
+  desiredChanges: z.string(),
 })
 
 const costEstimateSchema = z.object({
@@ -117,14 +83,90 @@ const costEstimateSchema = z.object({
   description: z.string(),
   category: z.enum(PROJECT_CATEGORIES),
   scope: z.object({
-    size: z.number(), // Area in square meters
+    size: z.number(),
     complexity: z.enum(['low', 'medium', 'high']),
-    timeline: z.number(), // Estimated months
+    timeline: z.number(),
   }),
 })
 
+// Enhanced error types for better debugging
+const ValidationErrorCode = z.enum([
+  'MISSING_API_KEYS',
+  'INVALID_IMAGE_SOURCE',
+  'PARSE_ERROR',
+  'AI_VALIDATION_FAILED',
+  'DB_ERROR',
+  'INVALID_INPUT',
+  'LOCATION_ERROR',
+  'NETWORK_ERROR',
+  'API_ERROR',
+  'UNKNOWN_ERROR'
+])
+
+type ValidationErrorCode = z.infer<typeof ValidationErrorCode>
+
+interface ValidationErrorResponse {
+  code: ValidationErrorCode
+  message: string
+  details?: any
+  type?: string
+  path?: string[]
+  cause?: Error | unknown
+  timestamp?: string
+  requestId?: string
+}
+
+// Error utility functions
+function createError(
+  code: ValidationErrorCode,
+  message: string,
+  details?: any,
+  cause?: unknown
+): ValidationErrorResponse {
+  return {
+    code,
+    message,
+    details,
+    cause: cause instanceof Error ? cause : undefined,
+    timestamp: new Date().toISOString(),
+    requestId: generateId() // Unique ID for tracking this error instance
+  }
+}
+
+function logError(context: string, error: ValidationErrorResponse) {
+  console.error(`[${context}] ${error.code}: ${error.message}`, {
+    ...error,
+    timestamp: error.timestamp || new Date().toISOString(),
+    stack: error.cause instanceof Error ? error.cause.stack : undefined
+  })
+}
+
+// Enhanced validation schema with stricter types
+const validateImageSchema = z.object({
+  imageSource: imageSourceSchema,
+  projectId: z.string().min(1, 'Project ID is required'),
+  fundraiserId: z.string().min(1, 'Fundraiser ID is required'),
+}).refine(
+  (data) => {
+    if (data.imageSource.type === 'streetView') {
+      const { lat, lng, heading, pitch, zoom } = data.imageSource.params
+      return (
+        lat >= -90 && lat <= 90 &&
+        lng >= -180 && lng <= 180 &&
+        heading >= 0 && heading < 360 &&
+        pitch >= -90 && pitch <= 90 &&
+        zoom > 0
+      )
+    }
+    return true
+  },
+  {
+    message: 'Invalid street view parameters',
+    path: ['imageSource.params']
+  }
+)
+
 export const aiRouter = j.router({
-  // Analyze an image and suggest potential projects
   analyzeImage: publicProcedure
     .input(imageAnalysisSchema)
     .post(async ({ c, ctx, input }) => {
@@ -132,356 +174,326 @@ export const aiRouter = j.router({
         console.log('Starting analyzeImage with input:', input)
         const { db } = ctx
         const { imageSource, projectId, context, fundraiserId, id } = input
-        const { GOOGLE_AI_API_KEY, GOOGLE_MAPS_API_KEY, R2_BUCKET_NAME } = env<Env>(c)
+        const { GOOGLE_AI_API_KEY, GOOGLE_MAPS_API_KEY } = env<Env>(c)
         
         if (!GOOGLE_AI_API_KEY || !GOOGLE_MAPS_API_KEY) {
-          console.error('Missing required API keys:', { 
-            hasGoogleAI: !!GOOGLE_AI_API_KEY, 
-            hasGoogleMaps: !!GOOGLE_MAPS_API_KEY 
-          })
+          console.error('Missing required API keys')
           return c.json({ error: 'Missing required API configuration' }, 500)
         }
 
-        const r2 = (c.env as unknown as Bindings).R2_BUCKET
-        if (!r2) {
-          console.error('R2 bucket not configured')
-          return c.json({ error: 'Storage configuration error: R2 bucket not found in bindings' }, 500)
-        }
+        // Get image URL based on source type
+        const imageUrl = imageSource.type === 'url' 
+          ? imageSource.url 
+          : `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${imageSource.params.lat},${imageSource.params.lng}&heading=${imageSource.params.heading}&pitch=${imageSource.params.pitch}&fov=${90/imageSource.params.zoom}&key=${GOOGLE_MAPS_API_KEY}`
 
-        // Verify R2 bucket has required methods
-        if (typeof r2.put !== 'function') {
-          console.error('R2 bucket missing put method')
-          return c.json({ error: 'Storage configuration error: Invalid R2 bucket configuration' }, 500)
-        }
-
-        try {
-          // Get image URL based on source type
-          const imageUrl = imageSource.type === 'url' 
-            ? imageSource.url 
-            : `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${imageSource.params.lat},${imageSource.params.lng}&heading=${imageSource.params.heading}&pitch=${imageSource.params.pitch}&fov=${90/imageSource.params.zoom}&key=${GOOGLE_MAPS_API_KEY}`
-
-          console.log('Generated image URL:', imageUrl)
-          const imageResponse = await fetch(imageUrl)
-          const imageBuffer = await imageResponse.arrayBuffer()
-          console.log('Image buffer size:', imageBuffer.byteLength)
-
-          // Get location info for better context
-          const locationInfo = await getLocationInfo(
-            imageSource.type === 'streetView' ? imageSource.params.lat : 0,
-            imageSource.type === 'streetView' ? imageSource.params.lng : 0
-          )
-
-          // Prepare rich location context
-          const locationContext = locationInfo.address ? [
-            locationInfo.address.street && `Located on ${locationInfo.address.street}`,
-            locationInfo.address.neighborhood && `in the ${locationInfo.address.neighborhood} neighborhood`,
-            locationInfo.address.city && 
-              (locationInfo.address.city.toLowerCase().includes('new york') 
-                ? locationInfo.address.neighborhood 
-                : `in ${locationInfo.address.city}`),
-          ].filter(Boolean).join(' ') : ''
-
-          // Combine with user-provided context
-          const enrichedContext = [
-            locationContext,
-            context
-          ].filter(Boolean).join('\n')
-
-          // Initialize Gemini Vision model
-          const genAI = new GoogleGenerativeAI(GOOGLE_AI_API_KEY)
-          const model = genAI.getGenerativeModel({
-            model: 'gemini-1.5-pro',
-            systemInstruction: `
-    You are an integral part of parkbeat! The place where people can band
-    together to improve their local parks and green spaces. Your job is to
-    recommend ways to make that easier, showing us imaginings of what could be
-    and expressing the cost of making those improvements. You are also 
-    a financial expert, and can use your knowledge to recommend projects that are both
-    realistic and financially feasible for a crowdfunded project.
-
-    Try to keep your language friendly, conversational, and heartfelt. Use
-    smaller words and lots of emojis to make it more engaging.
-
-    It's very important that you keep your responses concise and to the point.
-    I'll at times ask for a structured response, and you should always follow that request.
-    Prioritize aesthetic appeal and frugality. Be down to earth and practical. 
-    Try not to assume community members will volunteer their time to help but
-    the labor cost estimation should be low.
-
-    These are the categories of projects you can recommend:
-    ${PROJECT_CATEGORIES.toSorted(() => Math.random() - 0.5).join(', ')}
-          `
-          })
-
-          const isOutdoorSpace = await model.generateContent([
-            `RESPONSE STRUCTURE: LINE ONE -- RESPOND WITH "YES" OR "NO". 
-            IF NO, FOLLOWED BY LINE TWO -- EXPLAIN YOUR REASONING.`,
-            imageUrl,
-            `Is this image of an outdoor space and appropriate for use?`
-          ])
-          const isOutdoorSpaceResponse = isOutdoorSpace.response.text()
-
-          if (isOutdoorSpaceResponse.includes('NO')) {
-            return c.json({
-              error: 'My intuition tells me this isn\'t an outdoor space... I could be wrong! Maybe try again?'
-            })
-          }
-
-          const MAX_ITERATIONS = 4
-          const getRequiresMoreContext = async (img: string, iterations: number) => {
-            return model.generateContent([
-              `RESPONSE STRUCTURE: LINE ONE -- RESPOND WITH "YES" OR "NO". 
-              IF YES, FOLLOWED BY LINE TWO -- INDICATE TRAVERSAL INSTRUCTIONS 
-              AS FOLLOWS: (dir: N | S | E | W, heading: number, pitch: number, zoom: number).`,
-              img,
-              `Do you require more context to analyze the space and the efficacy
-              of your answer? If yes, indicate the cardinal direction you
-              would like to see more of and the pitch and zoom you need to adjust to.
-              If no, respond with "NO CONTEXT REQUIRED".`
-              + (iterations > 1
-                ? `You have used ${iterations}/${MAX_ITERATIONS} iterations of context.` : '')
-            ])
-          };
-
-          const imgs = [imageUrl]
-          let requireMoreContext = await getRequiresMoreContext(imageUrl, 0)
-
-          let requireMoreContextResponse = requireMoreContext.response.text()
-          let iterations = 0
-
-          console.log('requireMoreContextResponse', requireMoreContextResponse)
-          while (requireMoreContextResponse.includes('YES') && iterations <= MAX_ITERATIONS) {
-            iterations++
-            
-            if (imageSource.type !== 'streetView') continue;
-            const values = requireMoreContextResponse.trim()
-              .replaceAll('YES', '')
-              .replaceAll('(', '')
-              .replaceAll(')', '')
-              .replaceAll(' ', '')
-              .split(',')
-
-            const [directionStr, headingStr, pitchStr, zoomStr] = values
-
-            const direction = directionStr?.split(':')[1]
-            const heading = headingStr?.split(':')[1]
-            const pitch = pitchStr?.split(':')[1]
-            const zoom = zoomStr?.split(':')[1]
-
-            console.log('iteration', iterations)
-            console.log('requireMoreContextResponse', requireMoreContextResponse)
-            console.log('next direction:', direction)
-            console.log('next pitch:', pitch)
-            console.log('next zoom:', zoom)
-
-            if (!direction || !heading || !pitch || !zoom) continue;
-
-            const newLatLng = iterateLatLng(
+        // Get location info for better context
+        const locationInfo = imageSource.type === 'streetView'
+          ? await getLocationInfo(
               imageSource.params.lat,
-              imageSource.params.lng,
-              direction,
-              0.0001
+              imageSource.params.lng
             )
+          : null
 
-            const newUrl = `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${newLatLng.lat},${newLatLng.lng}&heading=${imageSource.params.heading}&pitch=${parseInt(pitch)}&fov=${90/parseInt(zoom)}&key=${GOOGLE_MAPS_API_KEY}`
+        // Prepare rich location context
+        const locationContext = locationInfo?.address ? [
+          locationInfo.address.street && `Located on ${locationInfo.address.street}`,
+          locationInfo.address.neighborhood && `in the ${locationInfo.address.neighborhood} neighborhood`,
+          locationInfo.address.city && 
+            (locationInfo.address.city.toLowerCase().includes('new york') 
+              ? locationInfo.address.neighborhood 
+              : `in ${locationInfo.address.city}`),
+        ].filter(Boolean).join(' ') : ''
 
-            imageSource.params.lat = newLatLng.lat
-            imageSource.params.lng = newLatLng.lng
+        // Initialize AI agent
+        const agent = createAIAgent('openai', c)
+        
+        // Analyze image
+        const result = await agent.analyzeImage({
+          imageUrl,
+          locationContext,
+          userContext: context
+        })
 
-            await Promise.all([
-              async () => {
-                imgs.push(newUrl)
-                requireMoreContext = await getRequiresMoreContext(newUrl, iterations)
-                requireMoreContextResponse = requireMoreContext.response.text()
-              },
-              async () => {
-                const imageResponse = await fetch(newUrl)
-                  .then(res => {
-                    console.log('res.url', res.url)
-                    return res;
-                  })
-                const imageBuffer = await imageResponse.arrayBuffer()
-                console.log('Image buffer size:', imageBuffer.byteLength)
-                const fileName = `sv/${generateId()}-${newLatLng.lat}-${newLatLng.lng}.jpg`
-                const result = await r2.put(fileName, imageBuffer, {
-                  httpMetadata: {
-                    contentType: 'image/jpeg',
-                  },
-                  customMetadata: {
-                    streetViewParams: JSON.stringify(imageSource.params),
-                  } 
-                })
-                console.log('R2 upload completed:', result.httpMetadata)
-              }
-            ])
-          }
-
-          // Analyze image and generate recommendations
-          const result = await model.generateContent([
-            imageUrl,
-            `Analyze this location image and suggest potential community improvement projects.
-            ${enrichedContext ? `Location Context: ${enrichedContext}` : ''}
-            
-            Consider the following when naming the project:
-            - If in a neighborhood, reference it (e.g. "Williamsburg Tree Garden")
-            - If on a specific street, incorporate it (e.g. "Bedford Ave Green Space")
-            - If near a landmark, mention it (e.g. "McCarren Park Edge")
-            - Keep names short, memorable, and location-specific
-            
-            Prioritize landscape projects that are easy to maintain, and have a high aesthetic appeal.
-            If a tree is present, possibly suggest a tree bed.
-
-            RESPONSE STRUCTURE:
-            1: CATEGORY
-            2: FRIENDLY TITLE (using location context from above)
-            3: DESCRIPTION
-            4: IMAGE GENERATION PROMPT FOR THE OUTCOME OF THE PROJECT. BE VERY SPECIFIC
-              ABOUT WHAT YOU SEE IN THE INPUT IMAGE AND WHERE YOU THINK THE PROJECT
-              SHOULD GO.
-            5: ESTIMATED COST
-                - Material  $approx_cost
-                - Materials $approx_cost
-                - Labor     $approx_cost
-                - Total     $approx_cost
-            6: REASONING CONTEXT
-
-            Remember to keep the title local and specific to where this project would be.
-            `
-          ])
-          const response = await result.response
-          const analysis = response.text()
-
-          // Store image analysis if associated with a project
-          if (projectId) {
-            await db.insert(projectImages).values({
-              id: generateId(),
-              projectId,
-              type: 'current',
-              imageUrl,
-              aiAnalysis: { 
-                analysis,
-                streetViewParams: imageSource.type === 'streetView' ? imageSource.params : undefined
-              },
-              metadata: { context: enrichedContext }
-            })
-          }
-
-          const existingRecommendationResult = await db
-            .select()
-            .from(aiRecommendations)
-            .where(eq(aiRecommendations.fundraiserId, fundraiserId))
-          const existingRecommendation = existingRecommendationResult?.[0]
-
-          // Parse AI response and generate structured recommendations
-          const recommendation = {
-            id: id || generateId(),
-            title: 'Project Recommendation',
-            category: PROJECT_CATEGORIES[0],
-            estimatedCost: { total: 0 },
-            description: analysis,
-            confidence: '0.8',
-            suggestedLocation: imageSource.type === 'streetView' ? {
-              lat: imageSource.params.lat,
-              lng: imageSource.params.lng,
-              heading: imageSource.params.heading,
-              pitch: imageSource.params.pitch,
-              zoom: imageSource.params.zoom,
-            } : null,
-            inspirationImages: [
-              ...(Object.values(existingRecommendation?.inspirationImages ?? [])),
-              imageUrl,
-            ],
-            reasoningContext: analysis,
-            status: 'pending',
-            fundraiserId,
-          }
-
-          // Store recommendation
-          if (existingRecommendation) {
-            await db.update(aiRecommendations)
-              .set({
-                ...recommendation,
-                metadata: {
-                  ...(existingRecommendation.metadata ?? {}),
-                  updatedAt: new Date()
-                }
-              })
-              .where(eq(aiRecommendations.id, existingRecommendation.id))
-          } else {
-            await db.insert(aiRecommendations).values(recommendation)
-          }
-
-          return c.json({
-            analysis,
-            recommendation,
-            imageUrl
-          })
-        } catch (error) {
-          console.error('Error in image analysis:', error)
-          throw error
+        if (!result.isOutdoorSpace) {
+          return c.json({ error: result.analysis })
         }
+
+        // Store image analysis if associated with a project
+        if (projectId) {
+          await db.insert(projectImages).values({
+            id: generateId(),
+            projectId,
+            type: 'current',
+            imageUrl,
+            aiAnalysis: { 
+              analysis: result.analysis,
+              streetViewParams: imageSource.type === 'streetView' ? imageSource.params : undefined
+            },
+            metadata: { 
+              context: locationContext,
+              userContext: context
+            }
+          })
+        }
+
+        const existingRecommendationResult = await db
+          .select()
+          .from(aiRecommendations)
+          .where(eq(aiRecommendations.fundraiserId, fundraiserId))
+        const existingRecommendation = existingRecommendationResult?.[0]
+
+        // Create recommendation from analysis
+        const recommendation = {
+          id: id || generateId(),
+          title: result.recommendation?.title || 'Project Recommendation',
+          category: (result.recommendation?.projectTypes[0] || 'other') as ProjectCategory,
+          estimatedCost: { 
+            total: result.recommendation?.estimatedCosts.total || 0,
+            ...result.recommendation?.estimatedCosts
+          },
+          description: result.recommendation?.description || result.analysis,
+          confidence: '0.8',
+          suggestedLocation: imageSource.type === 'streetView' ? {
+            lat: imageSource.params.lat,
+            lng: imageSource.params.lng,
+            heading: imageSource.params.heading,
+            pitch: imageSource.params.pitch,
+            zoom: imageSource.params.zoom,
+          } : null,
+          inspirationImages: [
+            ...(Object.values(existingRecommendation?.inspirationImages ?? [])),
+            imageUrl,
+          ],
+          reasoningContext: result.analysis,
+          status: 'pending',
+          fundraiserId,
+        }
+
+        // Store recommendation
+        if (existingRecommendation) {
+          await db.update(aiRecommendations)
+            .set({
+              ...recommendation,
+              metadata: {
+                ...(existingRecommendation.metadata ?? {}),
+                updatedAt: new Date()
+              }
+            })
+            .where(eq(aiRecommendations.id, existingRecommendation.id))
+        } else {
+          await db.insert(aiRecommendations).values(recommendation)
+        }
+
+        return c.json({
+          analysis: result.analysis,
+          recommendation,
+          imageUrl
+        })
       } catch (error) {
         console.error('Error in analyzeImage:', error)
         throw error
       }
     }),
 
-  // Generate a vision of how a location could look after improvements
+  validateImage: publicProcedure
+    .input(validateImageSchema)
+    .post(async ({ c, ctx, input }) => {
+      const requestId = generateId()
+      console.log(`[validateImage:${requestId}] Starting validation request`)
+
+      try {
+        const { db } = ctx
+        const { imageSource, projectId, fundraiserId } = input
+        const { GOOGLE_AI_API_KEY, GOOGLE_MAPS_API_KEY } = env<Env>(c)
+        
+        // Check API keys
+        if (!GOOGLE_AI_API_KEY || !GOOGLE_MAPS_API_KEY) {
+          const error = createError(
+            'MISSING_API_KEYS',
+            'System configuration error. Please contact support.',
+            {
+              missingKeys: {
+                GOOGLE_AI_API_KEY: !GOOGLE_AI_API_KEY,
+                GOOGLE_MAPS_API_KEY: !GOOGLE_MAPS_API_KEY
+              }
+            }
+          )
+          logError(`validateImage:${requestId}`, error)
+          return c.json(error, 500)
+        }
+
+        // Get image URL based on source type
+        let imageUrl: string
+        try {
+          imageUrl = imageSource.type === 'url' 
+            ? imageSource.url 
+            : `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${imageSource.params.lat},${imageSource.params.lng}&heading=${imageSource.params.heading}&pitch=${imageSource.params.pitch}&fov=${90/imageSource.params.zoom}&key=${GOOGLE_MAPS_API_KEY}`
+        } catch (err) {
+          const error = createError(
+            'INVALID_IMAGE_SOURCE',
+            'Unable to capture street view at this location.',
+            { params: imageSource.type === 'streetView' ? imageSource.params : undefined },
+            err
+          )
+          logError(`validateImage:${requestId}`, error)
+          return c.json(error, 400)
+        }
+
+        // Initialize AI agent and validate
+        let agent
+        try {
+          agent = createAIAgent('openai', c)
+        } catch (err) {
+          const error = createError(
+            'API_ERROR',
+            'Service temporarily unavailable. Please try again later.',
+            undefined,
+            err
+          )
+          logError(`validateImage:${requestId}`, error)
+          return c.json(error, 500)
+        }
+
+        let validationResult
+        try {
+          validationResult = await agent.validateImage({ imageUrl })
+        } catch (err) {
+          const error = createError(
+            'AI_VALIDATION_FAILED',
+            'Unable to analyze the street view. Please try again.',
+            { imageUrl },
+            err
+          )
+          logError(`validateImage:${requestId}`, error)
+          return c.json(error, 500)
+        }
+
+        if (!validationResult.isValid) {
+          const error = createError(
+            'INVALID_INPUT',
+            validationResult.error || 'Invalid input',
+            {
+              description: validationResult.description,
+              imageUrl
+            }
+          )
+          error.type = 'invalid_input'
+          logError(`validateImage:${requestId}`, error)
+          return c.json(error, 400)
+        }
+
+        // Store initial image data
+        try {
+          await db.insert(projectImages).values({
+            id: generateId(),
+            projectId,
+            type: 'initial',
+            imageUrl,
+            aiAnalysis: { 
+              description: validationResult.description,
+              streetViewParams: imageSource.type === 'streetView' ? imageSource.params : undefined
+            },
+            metadata: { 
+              validatedAt: new Date().toISOString(),
+              fundraiserId,
+              requestId
+            }
+          })
+        } catch (err) {
+          const error = createError(
+            'DB_ERROR',
+            'Failed to save the validation result. Please try again.',
+            { projectId, imageUrl },
+            err
+          )
+          logError(`validateImage:${requestId}`, error)
+        }
+
+        console.log(`[validateImage:${requestId}] Validation successful`)
+        return c.json({
+          success: validationResult.isMaybe ? 'maybe' : validationResult.isValid ? 'yes' : 'no' as 'yes' | 'no' | 'maybe',
+          description: validationResult.description,
+          imageUrl,
+          requestId
+        })
+
+      } catch (err) {
+        // Catch-all for unexpected errors
+        const error = createError(
+          'UNKNOWN_ERROR',
+          'An unexpected error occurred during validation.',
+          err,
+          err instanceof Error ? err : undefined
+        )
+        logError(`validateImage:${requestId}`, error)
+        return c.json(error, 500)
+      }
+    }),
+
   generateProjectVision: publicProcedure
     .input(projectVisionSchema)
     .post(async ({ c, ctx, input }) => {
       const { db } = ctx
       const { projectId, currentImageSource, desiredChanges } = input
-      const { GOOGLE_AI_API_KEY } = env<Env>(c)
+      const { GOOGLE_MAPS_API_KEY } = env<Env>(c)
 
       try {
-        // Get image URL based on source type
-        const currentImageUrl = currentImageSource.type === 'url'
+        // Get the initial image analysis
+        const initialImage = await db
+          .select()
+          .from(projectImages)
+          .where(eq(projectImages.projectId, projectId))
+          .orderBy(desc(projectImages.createdAt))
+          .limit(1)
+
+        if (!initialImage[0]) {
+          return c.json({ error: 'No validated image found for this project' }, 400)
+        }
+
+        const imageUrl = currentImageSource.type === 'url' && currentImageSource.url
           ? currentImageSource.url
-          : `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${currentImageSource.params.lat},${currentImageSource.params.lng}&heading=${currentImageSource.params.heading}&pitch=${currentImageSource.params.pitch}&fov=${90/currentImageSource.params.zoom}&key=${GOOGLE_AI_API_KEY}`
+          : currentImageSource.type === 'streetView' && currentImageSource.params
+            ? `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${currentImageSource.params.lat},${currentImageSource.params.lng}&heading=${currentImageSource.params.heading}&pitch=${currentImageSource.params.pitch}&fov=${90/currentImageSource.params.zoom}&key=${GOOGLE_MAPS_API_KEY}`
+            : null
 
-        // Initialize Gemini Vision model
-        const genAI = new GoogleGenerativeAI(GOOGLE_AI_API_KEY)
-        const model = genAI.getGenerativeModel({ model: 'gemini-pro-vision' })
+        if (!imageUrl) {
+          throw new Error('Invalid image source configuration')
+        }
 
-        // Generate vision description
-        const result = await model.generateContent([
-          currentImageUrl,
-          `Given this current location image, describe in detail how it would look after these changes: ${desiredChanges}
-           Focus on realistic, achievable improvements that maintain the location's character while enhancing its community value.
-           Consider environmental impact, accessibility, and long-term sustainability.`
-        ])
-        const response = await result.response
-        const visionDescription = response.text()
-
-        // TODO: Integrate with an image generation service to create the visual
-        const aiGeneratedUrl = null // Would come from image generation service
+        const agent = createAIAgent('openai', c)
+        const result = await agent.generateVision({
+          imageUrl,
+          desiredChanges,
+          initialDescription: (initialImage[0].aiAnalysis as { description: string }).description
+        })
 
         // Store the vision
-        await db.insert(projectImages).values({
+        const newProjectImage = {
           id: generateId(),
           projectId,
           type: 'vision',
-          imageUrl: currentImageUrl,
-          aiGeneratedUrl,
+          imageUrl,
+          aiGeneratedUrl: result.vision.imageUrl || null,
           aiAnalysis: {
-            description: visionDescription,
+            description: result.vision.description,
+            existingElements: result.vision.existingElements,
+            newElements: result.vision.newElements,
+            communityBenefits: result.vision.communityBenefits,
+            maintenanceConsiderations: result.vision.maintenanceConsiderations,
+            imagePrompt: result.vision.imagePrompt,
             desiredChanges,
             streetViewParams: currentImageSource.type === 'streetView' ? currentImageSource.params : undefined
           }
-        })
+        }
+        await db.insert(projectImages).values(newProjectImage)
 
-        return c.json({
-          visionDescription,
-          aiGeneratedUrl
-        })
+        return c.json(result)
       } catch (error) {
         console.error('Error generating project vision:', error)
         throw error
       }
     }),
 
-  // Generate detailed cost estimates for a project
   generateCostEstimate: publicProcedure
     .input(costEstimateSchema)
     .post(async ({ c, ctx, input }) => {
@@ -490,54 +502,33 @@ export const aiRouter = j.router({
       const { GOOGLE_AI_API_KEY } = env<Env>(c)
 
       try {
-        // Initialize Gemini model
-        const genAI = new GoogleGenerativeAI(GOOGLE_AI_API_KEY)
-        const model = genAI.getGenerativeModel({ model: 'gemini-pro' })
+        const agent = createAIAgent('openai', c)
+        const result = await agent.generateEstimate({
+          description,
+          category,
+          scope
+        })
 
-        // Generate cost estimate
-        const result = await model.generateContent([
-          `Generate a detailed cost estimate for the following community project:
-           Description: ${description}
-           Category: ${category}
-           Scope: ${JSON.stringify(scope)}
-           
-           Consider:
-           1. Materials and equipment
-           2. Labor costs
-           3. Permits and fees
-           4. Project management
-           5. Contingency
-           
-           Provide detailed breakdown and assumptions.`
-        ])
-        const response = await result.response
-        const estimateAnalysis = response.text()
-
-        // TODO: Implement more sophisticated parsing of AI response
-        const estimate = {
+        // Store the estimate
+        const newCostEstimate: InferInsertModel<typeof costEstimates> = {
           id: generateId(),
           projectId,
           version: '1',
-          totalEstimate: '0', // Extract from AI response
-          breakdown: {}, // Extract from AI response
-          assumptions: {}, // Extract from AI response
-          confidenceScores: {}, // Calculate based on AI response
+          totalEstimate: result.estimate.totalEstimate.toString(),
+          breakdown: result.estimate.breakdown,
+          assumptions: result.estimate.assumptions,
+          confidenceScores: { overall: result.estimate.confidenceScore }
         }
+        await db.insert(costEstimates).values(newCostEstimate)
 
-        // Store the estimate
-        await db.insert(costEstimates).values(estimate)
-
-        return c.json({
-          estimate,
-          analysis: estimateAnalysis
-        })
+        return c.json(result)
       } catch (error) {
         console.error('Error generating cost estimate:', error)
         throw error
       }
     }),
 
-  // List AI recommendations for a fundraiser
+  // List recommendations endpoint remains unchanged
   listRecommendations: publicProcedure
     .input(z.object({
       status: z.enum(['pending', 'accepted', 'rejected']).optional(),

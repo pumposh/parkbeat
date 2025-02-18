@@ -8,7 +8,7 @@ import { SignedIn, SignedOut } from '@clerk/nextjs'
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 export const SettingsDialog = () => {
   const router = useRouter()
   const pathname = usePathname()
@@ -76,6 +76,11 @@ export const SettingsDialog = () => {
                     Settings
                   </Dialog.Title>
                 </div>
+                <VisuallyHidden> 
+                  <Dialog.Description className="text-zinc-500 dark:text-zinc-400">
+                    Manage your account settings and preferences.
+                  </Dialog.Description>
+                </VisuallyHidden>
 
                 <div className="space-y-4">
                   <div className="space-y-2">

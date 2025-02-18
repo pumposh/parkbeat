@@ -57,6 +57,13 @@
       "when": 1739527037352,
       "tag": "0007_sparkling_the_captain",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1739854212907,
+      "tag": "0008_friendly_korvac",
+      "breakpoints": true
     }
   ]
 }

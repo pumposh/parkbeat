@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, index, serial, numeric, jsonb, pgEnum } from "drizzle-orm/pg-core"
+import { pgTable, text, timestamp, index, numeric, jsonb, pgEnum } from "drizzle-orm/pg-core"
 
 export const posts = pgTable(
   "posts",
@@ -13,8 +13,9 @@ export const posts = pgTable(
   ]
 )
 
-export const trees = pgTable(
-  "trees",
+/** Renamed from 'trees' */
+export const projects = pgTable(
+  "projects",
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
@@ -27,8 +28,11 @@ export const trees = pgTable(
     _meta_updated_by: text("_meta_updated_by").notNull(),
     _meta_updated_at: timestamp("_meta_updated_at").defaultNow().notNull(),
     _meta_created_at: timestamp("_meta_created_at").defaultNow().notNull(),
+    _view_heading: numeric("_view_heading"),
+    _view_pitch: numeric("_view_pitch"),
+    _view_zoom: numeric("_view_zoom"),
   }, (table) => [
-    index("Tree_geohash_idx").on(table._loc_geohash)
+    index("project_geohash_idx").on(table._loc_geohash)
   ])
 
 // User roles enum
@@ -50,7 +54,7 @@ export const projectCategoryEnum = pgEnum('project_category', [
 ])
 
 // Projects table
-export const projects = pgTable(
+export const projectsTable = pgTable(
   "projects",
   {
     id: text("id").primaryKey(),
@@ -112,11 +116,6 @@ export const aiRecommendations = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     metadata: jsonb("metadata"),
   },
-  (table) => [
-    index("recommendation_fundraiser_idx").on(table.fundraiserId),
-    index("recommendation_category_idx").on(table.category),
-    index("recommendation_status_idx").on(table.status)
-  ]
 )
 
 // Cost Estimates table for detailed project budgeting

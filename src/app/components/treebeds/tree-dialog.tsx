@@ -12,6 +12,7 @@ import { useParams } from 'next/navigation'
 import { client } from '@/lib/client'
 import { useAuth } from '@clerk/nextjs'
 import { StreetViewCard } from './components/street-view-card'
+import { useStreetViewValidation } from '@/hooks/use-street-view-validation'
 
 interface TreeFormData {
   name: string
@@ -21,6 +22,11 @@ interface TreeFormData {
     lng: number
   } | null
   locationInfo?: LocationInfo
+  viewParams?: {
+    heading: number
+    pitch: number
+    zoom: number
+  }
 }
 
 export function TreeDialog(props: {
@@ -28,8 +34,8 @@ export function TreeDialog(props: {
   lng?: number
   info?: LocationInfo
   tree?: Tree
+  userId: string
 }) {
-  const { userId } = useAuth()
   const router = useRouter()
   const params = useParams()
   const treeId = params.treeId as string
@@ -41,8 +47,24 @@ export function TreeDialog(props: {
     name: props.info?.address?.street || "",
     description: "",
     location: props.lat && props.lng ? { lat: props.lat, lng: props.lng } : null,
-    locationInfo: props.info
+    locationInfo: props.info,
+    viewParams: {
+      heading: props.tree?._view_heading || 0,
+      pitch: props.tree?._view_pitch || 0,
+      zoom: props.tree?._view_zoom || 1
+    }
   })
+
+  // Redirect if no userId
+  useEffect(() => {
+    if (!props.userId) {
+      showToast({
+        message: 'Please sign in to create a project',
+        type: 'error'
+      })
+      router.push('/projects')
+    }
+  }, [props.userId, router, showToast])
 
   // Log initial form data
   useEffect(() => {
@@ -78,8 +100,8 @@ export function TreeDialog(props: {
     setOpen(false)
     // Wait for the animation to complete
     setTimeout(() => {
-      console.log('[TreeDialog] Navigating to /manage-trees')
-      router.push('/manage-trees')
+      console.log('[TreeDialog] Navigating to /projects')
+      router.push('/projects')
     }, 150)
   }
 
@@ -204,6 +226,22 @@ export function TreeDialog(props: {
     handleFormChange({ location: { lat, lng } })
   }, [formData])
 
+  const { validateStreetView, isValidating } = useStreetViewValidation({
+    projectId: treeId,
+    fundraiserId: props.userId,
+    onSuccess: (response) => {
+      if (response.params) {
+        handleFormChange({
+          viewParams: {
+            heading: response.params.heading,
+            pitch: response.params.pitch,
+            zoom: response.params.zoom
+          }
+        })
+      }
+    }
+  })
+
   const handleSubmit = async () => {
     console.log('[TreeDialog] Attempting to submit form:', {
       formData,
@@ -222,7 +260,10 @@ export function TreeDialog(props: {
         description: formData.description,
         lat: formData.location.lat,
         lng: formData.location.lng,
-        status: 'live' as TreeStatus
+        status: 'live' as TreeStatus,
+        _view_heading: formData.viewParams?.heading,
+        _view_pitch: formData.viewParams?.pitch,
+        _view_zoom: formData.viewParams?.zoom
       }
       console.log('[TreeDialog] Submitting with payload:', payload)
       
@@ -243,37 +284,6 @@ export function TreeDialog(props: {
     }
   }
 
-  const handleStreetViewCapture = async (params: {
-    lat: number
-    lng: number
-    heading: number
-    pitch: number
-    zoom: number
-  }) => {
-    // Call your AI endpoint with the Street View parameters
-    const res = await client.ai.analyzeImage.$post({
-      imageSource: {
-        type: 'streetView',
-        params
-      },
-      fundraiserId: userId || '',
-      context: ''
-    })
-
-    const response = await res.json()
-    // Handle the response...
-    console.log('[TreeDialog] AI response:', response)
-
-    if ('error' in response) {
-      console.error('[TreeDialog] AI error:', response.error)
-      return
-    } 
-
-    const { analysis, recommendation } = response
-    console.log('[TreeDialog] AI analysis:', analysis)
-    console.log('[TreeDialog] AI recommendation:', recommendation)
-  }
-
   const steps = [
     {
       title: "Let's start a project",
@@ -284,16 +294,31 @@ export function TreeDialog(props: {
         <LocationInfoCard
           location={formData.location}
           locationInfo={formData.locationInfo}
-          isLoading={isLoadingLocation}
+          isLoading={isLoadingLocation || !props.userId}
         >
           {formData.location && (
             <StreetViewCard
               lat={formData.location.lat}
               lng={formData.location.lng}
-              isLoading={isLoadingLocation}
+              heading={formData.viewParams?.heading}
+              pitch={formData.viewParams?.pitch}
+              zoom={formData.viewParams?.zoom}
+              isLoading={isLoadingLocation || !props.userId}
+              projectId={treeId}
+              fundraiserId={props.userId}
               className="rounded-lg mt-[-140px] overflow-hidden rounded-xl!"
               onPositionChange={handlePositionChange}
-              onCapture={handleStreetViewCapture}
+              onValidationSuccess={(response) => {
+                if (response.params) {
+                  handleFormChange({
+                    viewParams: {
+                      heading: response.params.heading,
+                      pitch: response.params.pitch,
+                      zoom: response.params.zoom
+                    }
+                  })
+                }
+              }}
             />
           )}
         </LocationInfoCard>

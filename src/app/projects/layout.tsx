@@ -6,13 +6,5 @@ export default async function PlaceTreeLayout({ children }: PropsWithChildren) {
   const user = await currentUser()  
   console.log(user)
 
-  const isAdmin = user?.publicMetadata?.role === 'admin'
-  
-
-  if (!isAdmin) {
-    redirect('/')
-    return null
-  }
-
   return children;
 }

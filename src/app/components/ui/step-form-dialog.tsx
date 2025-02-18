@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 
 const TRANSITION_DURATION = 300 // ms
 
@@ -62,7 +63,7 @@ export function StepFormDialog({
   cancelAction
 }: StepFormDialogProps) {
   const currentStepData = steps[currentStep]
-  const [direction, setDirection] = useState<'forward' | 'backward'>('forward')
+  const [_direction, setDirection] = useState<'forward' | 'backward'>('forward')
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [activeSteps, setActiveSteps] = useState<StepState[]>([])
   const [contentHeight, setContentHeight] = useState<number>(0)
@@ -220,6 +221,11 @@ export function StepFormDialog({
           className="dialog-content fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl p-4 overflow-visible"
           aria-describedby="step-form-dialog-description"
         >
+          <VisuallyHidden>
+            <Dialog.Title>
+              {currentStepData.title}
+            </Dialog.Title>
+          </VisuallyHidden>
           <div className="pointer-events-auto">
             <div className="frosted-glass rounded-2xl relative grid grid-rows-[auto_1fr_auto] overflow-hidden">
               <div className={cn(

@@ -1,4 +1,4 @@
-import { trees } from "@/server/db/schema"
+import { projects } from "@/server/db/schema"
 import { desc, eq, like } from "drizzle-orm"
 import { z } from "zod"
 import { j, publicProcedure } from "../jstack"
@@ -18,6 +18,9 @@ export type BaseTree = {
   _meta_updated_at: string
   _meta_updated_by: string
   _meta_created_at: string
+  _view_heading?: number
+  _view_pitch?: number
+  _view_zoom?: number
 }
 
 // Define the tree type
@@ -45,6 +48,9 @@ const treeSchema = z.object({
   _meta_updated_at: z.string(),
   _meta_updated_by: z.string(),
   _meta_created_at: z.string(),
+  _view_heading: z.number().optional(),
+  _view_pitch: z.number().optional(),
+  _view_zoom: z.number().optional(),
 })
 
 // Define the WebSocket event types
@@ -100,8 +106,8 @@ export const treeRouter = j.router({
 
       const [tree] = await db
         .select()
-        .from(trees)
-        .where(eq(trees.id, id))
+        .from(projects)
+        .where(eq(projects.id, id))
         .limit(1)
 
       if (!tree) throw new Error('Tree not found')
@@ -159,7 +165,6 @@ export const treeRouter = j.router({
             logger.info('Client connected to tree updates')
 
             socket.on('ping', () => {
-              logger.debug('Ping received PLEASE PLAESE')
               socket.emit('pong', undefined)
             })
 
@@ -180,9 +185,9 @@ export const treeRouter = j.router({
 
                 const nearbyTrees = await db
                   .select()
-                  .from(trees)
-                  .where(like(trees._loc_geohash, `${geohash}%`))
-                  .orderBy(desc(trees._loc_geohash))
+                  .from(projects)
+                  .where(like(projects._loc_geohash, `${geohash}%`))
+                  .orderBy(desc(projects._loc_geohash))
 
                 const individualTrees = nearbyTrees
                   .map(tree => ({
@@ -242,8 +247,8 @@ export const treeRouter = j.router({
 
               const [tree] = await db
                 .select()
-                .from(trees)
-                .where(eq(trees.id, data.id))
+                .from(projects)
+                .where(eq(projects.id, data.id))
                 .limit(1)
       
               if (!tree) {
@@ -254,7 +259,7 @@ export const treeRouter = j.router({
                 throw new Error('Cannot delete a live tree')
               }
         
-              await db.delete(trees).where(eq(trees.id, data.id))
+              await db.delete(projects).where(eq(projects.id, data.id))
         
               const {
                 getActiveSubscribers,
@@ -270,7 +275,7 @@ export const treeRouter = j.router({
               }
 
               try {
-                await db.delete(trees).where(eq(trees.id, data.id))
+                await db.delete(projects).where(eq(projects.id, data.id))
               } catch (error) {
                 logger.error('Error in deleteTree handler:', error)
                 throw error
@@ -310,23 +315,23 @@ export const treeRouter = j.router({
 
                 const existingTree = await db
                   .select()
-                  .from(trees)
-                  .where(eq(trees.id, data.id))
+                  .from(projects)
+                  .where(eq(projects.id, data.id))
                   .limit(1)
                   .then(rows => rows[0]);
 
                 let result;
                 if (existingTree) {
                   const [updatedTree] = await db
-                    .update(trees)
+                    .update(projects)
                     .set(treeData)
-                    .where(eq(trees.id, data.id))
+                    .where(eq(projects.id, data.id))
                     .returning();
                   if (!updatedTree) throw new Error('Failed to update tree');
                   result = updatedTree;
                 } else {
                   const [newTree] = await db
-                    .insert(trees)
+                    .insert(projects)
                     .values(treeData)
                     .returning();
                   if (!newTree) throw new Error('Failed to insert tree');

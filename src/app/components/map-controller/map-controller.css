@@ -24,6 +24,28 @@
   }
 }
 
+@keyframes projectsRouteEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes projectsRouteLeave {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
 @layer map-components {
   .map-container {
     @apply fixed inset-0;
@@ -35,13 +57,91 @@
   }
 
   .map-controls {
-    @apply fixed flex flex-col gap-1.5 transition-opacity duration-300;
+    @apply fixed transition-opacity duration-300;
     z-index: var(--z-header);
     right: 1rem;
   }
 
+  .map-controls-inner {
+    @apply relative flex flex-col gap-2;
+    height: 2.5rem; /* Initial collapsed height */
+    transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .map-controls-inner.expanded {
+    height: 11rem; /* Height when expanded (adjust based on number of buttons) */
+  }
+
   .map-control-button {
-    @apply w-10 h-10 rounded-xl flex items-center justify-center hover:bg-white/90 dark:hover:bg-black/60 transition-colors;
+    @apply w-10 h-10 rounded-xl flex items-center justify-center;
+    @apply hover:bg-white/90 dark:hover:bg-black/70;
+    @apply transition-all duration-300;
+    position: absolute;
+    right: 0;
+    transform-origin: center;
+    will-change: transform, opacity;
+  }
+
+  /* Individual button positions */
+  .map-control-button.toggle {
+    top: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .map-control-button.toggle.expanded {
+    transform: translateY(8.5rem) rotate(180deg);
+  }
+
+  .map-control-button.toggle i {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .map-control-button.zoom-out,
+  .map-control-button.zoom-in,
+  .map-control-button.center {
+    top: 0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(0) scale(0.8);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .map-control-button.zoom-out {
+    transition-delay: 0s;
+  }
+
+  .map-control-button.zoom-in {
+    transition-delay: 0.05s;
+  }
+
+  .map-control-button.center {
+    transition-delay: 0.1s;
+  }
+
+  /* Expanded states */
+  .map-controls-inner.expanded .map-control-button.zoom-out {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+    transition-delay: 0.1s;
+  }
+
+  .map-controls-inner.expanded .map-control-button.zoom-in {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(2.75rem) scale(1);
+    transition-delay: 0.05s;
+  }
+
+  .map-controls-inner.expanded .map-control-button.center {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(5.5rem) scale(1);
+    transition-delay: 0s;
   }
 
   .pin-container {
@@ -74,7 +174,7 @@
     transform-origin: center center;
   }
 
-  .manage-trees-button {
+  .projects-button {
     position: absolute;
     z-index: var(--z-dialog);
     transform: translateY(-50px);
@@ -82,11 +182,11 @@
     @apply rounded-xl px-3 py-1.5 flex items-center gap-2 text-sm text-zinc-800 dark:text-zinc-800 transition-all duration-300 ease-out;
   }
 
-  .manage-trees-button-enter {
+  .projects-button-enter {
     animation: actionButtonEnter 0.15s ease-in-out forwards;
   }
 
-  .manage-trees-button-leave {
+  .projects-button-leave {
     animation: actionButtonLeave 0.15s ease-in-out forwards;
   }
 
@@ -108,9 +208,13 @@
   .tree-info-panel.visible {
     opacity: 1;
     visibility: visible;
-    transform: translateY(0) scale(1);
+    transform: translate(-50%, calc(-100% - 48px)) scale(1);
     pointer-events: auto;
     transition: opacity 0.3s ease-out, visibility 0s linear 0s, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .tree-info-panel.visible.navigating {
+    transform-origin: center center;
   }
 
   .tree-info-panel .tree-status {
@@ -135,6 +239,14 @@
 
   .tree-info-panel .tree-meta {
     @apply text-xs text-zinc-500 dark:text-zinc-300;
+  }
+
+  .projects-route-enter {
+    animation: projectsRouteEnter 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .projects-route-leave {
+    animation: projectsRouteLeave 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   }
 }
 

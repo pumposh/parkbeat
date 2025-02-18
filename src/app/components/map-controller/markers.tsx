@@ -18,6 +18,7 @@ export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersP
   const [markers, setMarkers] = useState<{ [key: string]: { position: { x: number; y: number }, isNearCenter: boolean } }>({})
   const [groupMarkers, setGroupMarkers] = useState<{ [key: string]: { position: { x: number; y: number }, isNearCenter: boolean } }>({})
   const mapCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [focusedMarkerId, setFocusedMarkerId] = useState<string | null>(null)
 
   useEffect(() => {
     const updateMarkerPositions = () => {
@@ -30,6 +31,8 @@ export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersP
       }
 
       let isAnyMarkerNearCenter = false;
+      let closestMarkerId: string | null = null;
+      let minDistance = Infinity;
 
       // Update individual tree markers
       [...trees, ...(treeGroups || [])].forEach(tree => {
@@ -41,6 +44,10 @@ export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersP
 
         if (isNearCenter) {
           isAnyMarkerNearCenter = true
+          if (distance < minDistance) {
+            minDistance = distance
+            closestMarkerId = tree.id
+          }
         }
 
         const isTree = 'status' in tree;
@@ -58,10 +65,8 @@ export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersP
         }
       })
 
-      // Update tree group markers
-      treeGroups?.forEach(group => {
-        const point = map.project([group._loc_lng, group._loc_lat])
-      })
+      // Only update focused marker if it's near center
+      setFocusedMarkerId(isAnyMarkerNearCenter ? closestMarkerId : null)
 
       setMarkers(newMarkers)
       setGroupMarkers(newGroupMarkers)
@@ -79,21 +84,21 @@ export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersP
   }, [trees, treeGroups, map, onMarkerNearCenter])
 
   return createPortal(
-      <div className="absolute inset-0 pointer-events-none">
-        {/* Render tree group markers */}
-        {treeGroups?.map(group => {
-          const marker = groupMarkers[group.id]
-          if (!marker) return null
-          return (
-            <TreeMarker
-              key={group.id}
-              group={group}
-              position={marker.position}
-              isNearCenter={marker.isNearCenter}
-              map={map}
-            />
-          )
-        })}
+    <div className="absolute inset-0 pointer-events-none">
+      {/* Render tree group markers */}
+      {treeGroups?.map(group => {
+        const marker = groupMarkers[group.id]
+        if (!marker) return null
+        return (
+          <TreeMarker
+            key={group.id}
+            group={group}
+            position={marker.position}
+            isNearCenter={marker.isNearCenter && focusedMarkerId === group.id}
+            map={map}
+          />
+        )
+      })}
 
       {/* Render individual tree markers */}
       {trees.map(tree => {
@@ -104,7 +109,7 @@ export const Markers = ({ trees, treeGroups, map, onMarkerNearCenter }: MarkersP
             key={tree.id}
             tree={tree}
             position={marker.position}
-            isNearCenter={marker.isNearCenter}
+            isNearCenter={marker.isNearCenter && focusedMarkerId === tree.id}
             map={map}
           />
         )
