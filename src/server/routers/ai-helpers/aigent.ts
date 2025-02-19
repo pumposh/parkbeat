@@ -43,16 +43,39 @@ export interface ProjectEstimate {
   confidenceScore: number
 }
 
+export interface ProjectSuggestion {
+  title: string
+  summary: string
+  imagePrompt: string
+  projectType: ProjectCategory
+  estimatedCost: {
+    total: number
+    breakdown?: {
+      materials: number
+      labor: number
+      permits: number
+    }
+  }
+}
+
 // Main interface results that use the core interfaces
 export interface AIAnalysisResult {
   isOutdoorSpace: boolean
   description: string
   analysis: string
-  recommendation?: ProjectRecommendation
+  suggestions?: ProjectSuggestion[]
 }
 
 export interface AIVisionResult {
-  vision: ProjectVision
+  vision: {
+    description: string
+    existingElements: string[]
+    newElements: string[]
+    communityBenefits: string[]
+    maintenanceConsiderations: string[]
+    imagePrompt?: string
+    imageUrl?: string
+  }
 }
 
 export interface AIEstimateResult {
@@ -96,13 +119,18 @@ export interface AIAgent {
 
   generateEstimate(params: {
     description: string
-    category: string
+    category: ProjectCategory
     scope: {
       size: number
       complexity: 'low' | 'medium' | 'high'
       timeline: number
     }
   }): Promise<AIEstimateResult>
+
+  generateImage(params: {
+    prompt: string
+    originalImage: string
+  }): Promise<{ url: string }>
 }
 
 // Gemini implementation
@@ -201,7 +229,20 @@ export class GeminiAgent implements AIAgent {
       isOutdoorSpace: true,
       description,
       analysis,
-      recommendation
+      suggestions: [{
+        title: recommendation.title,
+        summary: recommendation.description,
+        imagePrompt: recommendation.imagePrompt,
+        projectType: recommendation.projectTypes[0] as ProjectCategory,
+        estimatedCost: {
+          total: recommendation.estimatedCosts.total,
+          breakdown: {
+            materials: recommendation.estimatedCosts.materials.reduce((sum, material) => sum + material.cost, 0),
+            labor: recommendation.estimatedCosts.labor,
+            permits: 0
+          }
+        }
+      }]
     }
   }
 
@@ -357,6 +398,11 @@ export class GeminiAgent implements AIAgent {
     error?: string
   }> {
     // Implementation of validateImage method
+    throw new Error('Method not implemented')
+  }
+
+  async generateImage({ prompt, originalImage }: { prompt: string, originalImage: string }): Promise<{ url: string }> {
+    // Implementation of generateImage method
     throw new Error('Method not implemented')
   }
 }

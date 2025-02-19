@@ -594,7 +594,7 @@ export const MapController = ({
                 )}
                 style={{ 
                   filter: `drop-shadow(0 ${isUserInteracting || isMapMoving ? 8 : 4}px ${isUserInteracting || isMapMoving ? 4 : 2}px rgb(0 0 0 / ${isUserInteracting || isMapMoving ? 0.15 : 0.1}))`,
-                  transform: `translateY(${isUserInteracting || isMapMoving ? -24 : 0}px)`,
+                  transform: `translateY(${isUserInteracting || isMapMoving ? -24 : 6}px)`,
                   opacity: isUserInteracting || isMapMoving ? 0.6 : isMapLoaded ? 1 : 0,
                   willChange: 'transform, opacity'
                 }}

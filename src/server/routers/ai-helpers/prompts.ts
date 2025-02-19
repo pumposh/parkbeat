@@ -25,6 +25,11 @@ interface CostEstimateContext extends BasePromptContext {
   }
 }
 
+interface ProjectSuggestionsContext extends BasePromptContext {
+  locationContext?: string
+  userContext?: string
+}
+
 export class PromptManager {
   private static readonly DEFAULT_SYSTEM_PROMPT = `
     You are an integral part of parkbeat! The place where people can band
@@ -193,6 +198,59 @@ export class PromptManager {
         Keep your response concise but emotionally engaging.
       `,
       temperature: 0.1
+    }
+  }
+
+  static getProjectSuggestionsPrompt(context: ProjectSuggestionsContext) {
+    const systemPrompt = this.DEFAULT_SYSTEM_PROMPT + `
+      You will analyze a street view image and generate 2-3 unique project suggestions
+      for improving this space. Each suggestion should be realistic, achievable, and
+      consider the local context.
+
+      For each suggestion, provide:
+      1. A catchy but descriptive title that references the location
+      2. A brief summary of the project (2-3 sentences)
+      3. The project type (urban_greening, park_improvement, community_garden, etc.)
+      4. A detailed image prompt for visualizing the completed project
+      5. An estimated cost range
+
+      Format each suggestion with:
+      TITLE: [Project Title]
+      TYPE: [Project Type]
+      SUMMARY: [Brief Description]
+      IMAGE PROMPT: [Detailed prompt for visualization]
+      ESTIMATED COST: [Cost estimate]
+      ---
+    `
+
+    const userPrompt = `
+      Analyze this location image and generate 2-3 unique project suggestions.
+      ${context.locationContext ? `Location Context: ${context.locationContext}` : ''}
+      ${context.userContext ? `Additional Context: ${context.userContext}` : ''}
+
+      Consider:
+      1. The existing space and its potential
+      2. Local community needs and benefits
+      3. Maintenance requirements
+      4. Environmental impact
+      5. Cost-effectiveness
+      6. Visual appeal
+
+      For each suggestion:
+      - Keep titles location-specific and memorable
+      - Make summaries concise but informative
+      - Ensure image prompts maintain the same perspective as the input image
+      - Provide realistic cost estimates
+      - Focus on achievable improvements
+
+      Separate each suggestion with "---"
+    `
+
+    return {
+      systemPrompt,
+      userPrompt,
+      model: context.model,
+      temperature: context.temperature ?? 0.7
     }
   }
 } 

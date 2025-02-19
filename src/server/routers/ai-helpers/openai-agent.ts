@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import type { AIAgent, AIAnalysisResult, AIVisionResult, AIEstimateResult, ProjectVision } from './aigent'
+import type { AIAgent, AIAnalysisResult, AIVisionResult, AIEstimateResult, ProjectVision, ProjectSuggestion } from './aigent'
 import type { ProjectCategory } from "@/types/types"
 import { PromptManager } from './prompts'
 
@@ -180,19 +180,9 @@ export class OpenAIAgent implements AIAgent {
       }
     }
 
-    // If appropriate, generate full analysis
-    const analysisPrompt = PromptManager.getImageAnalysisPrompt({
+    // If appropriate, generate suggestions
+    const suggestionsPrompt = PromptManager.getProjectSuggestionsPrompt({
       model: this.model,
-      categories: [
-        'urban_greening',
-        'park_improvement',
-        'community_garden',
-        'playground',
-        'public_art',
-        'sustainability',
-        'accessibility',
-        'other'
-      ],
       locationContext,
       userContext
     })
@@ -202,12 +192,12 @@ export class OpenAIAgent implements AIAgent {
       messages: [
         {
           role: 'system',
-          content: analysisPrompt.systemPrompt
+          content: suggestionsPrompt.systemPrompt
         },
         {
           role: 'user',
           content: [
-            { type: 'text', text: analysisPrompt.userPrompt },
+            { type: 'text', text: suggestionsPrompt.userPrompt },
             {
               type: 'image_url',
               image_url: { url: imageUrl }
@@ -215,20 +205,86 @@ export class OpenAIAgent implements AIAgent {
           ]
         }
       ],
-      temperature: analysisPrompt.temperature,
+      temperature: suggestionsPrompt.temperature,
       max_tokens: 1000
     })
 
-    const analysis = result.choices[0]?.message?.content
-    if (!analysis) {
-      throw new Error('Failed to get analysis from OpenAI')
+    const suggestionsContent = result.choices[0]?.message?.content
+    if (!suggestionsContent) {
+      throw new Error('Failed to get suggestions from OpenAI')
     }
+
+    // Parse suggestions from the response
+    const suggestions = this.parseSuggestionsFromResponse(suggestionsContent)
 
     return {
       isOutdoorSpace: true,
       description,
-      analysis,
-      // recommendation would be parsed from analysis
+      analysis: suggestionsContent,
+      suggestions
+    }
+  }
+
+  private parseSuggestionsFromResponse(content: string): ProjectSuggestion[] {
+    try {
+      // Split content into sections
+      const sections = content.split('---').filter(Boolean)
+      
+      return sections.map(section => {
+        const lines = section.trim().split('\n')
+        const title = lines.find(l => l.toLowerCase().startsWith('title:'))?.split(':')[1]?.trim() || ''
+        const summary = lines.find(l => l.toLowerCase().startsWith('summary:'))?.split(':')[1]?.trim() || ''
+        const projectType = lines.find(l => l.toLowerCase().startsWith('type:'))?.split(':')[1]?.trim() as ProjectCategory || 'other'
+        const imagePrompt = lines.find(l => l.toLowerCase().startsWith('image prompt:'))?.split(':')[1]?.trim() || ''
+        const costLine = lines.find(l => l.toLowerCase().startsWith('estimated cost:'))?.split(':')[1]?.trim() || '0'
+        const cost = parseInt(costLine.replace(/[^0-9]/g, '')) || 0
+
+        return {
+          title,
+          summary,
+          imagePrompt,
+          projectType,
+          estimatedCost: {
+            total: cost,
+            breakdown: {
+              materials: Math.round(cost * 0.6),
+              labor: Math.round(cost * 0.3),
+              permits: Math.round(cost * 0.1)
+            }
+          }
+        }
+      })
+    } catch (error) {
+      console.error('Error parsing suggestions:', error)
+      return []
+    }
+  }
+
+  async generateImage({ prompt, originalImage }: {
+    prompt: string
+    originalImage: string
+  }): Promise<{ url: string }> {
+    try {
+      const response = await this.client.images.generate({
+        model: "dall-e-3",
+        prompt: `Based on this street view image (${originalImage}), create a realistic visualization of: ${prompt}. 
+                Make it photo-realistic and maintain the exact same perspective and viewing angle as the original street view.
+                The result should look like it was taken from the same spot.`,
+        n: 1,
+        size: "1024x1024",
+        quality: "standard",
+        style: "natural"
+      })
+
+      const imageUrl = response.data[0]?.url
+      if (!imageUrl) {
+        throw new Error('No image generated')
+      }
+
+      return { url: imageUrl }
+    } catch (error) {
+      console.error('Error generating image:', error)
+      throw error
     }
   }
 

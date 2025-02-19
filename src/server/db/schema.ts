@@ -56,32 +56,17 @@ export const projectCategoryEnum = pgEnum('project_category', [
   'other'
 ])
 
-// Project Images table
-export const projectImages = pgTable(
-  "project_images",
-  {
-    id: text("id").primaryKey(),
-    project_id: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
-    type: text("type").notNull(), // 'current', 'vision', 'progress'
-    image_url: text("image_url").notNull(),
-    ai_generated_url: text("ai_generated_url"), // For AI-enhanced/modified versions
-    ai_analysis: jsonb("ai_analysis"), // Store AI's image analysis results
-    created_at: timestamp("created_at").defaultNow().notNull(),
-    metadata: jsonb("metadata"), // For flexible additional data
-  },
-  (table) => [
-    index("image_project_idx").on(table.project_id)
-  ]
-)
-
 // AI Project Recommendations table
-export const aiRecommendations = pgTable(
-  "ai_recommendations",
+export const projectSuggestions = pgTable(
+  "project_suggestions",
   {
     id: text("id").primaryKey(),
     fundraiser_id: text("fundraiser_id").notNull(),
     title: text("title").notNull(),
     description: text("description").notNull(),
+    project_id: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+    image_prompt: text("image_prompt").notNull(),
+    generated_image_url: text("generated_image_url"),
     category: projectCategoryEnum("category").notNull(),
     estimated_cost: jsonb("estimated_cost").notNull(), // Detailed cost breakdown
     confidence: numeric("confidence").notNull(), // AI's confidence in the recommendation
@@ -92,6 +77,29 @@ export const aiRecommendations = pgTable(
     created_at: timestamp("created_at").defaultNow().notNull(),
     metadata: jsonb("metadata"),
   },
+  (table) => [
+    index("project_suggestions_project_idx").on(table.project_id)
+  ]
+)
+
+// Project Images table
+export const projectImages = pgTable(
+  "project_images",
+  {
+    id: text("id").primaryKey(),
+    project_id: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+    suggestion_id: text("suggestion_id").references(() => projectSuggestions.id, { onDelete: 'cascade' }),
+    type: text("type").notNull(), // 'current', 'vision', 'progress'
+    image_url: text("image_url").notNull(),
+    ai_generated_url: text("ai_generated_url"), // For AI-enhanced/modified versions
+    ai_analysis: jsonb("ai_analysis"), // Store AI's image analysis results
+    created_at: timestamp("created_at").defaultNow().notNull(),
+    metadata: jsonb("metadata"), // For flexible additional data
+  },
+  (table) => [
+    index("image_project_idx").on(table.project_id),
+    index("image_suggestion_idx").on(table.suggestion_id)
+  ]
 )
 
 // Cost Estimates table for detailed project budgeting

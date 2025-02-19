@@ -194,11 +194,11 @@ export function StepFormDialog({
   const handleStepChange = (nextStep: number) => {
     if (isTransitioning) return
     
-    // Check if current step allows progression
-    const currentStepData = steps[currentStep]
-    if (nextStep > currentStep && currentStepData?.canProgress === false) {
-      return
-    }
+    // // Check if current step allows progression
+    // const currentStepData = steps[currentStep]
+    // if (nextStep > currentStep && currentStepData?.canProgress === false) {
+    //   return
+    // }
     
     onStepChange?.(nextStep)
   }

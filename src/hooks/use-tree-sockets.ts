@@ -2,14 +2,12 @@
 
 import { useMutation } from "@tanstack/react-query"
 import { client } from "@/lib/client"
-import { useWebSocket } from "jstack/client"
 import { generateId } from "@/lib/id"
 import type { ProjectStatus, Project as ServerProject } from "@/server/routers/tree-router"
-import { useEffect, useRef, useState, useCallback, useMemo, Dispatch } from "react"
+import { useEffect, useRef, useState, useMemo, Dispatch } from "react"
 import { boundsToGeohash } from "@/lib/geo/geohash"
 import { useAuth } from "@clerk/nextjs"
 import { WebSocketLogger } from "./client-log"
-import { NestedNonNullable } from "@/lib/nullable"
 
 // Define base tree type
 export type BaseProject = ServerProject
@@ -38,7 +36,7 @@ export type ProjectPayload = Omit<BaseProject, '_meta_updated_at' | '_meta_creat
 type ClientSocket = ReturnType<typeof client.tree.live.$ws>
 
 type SystemEventName = 'ping' | 'pong';
-type ProjectEventName = 'setProject' | 'newProject' | 'subscribe' | 'unsubscribe' | 'deleteProject';
+type ProjectEventName = 'setProject' | 'newProject' | 'subscribe' | 'unsubscribe' | 'deleteProject' | 'subscribeProject' | 'projectData';
 type EventName = SystemEventName | ProjectEventName;
 
 type EventPayloadMap = {
@@ -49,6 +47,27 @@ type EventPayloadMap = {
   ping: undefined;
   pong: undefined;
   deleteProject: { id: string };
+  subscribeProject: { projectId: string, shouldSubscribe: boolean };
+  projectData: {
+    projectId: string;
+    data: {
+      project: ProjectPayload;
+      images?: Array<{
+        id: string;
+        type: string;
+        imageUrl: string;
+        aiAnalysis?: any;
+      }>;
+      suggestions?: Array<{
+        id: string;
+        title: string;
+        summary: string;
+        imagePrompt: string;
+        generatedImageUrl?: string;
+      }>;
+      // Add other related data types as needed
+    };
+  };
 };
 
 // Update ExpectedArgument type to use the EventPayloadMap
@@ -60,8 +79,21 @@ type HookCache<T extends EventName> = Map<T, ExpectedArgument<T>>;
 
 const noop = () => {}
 
+type EmissionOptions = {
+  argBehavior?: 'append' | 'replace';
+  timing?: 'immediate' | 'delayed';
+}
+
 // WebSocket connection manager
 class WebSocketManager {
+  static getInstance(): WebSocketManager {
+    if (!WebSocketManager.instance) {
+      console.log('[WebSocketManager] Creating new singleton instance');
+      WebSocketManager.instance = new WebSocketManager();
+    }
+    return WebSocketManager.instance;
+  }
+
   private static instance: WebSocketManager | null = null;
   private ws: ClientSocket | null = null;
   private hooks: HookMap<EventName> | null = null;
@@ -70,8 +102,9 @@ class WebSocketManager {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectTimeout: NodeJS.Timeout | null = null;
-  private eventBuffer: Array<{ event: EventName; data: ExpectedArgument<EventName> }> = [];
+  private eventBuffer: Array<{ event: EventName; data: ExpectedArgument<EventName>; options: EmissionOptions }> = [];
   private stateListeners: Set<(state: ConnectionState) => void> = new Set();
+  private projectSubscriptions: Set<string> = new Set();
   
   // Create a stable reference for the emit queue
   private emitQueueRef: {
@@ -89,72 +122,70 @@ class WebSocketManager {
   private constructor() {
     console.log('[WebSocketManager] Instance created');
   }
-
-  static getInstance(): WebSocketManager {
-    if (!WebSocketManager.instance) {
-      console.log('[WebSocketManager] Creating new singleton instance');
-      WebSocketManager.instance = new WebSocketManager();
-    }
-    return WebSocketManager.instance;
-  }
-
   private connectWs() {
     console.log('[WebSocketManager] Attempting to connect WebSocket');
-    this.ws = client.tree.live.$ws();
-    if (!this.ws.isConnected) {
-      console.log('[WebSocketManager] Setting up WebSocket event handlers');
-      
-      // System events
-      this.ws.on('onConnect', () => {
-        console.log('[WebSocketManager] WebSocket connected successfully');
-        this.setConnectionState('connected');
-        this.reconnectAttempts = 0;
-        if (this.eventBuffer.length > 0) {
-          console.log(`[WebSocketManager] Flushing ${this.eventBuffer.length} buffered events`);
-        }
-        this.flushEventBuffer();
-      });
-
-      this.ws.on('onError', (error: Error) => {
-        console.error('[WebSocketManager] WebSocket error:', error);
-        this.handleDisconnect();
-      });
-
-      this.ws.on('ping', noop);
-
-      this.ws.on('pong', noop);
-
-      // Initialize all possible events with no-op handlers
-      const eventNames: EventName[] = ['setProject', 'newProject', 'subscribe', 'unsubscribe'];
-      eventNames.forEach(eventName => {
-        this.ws?.on(eventName, (_arg) => {
-          console.log(`[WebSocketManager] Received ${eventName} event from server`);
-          if (eventName === 'ping' || eventName === 'pong') {
-            noop();
-            return;
-          }
-
-          // For non-system events, process through hook system if hooks exist
-          if (this.hooks?.has(eventName)) {
-            const arg = _arg as unknown as ExpectedArgument<typeof eventName>;
-            if (!this.hookCache) {
-              this.hookCache = new Map<EventName, ExpectedArgument<EventName>>();
-            }
-            this.hookCache.set(eventName, arg);
-            const hookSet = this.hooks.get(eventName);
-            hookSet?.forEach(h => h(arg));
-          } else {
-            console.log(`[WebSocketManager] No hooks registered for ${eventName}, using no-op handler`);
-            noop();
-          }
-        });
-      });
-
-      console.log('[WebSocketManager] Initiating WebSocket connection');
-      this.ws.connect();
-    } else {
-      console.log('[WebSocketManager] WebSocket already connected');
+    if (this.connectionState === 'connecting') {
+      console.log('[WebSocketManager] Already connecting, skipping connect');
+      return;
     }
+
+    if (this.ws?.isConnected) {
+      console.log('[WebSocketManager] WebSocket already connected');
+      return;
+    }
+
+    this.setConnectionState('connecting');
+    this.ws = client.tree.live.$ws();
+    console.log('[WebSocketManager] Setting up WebSocket event handlers');
+    
+    // System events
+    this.ws.on('onConnect', () => {
+      console.log('[WebSocketManager] WebSocket connected successfully');
+      this.setConnectionState('connected');
+      this.reconnectAttempts = 0;
+      if (this.eventBuffer.length > 0) {
+        console.log(`[WebSocketManager] Flushing ${this.eventBuffer.length} buffered events`);
+      }
+      this.flushEventBuffer();
+    });
+
+    this.ws.on('onError', (error: Error) => {
+      console.error('[WebSocketManager] WebSocket error:', error);
+      this.handleDisconnect();
+    });
+
+    this.ws.on('ping', noop);
+
+    this.ws.on('pong', noop);
+
+    // Initialize all possible events with no-op handlers
+    const eventNames: EventName[] = ['setProject', 'newProject', 'subscribe', 'unsubscribe', 'projectData'];
+    eventNames.forEach(eventName => {
+      this.ws?.on(eventName, (_arg) => {
+        console.log(`[WebSocketManager] Received ${eventName} event from server`);
+        if (eventName === 'ping' || eventName === 'pong') {
+          noop();
+          return;
+        }
+
+        // For non-system events, process through hook system if hooks exist
+        if (this.hooks?.has(eventName)) {
+          const arg = _arg as unknown as ExpectedArgument<typeof eventName>;
+          if (!this.hookCache) {
+            this.hookCache = new Map<EventName, ExpectedArgument<EventName>>();
+          }
+          this.hookCache.set(eventName, arg);
+          const hookSet = this.hooks.get(eventName);
+          hookSet?.forEach(h => h(arg));
+        } else {
+          console.log(`[WebSocketManager] No hooks registered for ${eventName}, using no-op handler`);
+          noop();
+        }
+      });
+    });
+
+    console.log('[WebSocketManager] Initiating WebSocket connection');
+    this.ws.connect();
   }
 
   private disconnectWs() {
@@ -172,7 +203,7 @@ class WebSocketManager {
     if (!this.hooks) {
       console.log('[WebSocketManager] First hook registration, initializing hooks map and connecting WebSocket');
       this.hooks = new Map<EventName, Set<Hook<EventName>>>();
-      this.connectWs();
+      setTimeout(() => this.connect(), 0);
     }
 
     let hookSet = this.hooks.get(key) as Set<Hook<T>> | undefined;
@@ -213,6 +244,10 @@ class WebSocketManager {
   }
 
   private setConnectionState(state: ConnectionState) {
+    if (this.connectionState === state) {
+      console.log(`[WebSocketManager] Already in ${state} state, skipping state change`);
+      return;
+    }
     console.log(`[WebSocketManager] Connection state changing: ${this.connectionState} -> ${state}`);
     this.connectionState = state;
     this.stateListeners.forEach(listener => listener(state));
@@ -265,7 +300,10 @@ class WebSocketManager {
     console.log(`[WebSocketManager] Attempting to emit ${event} event`);
     if (this.connectionState !== 'connected') {
       console.log(`[WebSocketManager] Not connected, buffering ${event} event`);
-      this.eventBuffer.push({ event, data } as { event: EventName; data: ExpectedArgument<EventName> });
+      this.eventBuffer.push(
+        { event, data, options } as
+        { event: EventName; data: ExpectedArgument<EventName>; options: EmissionOptions }
+      );
       return false;
     }
 
@@ -307,12 +345,13 @@ class WebSocketManager {
       args.add(data);
     } else {
       console.log(`[WebSocketManager] Creating new ${event} queue`);
+      args?.clear();
       args = new Set([data]);
     }
 
     let timeout: ReturnType<typeof setTimeout> | null = null;
     if (options.timing === 'immediate') {
-      emissionAction();
+      setTimeout(emissionAction, 0);
     } else {
       // Clear existing timeout if it exists
       if (eventQueue?.timeout) {
@@ -334,7 +373,7 @@ class WebSocketManager {
       const event = this.eventBuffer.shift();
       if (event) {
         console.log(`[WebSocketManager] Processing buffered ${event.event} event`);
-        this.emit(event.event, event.data);
+        this.emit(event.event, event.data, event.options);
       }
     }
   }
@@ -354,6 +393,12 @@ class WebSocketManager {
 
   cleanup() {
     console.log('[WebSocketManager] Starting cleanup');
+    // Unsubscribe from all projects
+    this.projectSubscriptions.forEach(projectId => {
+      this.unsubscribeFromProject(projectId);
+    });
+    this.projectSubscriptions.clear();
+
     if (this.reconnectTimeout) {
       console.log('[WebSocketManager] Clearing reconnect timeout');
       clearTimeout(this.reconnectTimeout);
@@ -385,7 +430,6 @@ class WebSocketManager {
     }
 
     console.log('[WebSocketManager] Initiating connection');
-    this.setConnectionState('connecting');
     this.connectWs();
   }
 
@@ -398,6 +442,38 @@ class WebSocketManager {
     const count = this.hooks?.size || 0;
     console.log(`[WebSocketManager] Current hook count: ${count}`);
     return count;
+  }
+
+  subscribeToProject(projectId: string) {
+    console.log(`[WebSocketManager] Subscribing to project: ${projectId}`);
+    if (this.projectSubscriptions.has(projectId)) {
+      console.log(`[WebSocketManager] Already subscribed to project: ${projectId}`);
+      return;
+    }
+
+    this.projectSubscriptions.add(projectId);
+    setTimeout(() => {
+      this.emit('subscribeProject', { projectId, shouldSubscribe: true }, {
+        timing: 'immediate',
+        argBehavior: 'replace'
+      });
+    }, 0);
+  }
+
+  unsubscribeFromProject(projectId: string) {
+    console.log(`[WebSocketManager] Unsubscribing from project: ${projectId}`);
+    if (!this.projectSubscriptions.has(projectId)) {
+      console.log(`[WebSocketManager] Not subscribed to project: ${projectId}`);
+      return;
+    }
+
+    this.projectSubscriptions.delete(projectId);
+    setTimeout(() => {
+      this.emit('subscribeProject', { projectId, shouldSubscribe: false }, {
+        timing: 'immediate',
+        argBehavior: 'replace'
+      });
+    }, 0);
   }
 }
 
@@ -472,6 +548,28 @@ const useTree: {
   pong: (defaultValue: undefined) => {
     const [value, setValue] = useState<undefined>(defaultValue);
     return [value, setValue];
+  },
+  subscribeProject: (defaultValue: { projectId: string, shouldSubscribe: boolean }) => {
+    const [value, setValue] = useState<{ projectId: string, shouldSubscribe: boolean }>(defaultValue);
+    const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
+    
+    useEffect(() => {
+      wsManager.registerHook('subscribeProject', setValue);
+      return () => wsManager.unregisterHook('subscribeProject', setValue);
+    }, [wsManager]);
+    
+    return [value, setValue];
+  },
+  projectData: (defaultValue: EventPayloadMap['projectData']) => {
+    const [value, setValue] = useState<EventPayloadMap['projectData']>(defaultValue);
+    const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
+    
+    useEffect(() => {
+      wsManager.registerHook('projectData', setValue);
+      return () => wsManager.unregisterHook('projectData', setValue);
+    }, [wsManager]);
+    
+    return [value, setValue];
   }
 };
 
@@ -507,7 +605,6 @@ export function useLiveTrees() {
   // Register handler on mount and handle connection state
   useEffect(() => {
     logger.registerHandler(handlerId.current);
-    wsManager.connect();
 
     const unsubscribe = wsManager.onStateChange(setConnectionState);
 
@@ -678,7 +775,7 @@ export function useLiveTrees() {
       const now = new Date();
       logger.log('info', `Creating/updating project: ${name} at ${lat},${lng}`);
       
-      const projectData: ProjectPayload = {
+      const newProject: ProjectPayload = {
         id: projectId,
         name,
         description,
@@ -707,9 +804,9 @@ export function useLiveTrees() {
       }
       
       // Emit with immediate timing
-      const success = wsManager.emit('setProject', projectData);
+      const success = wsManager.emit('setProject', newProject);
       if (!success) {
-        throw new Error('Failed to send project data - WebSocket not connected');
+        throw new Error('Failed to send project - WebSocket not connected');
       }
       
       return { name, lat, lng, status };
@@ -737,6 +834,32 @@ export function useLiveTrees() {
     deleteProject,
     isPending,
     isDeletePending,
-    connectionState
+    connectionState,
+    useProjectData
   };
+}
+
+// Update useProjectData to use the WebSocketManager
+export function useProjectData(projectId: string) {
+  const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
+
+  const [projectData] = useTree.projectData({
+    projectId,
+    data: {
+      project: {} as ProjectPayload,
+      images: [],
+      suggestions: []
+    }
+  });
+
+  useEffect(() => {
+    if (projectId) {
+      wsManager.subscribeToProject(projectId);
+    }
+    return () => {
+      wsManager.unsubscribeFromProject(projectId);
+    }
+  }, [projectId, wsManager]);
+
+  return projectData;
 }

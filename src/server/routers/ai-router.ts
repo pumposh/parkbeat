@@ -1,4 +1,4 @@
-import { aiRecommendations, costEstimates, projectImages, projects } from "@/server/db/schema"
+import { projectSuggestions, costEstimates, projectImages, projects } from "@/server/db/schema"
 import { desc, eq, and } from "drizzle-orm"
 import { z } from "zod"
 import { j, publicProcedure } from "../jstack"
@@ -207,16 +207,37 @@ export const aiRouter = j.router({
         // Initialize AI agent
         const agent = createAIAgent('openai', c)
         
-        // Analyze image
+        // Analyze image and generate suggestions
         const result = await agent.analyzeImage({
           imageUrl,
           locationContext,
-          userContext: context
+          userContext: context,
         })
 
         if (!result.isOutdoorSpace) {
           return c.json({ error: result.analysis })
         }
+
+        // Generate images for each suggestion
+        const suggestions = await Promise.all(
+          result.suggestions?.map(async (suggestion) => {
+            try {
+              // Generate image using the prompt
+              const imageResponse = await agent.generateImage({
+                prompt: suggestion.imagePrompt,
+                originalImage: imageUrl
+              })
+
+              return {
+                ...suggestion,
+                generatedImageUrl: imageResponse.url
+              }
+            } catch (error) {
+              console.error('Failed to generate image for suggestion:', error)
+              return suggestion
+            }
+          }) ?? []
+        )
 
         // Store image analysis if associated with a project
         if (projectId) {
@@ -237,7 +258,8 @@ export const aiRouter = j.router({
             image_url: imageUrl,
             ai_analysis: { 
               analysis: result.analysis,
-              streetViewParams: imageSource.type === 'streetView' ? imageSource.params : undefined
+              streetViewParams: imageSource.type === 'streetView' ? imageSource.params : undefined,
+              suggestions
             },
             metadata: { 
               context: locationContext,
@@ -246,57 +268,9 @@ export const aiRouter = j.router({
           })
         }
 
-        const existingRecommendationResult = await db
-          .select()
-          .from(aiRecommendations)
-          .where(eq(aiRecommendations.fundraiser_id, fundraiserId))
-        const existingRecommendation = existingRecommendationResult?.[0]
-
-        // Create recommendation from analysis
-        const recommendation = {
-          id: input.id || generateId(),
-          title: result.recommendation?.title || 'Project Recommendation',
-          category: (result.recommendation?.projectTypes[0] || 'other') as ProjectCategory,
-          estimated_cost: { 
-            total: result.recommendation?.estimatedCosts.total || 0,
-            ...result.recommendation?.estimatedCosts
-          },
-          description: result.recommendation?.description || result.analysis,
-          confidence: '0.8',
-          suggested_location: imageSource.type === 'streetView' ? {
-            lat: imageSource.params.lat,
-            lng: imageSource.params.lng,
-            heading: imageSource.params.heading,
-            pitch: imageSource.params.pitch,
-            zoom: imageSource.params.zoom,
-          } : null, 
-          inspiration_images: [
-            ...(Object.values(existingRecommendation?.inspiration_images ?? [])),
-            imageUrl,
-          ],
-          reasoning_context: result.analysis,
-          status: 'pending',
-          fundraiser_id: fundraiserId,
-        }
-
-        // Store recommendation
-        if (existingRecommendation) {
-          await db.update(aiRecommendations)
-            .set({
-              ...recommendation,
-              metadata: {
-                ...(existingRecommendation.metadata ?? {}),
-                updated_at: new Date()
-              }
-            })
-            .where(eq(aiRecommendations.id, existingRecommendation.id))
-        } else {
-          await db.insert(aiRecommendations).values(recommendation)
-        }
-
         return c.json({
           analysis: result.analysis,
-          recommendation,
+          suggestions,
           imageUrl
         })
       } catch (error) {
@@ -539,7 +513,7 @@ export const aiRouter = j.router({
     }),
 
   // List recommendations endpoint remains unchanged
-  listRecommendations: publicProcedure
+  listProjectSuggestions: publicProcedure
     .input(z.object({
       status: z.enum(['pending', 'accepted', 'rejected']).optional(),
       category: z.enum(PROJECT_CATEGORIES).optional(),
@@ -552,20 +526,20 @@ export const aiRouter = j.router({
       try {
         let baseQuery = db
           .select()
-          .from(aiRecommendations)
+          .from(projectSuggestions)
 
-        const conditions = [eq(aiRecommendations.fundraiser_id, 'user123')] // TODO: Get from auth
+        const conditions = [eq(projectSuggestions.fundraiser_id, 'user123')] // TODO: Get from auth
 
         if (status) {
-          conditions.push(eq(aiRecommendations.status, status))
+          conditions.push(eq(projectSuggestions.status, status))
         }
         if (category) {
-          conditions.push(eq(aiRecommendations.category, category))
+          conditions.push(eq(projectSuggestions.category, category))
         }
 
         const recommendations = await baseQuery
           .where(and(...conditions))
-          .orderBy(desc(aiRecommendations.created_at))
+          .orderBy(desc(projectSuggestions.created_at))
           .limit(limit)
 
         return c.json({ recommendations })

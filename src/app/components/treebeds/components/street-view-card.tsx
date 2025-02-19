@@ -5,11 +5,8 @@ import { Loader } from '@googlemaps/js-api-loader'
 import { cn } from '@/lib/utils'
 import { GradientBlur } from '../../ui/gradient-blur'
 import { generateId } from '@/lib/id'
-import { asyncTimeout } from '@/lib/async'
-import { client } from '@/lib/client'
 import { useStreetViewValidation } from '@/hooks/use-street-view-validation'
-import { useToast } from '@/app/components/toast'
-import { ValidationError } from 'next/dist/compiled/amphtml-validator'
+import { useProjectData } from '@/hooks/use-tree-sockets'
 
 declare global {
   interface Window {
@@ -29,12 +26,13 @@ interface StreetViewCardProps {
   pitch?: number
   zoom?: number
   isLoading?: boolean
-  projectId?: string
+  projectId: string
   fundraiserId?: string
   onLoad?: () => void
   onPositionChange?: (lat: number, lng: number) => void
   onValidationSuccess?: (response: any) => void
   onValidationStateChange?: (state: { isValid: boolean }) => void
+  saveDraft?: () => void
   className?: string
   showLoadingAnimation?: boolean
 }
@@ -52,14 +50,13 @@ export const StreetViewCard = ({
   onPositionChange,
   onValidationSuccess,
   onValidationStateChange,
+  saveDraft,
   className,
   showLoadingAnimation = true
 }: StreetViewCardProps) => {
   const streetViewRef = useRef<HTMLDivElement>(null)
   const streetViewInstance = useRef<google.maps.StreetViewPanorama | null>(null)
-  const [isReady, setIsReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isCapturing, setIsCapturing] = useState(false)
   const [validationMessage, setValidationMessage] = useState<ValidationMessage | null>(null)
 
   const thisContextId = generateId()
@@ -69,11 +66,17 @@ export const StreetViewCard = ({
     onSuccess: onValidationSuccess
   })
 
+  const projectData = useProjectData(projectId)
+  useEffect(() => {
+    if (projectData?.data?.images?.length) {
+      onValidationStateChange?.({ isValid: true })
+    }
+  }, [projectData])
+
   useEffect(() => {
     if (!lat || !lng || externalLoading || !streetViewRef.current) return
 
     setError(null)
-    setIsReady(false)
 
     const loader = new Loader({
       apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
@@ -125,7 +128,6 @@ export const StreetViewCard = ({
             // Add a small delay before showing to ensure smooth transition
             setTimeout(() => {
               if (!isMounted) return
-              setIsReady(true)
               onLoad?.()
             }, 300)
           } else {
@@ -170,7 +172,6 @@ export const StreetViewCard = ({
           console.error('Error cleaning up street view:', error)
         }
       }
-      setIsReady(false)
       setError(null)
     }
   } , [lat, lng, heading, pitch, zoom, externalLoading, onLoad, onPositionChange])
@@ -182,7 +183,6 @@ export const StreetViewCard = ({
       return
     }
 
-    setIsCapturing(true)
     setValidationMessage(null) // Clear any existing message
     
     // Get current street view parameters
@@ -192,9 +192,10 @@ export const StreetViewCard = ({
 
     if (!currentParams || !currentZoom || !currentPosition) {
       console.error('[StreetViewCard] Failed to get current street view parameters')
-      setIsCapturing(false)
       return
     }
+
+    saveDraft?.()
 
     validateStreetView(
       {
@@ -216,7 +217,6 @@ export const StreetViewCard = ({
             type: 'error'
           })
           onValidationStateChange?.({ isValid: false })
-          setIsCapturing(false)
         },
         onSuccess: (response) => {
           const isValid = response.success === 'yes' || response.success === 'maybe'
@@ -226,7 +226,6 @@ export const StreetViewCard = ({
           })
           onValidationStateChange?.({ isValid })
           console.log('[StreetViewCard] Validation successful:', response)
-          setIsCapturing(false)
           onValidationSuccess?.(response)
         }
       }

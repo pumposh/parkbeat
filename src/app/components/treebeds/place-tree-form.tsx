@@ -223,6 +223,7 @@ export const PlaceTreeForm = (props: {
       <div className="space-y-6">
         <div>
           <LocationInfoCard
+            projectId={projectId}
             isLoading={isLoadingLocation}
             location={formData.location}
             locationInfo={formData.locationInfo || props.info}
@@ -232,6 +233,7 @@ export const PlaceTreeForm = (props: {
         {formData.location && (
           <div>
             <StreetViewCard
+              projectId={projectId}
               lat={formData.location.lat}
               lng={formData.location.lng}
               heading={existingProjectRef.current?._view_heading}

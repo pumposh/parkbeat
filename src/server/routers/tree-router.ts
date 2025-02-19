@@ -81,9 +81,36 @@ const wsEvents = z.object({
       count: z.number(),
       _loc_lat: z.number(),
       _loc_lng: z.number(),
-    }))
+    })),
   ]),
+  subscribeProject: z.object({
+    projectId: z.string(),
+    shouldSubscribe: z.boolean()
+  }),
+  projectData: z.object({
+    projectId: z.string(),
+    data: z.object({
+      project: projectSchema,
+      images: z.array(z.object({
+        id: z.string(),
+        type: z.string(),
+        imageUrl: z.string(),
+        aiAnalysis: z.any().optional()
+      })).optional(),
+      suggestions: z.array(z.object({
+        id: z.string(),
+        title: z.string(),
+        summary: z.string(),
+        imagePrompt: z.string(),
+        generatedImageUrl: z.string().optional()
+      })).optional()
+    })
+  })
 })
+
+export type ProjectData = z.infer<typeof wsEvents>['projectData']['data']
+
+const noop = () => {}
 
 export const treeRouter = j.router({
   killActiveSockets: publicProcedure
@@ -143,6 +170,9 @@ export const treeRouter = j.router({
           removeSocketSubscription,
           cleanup,
           getActiveSubscribers,
+          setProjectSubscription,
+          removeProjectSubscription,
+          getProjectData
         } = getTreeHelpers({ ctx, logger })
 
         let socketId: string | null = null
@@ -169,10 +199,58 @@ export const treeRouter = j.router({
               socket.emit('pong', undefined)
             })
 
+            // Project subscription handlers
+            socket.on('subscribeProject', async ({ projectId, shouldSubscribe }) => {
+              if (shouldSubscribe) {
+                logger.info(`Handling project subscription for: ${projectId}`)
+                const { db } = ctx
+
+                try {
+                  socketId = getSocketId(socket)
+                  await socket.join(`project:${projectId}`)
+                  
+                  if (socketId) await setProjectSubscription(socketId, projectId)
+
+                  // Fetch project data
+                  const projectData = await getProjectData(projectId)
+
+                  if (!projectData) {
+                    throw new Error('Project not found')
+                  }
+                  
+                  socket.emit('projectData', {
+                    projectId,
+                    data: projectData
+                  })
+                  logger.info(`Subscription complete for project:${projectId}`)
+                } catch (error) {
+                  logger.error('Error in project subscription handler:', error)
+                  throw error
+                }
+              } else {
+                logger.info(`Unsubscribe event received for project: ${projectId}`)
+                try {
+                  // Get socket ID
+                  socketId = getSocketId(socket)
+
+                  // Leave the Redis room for this project
+                  socket.leave(`project:${projectId}`)
+                  logger.info(`Client left Redis room for project:${projectId}`)
+
+                  // Remove socket from project subscription map
+                  if (!socketId) return
+                  await removeProjectSubscription(projectId, socketId)
+                } catch (error) {
+                  logger.error('Error in project unsubscribe handler:', error)
+                  throw error
+                }
+              }
+            })
+
             // Register event handlers
             socket.on('subscribe', async ([{
               geohash
-            }, treesToEmit, treeGroups]: [{
+            }, _treesToEmit, _treeGroups]: [{
               geohash: string
             }, unknown[], unknown[]]) => {
               logger.info(`Handling subscription for area: ${geohash}`)
@@ -221,25 +299,6 @@ export const treeRouter = j.router({
               }
             })
 
-            socket.on('unsubscribe', async ({ geohash }: { geohash: string }) => {
-              logger.info(`Unsubscribe event received for area: ${geohash}`)
-              try {
-                // Get socket ID
-                socketId = getSocketId(socket)
-
-                // Leave the Redis room for this geohash
-                socket.leave(`geohash:${geohash}`)
-                logger.info(`Client left Redis room for geohash:${geohash}`)
-
-                // Remove socket from geohash subscription map
-                if (!socketId) return
-                await removeSocketSubscription(geohash, socketId)
-              } catch (error) {
-                logger.error('Error in unsubscribe handler:', error)
-                throw error
-              }
-            })
-
             socket.on('deleteProject', async (data: {
               id: string
             }) => {
@@ -282,6 +341,8 @@ export const treeRouter = j.router({
                 throw error
               }
             })
+
+            socket.on('projectData', noop);
 
             socket.on('setProject', async (data: {
               id: string
@@ -362,7 +423,10 @@ export const treeRouter = j.router({
                   _meta_created_by: result._meta_created_by,
                   _meta_updated_by: result._meta_updated_by,
                   _meta_updated_at: result._meta_updated_at.toISOString(),
-                  _meta_created_at: result._meta_created_at.toISOString()
+                  _meta_created_at: result._meta_created_at.toISOString(),
+                  _view_heading: result._view_heading ? parseFloat(result._view_heading) : undefined,
+                  _view_pitch: result._view_pitch ? parseFloat(result._view_pitch) : undefined,
+                  _view_zoom: result._view_zoom ? parseFloat(result._view_zoom) : undefined
                 }
 
                 const projectHash = hash
@@ -387,10 +451,18 @@ export const treeRouter = j.router({
                   }
                 }
 
+                // Emit project data update to project subscribers
+                const projectDataUpdate: ProjectData = await getProjectData(result.id)
+                
+                await io.to(`project:${result.id}`).emit('projectData', {
+                  projectId: result.id,
+                  data: projectDataUpdate
+                })
+
                 logger.info(
                   `Project ${existingProject ? 'updated' : 'created'}: ${result.id} - ` +
                   `Emitted to ${emittedCount} geohashes (${totalSubscribers} total subscribers), ` +
-                  `skipped ${skippedCount} empty geohashes`
+                  `skipped ${skippedCount} empty geohashes and notified project subscribers`
                 )
 
                 return projectToEmit
@@ -421,7 +493,7 @@ export const treeRouter = j.router({
             logger.info(`[Process ${process.pid}] Initiating cleanup via REST for socket ${socketId} in onError`)
             try {
               // Call the killActiveSockets endpoint instead of direct cleanup
-              const response = await fetch('/api/trpc/tree.killActiveSockets', {
+              const response = await fetch('/api/tree/killActiveSockets', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -449,7 +521,7 @@ export const treeRouter = j.router({
             logger.info(`[Process ${process.pid}] Initiating cleanup via REST for socket ${socketId} in onClose`)
             try {
               // Call the killActiveSockets endpoint instead of direct cleanup
-              const response = await fetch('/api/trpc/tree.killActiveSockets', {
+              const response = await fetch('/api/tree/killActiveSockets', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',

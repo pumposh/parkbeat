@@ -6,22 +6,46 @@ type ToastProps = {
   type?: 'success' | 'error' | 'info'
   duration?: number
   persistent?: boolean
+  position?: 'top' | 'bottom'
   onClose: () => void
 }
 
-export function Toast({ message, type = 'info', duration = 3000, persistent = false, onClose }: ToastProps) {
+export function Toast({ message, type = 'info', duration = 3000, persistent = false, position = 'bottom', onClose }: ToastProps) {
   const [isVisible, setIsVisible] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
-  const [bottomOffset, setBottomOffset] = useState(16) // default 4rem
+  const [offset, setOffset] = useState(16) // default 16px
 
   useEffect(() => {
     setIsMounted(true)
-    const footer = document.querySelector('.parkbeat-footer')
-    if (footer) {
-      const footerHeight = footer.getBoundingClientRect().height
-      setBottomOffset(footerHeight + 8) // Add 16px padding above footer
+    
+    // Check if there's a dialog overlay
+    const hasDialogOverlay = document.querySelector('.dialog-overlay') !== null
+    
+    if (position === 'bottom') {
+      if (!hasDialogOverlay) {
+        const footer = document.querySelector('.parkbeat-footer')
+        if (footer) {
+          const footerHeight = footer.getBoundingClientRect().height
+          setOffset(footerHeight + 8) // Add 8px padding above footer
+          return
+        }
+      }
+      setOffset(16) // Default bottom offset
+    } else {
+      if (!hasDialogOverlay) {
+        const header = document.querySelector('.header-content')
+        if (header) {
+          const headerHeight = header.getBoundingClientRect().height
+          setOffset(headerHeight + 8) // Add 8px padding below header
+          return
+        }
+      }
+      setOffset(16) // Default top offset
     }
+  }, [position])
 
+  // Separate effect for handling toast duration and cleanup
+  useEffect(() => {
     if (!persistent) {
       const timer = setTimeout(() => {
         setIsVisible(false)
@@ -55,7 +79,9 @@ export function Toast({ message, type = 'info', duration = 3000, persistent = fa
         md:left-auto md:right-4 md:-translate-x-0
         ${isVisible ? 'toast-enter' : 'toast-exit'}
       `}
-      style={{ bottom: `${bottomOffset}px` }}
+      style={{ 
+        ...(position === 'bottom' ? { bottom: `${offset}px` } : { top: `${offset}px` })
+      }}
     >
       <div className="rounded-lg shadow-lg flex items-center gap-3 px-4 py-3 min-w-[320px] max-w-md">
         <i className={`fa-solid fa-${icon} text-lg ${colorClass}`} aria-hidden="true" />

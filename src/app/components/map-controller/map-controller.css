@@ -150,14 +150,14 @@
     z-index: var(--z-dialog);
     opacity: 1;
     visibility: visible;
-    transform: translate(-50%, -50%) scale(1);
+    transform: translate(-50%, calc(-50% - 10px)) scale(1);
     transition: opacity 0.3s ease-out, visibility 0s linear 0s, transform 0.3s ease-out;
   }
 
   .pin-container.hidden {
     opacity: 0;
     visibility: hidden;
-    transform: translate(-50%, -50%) scale(0.95);
+    transform: translate(-50%, calc(-50% - 10px)) scale(0.95);
     transition: opacity 0.2s ease-in, visibility 0s linear 0.2s, transform 0.2s ease-in;
   }
 

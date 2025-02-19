@@ -1,11 +1,14 @@
 import type { LocationInfo, SuperLocationInfo } from "@/types/types"
 import { type ReactNode } from "react"
+import { cn } from "@/lib/utils"
+import { useProjectData } from "@/hooks/use-tree-sockets"
 
 interface LocationInfoCardProps {
   isLoading: boolean
   location: { lat: number; lng: number } | null
   locationInfo?: LocationInfo
   children?: ReactNode
+  projectId: string
 }
 
 interface LocationDisplay {
@@ -83,7 +86,11 @@ function determineLocationInfo(locationInfo?: SuperLocationInfo): LocationDispla
   }
 }
 
-export const LocationInfoCard = ({ isLoading, location, locationInfo, children }: LocationInfoCardProps) => {
+export const LocationInfoCard = ({ isLoading, location, locationInfo, children, projectId }: LocationInfoCardProps) => {
+  const { data: projectData } = useProjectData(projectId)
+
+  const projectImages = projectData?.images
+
   const renderContent = () => {
     if (isLoading) {
       return (
@@ -93,23 +100,40 @@ export const LocationInfoCard = ({ isLoading, location, locationInfo, children }
         </div>
       )
     }
-
     if (location) {
       const { mainLocation, subLocation } = determineLocationInfo(locationInfo)
+      console.log('[LocationInfoCard] projectId', projectId)
       
       return (
-        <div className="flex items-center justify-start gap-3">
-          <i className="fa-solid fa-location-dot mt-1 text-zinc-700 dark:text-zinc-300" aria-hidden="true" />
-          <div>
-            <p className="font-medium text-zinc-900 dark:text-zinc-100">
-              {mainLocation}
-            </p>
-            {subLocation && (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                {subLocation}
+        <div className="flex items-center justify-between w-full">
+          <div className="flex items-center justify-start gap-3">
+            <i className="fa-solid fa-location-dot mt-1 text-zinc-700 dark:text-zinc-300" aria-hidden="true" />
+            <div>
+              <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                {mainLocation}
               </p>
-            )}
+              {subLocation && (
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  {subLocation}
+                </p>
+              )}
+            </div>
           </div>
+          {projectImages && projectImages.length > 0 && (
+            <div className="relative opacity-70">
+              <i className="text-2xl fa-solid fa-image text-zinc-700 dark:text-zinc-300" aria-hidden="true" />
+              <div className={cn(
+                "absolute -top-[10px] -right-[10px] w-5 h-5 rounded-full flex items-center justify-center text-xs",
+                "bg-green-700 text-white font-medium"
+              )}>
+                {projectImages.length === 1 ? (
+                  <i className="fa-solid fa-check" aria-hidden="true" />
+                ) : (
+                  projectImages.length
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )
     }
