@@ -112,8 +112,8 @@ export const projectServerEvents = {
   })}
 
   
-  const clientEvents = z.object(projectClientEvents)
-  const serverEvents = z.object(projectServerEvents)
+const clientEvents = z.object(projectClientEvents)
+const serverEvents = z.object(projectServerEvents)
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
 
 type LocalProcedure = Procedure<Env, ProcedureContext, void, typeof clientEvents, typeof serverEvents>

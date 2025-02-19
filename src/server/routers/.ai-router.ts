@@ -7,7 +7,6 @@ import { env } from "hono/adapter"
 import { Storage } from '@google-cloud/storage'
 import { getLocationInfo } from "@/lib/location"
 import { createAIAgent } from "./ai-helpers/aigent"
-import type { ProjectCategory } from "@/types/types"
 import type { InferInsertModel } from 'drizzle-orm'
 import { Env } from "./ai-helpers/types"
 

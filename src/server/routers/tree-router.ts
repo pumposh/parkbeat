@@ -1,3 +1,4 @@
+import { Env as JStackEnv } from "@/server/jstack";
 import { projects } from "@/server/db/schema"
 import { desc, eq, InferInsertModel, like } from "drizzle-orm"
 import { z } from "zod"
@@ -5,6 +6,8 @@ import { j, publicProcedure } from "../jstack"
 import { getTreeHelpers } from "./tree-helpers/context"
 import { logger } from "@/lib/logger"
 import { projectClientEvents, projectServerEvents, ProjectStatus, setupProjectHandlers } from "./socket/project-handlers"
+import { setupAIHandlers, aiClientEvents, aiServerEvents } from "./socket/ai-handlers"
+import { Procedure } from "jstack"
 
 const killActiveSocketsSchema = z.object({
   socketId: z.string(),
@@ -18,14 +21,20 @@ const getProjectSchema = z.object({
 /** Client sends to server */
 const clientEvents = z.object({
   ping: z.undefined(),
-  ...projectClientEvents
+  ...projectClientEvents,
+  ...aiClientEvents
 })
 
 /** Server sends to client */
 const serverEvents = z.object({
   pong: z.void(),
-  ...projectServerEvents
+  provideSocketId: z.string().optional(),
+  ...projectServerEvents,
+  ...aiServerEvents
 })
+
+type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
+export type ServerProcedure = Procedure<JStackEnv, ProcedureContext, void, typeof clientEvents, typeof serverEvents>
 
 export type ProjectData = z.infer<typeof serverEvents>['projectData']['data']
 export type ClientEvents = z.infer<typeof clientEvents>
@@ -76,7 +85,7 @@ export const treeRouter = j.router({
   live: publicProcedure
     .incoming(clientEvents)
     .outgoing(serverEvents)
-    .ws(({ io, ctx }) => {
+    .ws(({ io, ctx, c }) => {
       const logger = {
         info: (message: string) => console.log('Server:', message),
         error: (message: string, error?: unknown) => console.error('Server:', message, error),
@@ -104,16 +113,24 @@ export const treeRouter = j.router({
             setSocketSubscription(socketId)
           }
         },
+        
+        ping: () => {
+          logger.debug('Keep alive received')
+          if (!socketId) return
+          setSocketSubscription(socketId)
+        },
 
         onConnect({ socket }) {
           socketId = getSocketId(socket)
           logger.info('Client connected to tree updates')
 
           setupProjectHandlers(socket, ctx, io)
+          setupAIHandlers(socket, ctx, io, c)
           
           // Send initial message to confirm connection
           logger.debug('Sending connection confirmation message')
           socket.emit('pong', undefined);
+          socket.emit('provideSocketId', socketId ?? undefined)
 
           // Return cleanup function
           socketId = getSocketId(socket)

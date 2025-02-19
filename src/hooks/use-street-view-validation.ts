@@ -7,12 +7,26 @@
  * 4. Provide error handling and success callbacks
  */
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useToast } from '@/app/components/toast'
-import { client } from '@/lib/client'
+import { WebSocketManager } from './websocket-manager'
+import { useServerEvent } from './websocket-manager'
+import type { EventPayloadMap } from './websocket-manager'
+import { generateId } from '@/lib/id'
 
-// Parameters required for street view validation
-interface StreetViewParams {
+// Validation error types
+export interface ValidationError {
+  code: string
+  message: string
+  details?: any
+  type?: string
+  path?: string[]
+  timestamp?: string
+  requestId?: string
+}
+
+// Street view parameters
+export interface StreetViewParams {
   lat: number
   lng: number
   heading: number
@@ -20,20 +34,12 @@ interface StreetViewParams {
   zoom: number
 }
 
-// Enhanced error interface to match backend
-interface ValidationError {
-  code: string
-  message: string
-  details?: any
-  type?: string
-  path?: string[]
-  cause?: Error | unknown
-  timestamp?: string
-  requestId?: string
-}
-
-const isValidationError = (error: any): error is ValidationError => {
-  return typeof error === 'object' && error !== null && 'code' in error && 'message' in error
+// Validation options
+export interface ValidationOptions {
+  projectId?: string
+  fundraiserId?: string
+  onSuccess?: (response: ValidationSuccess) => void
+  onError?: (error: ValidationError) => void
 }
 
 // Add success response type
@@ -51,12 +57,14 @@ interface ValidationSuccess {
   }
 }
 
-// Options for configuring the validation process
-interface ValidationOptions {
-  projectId?: string
-  fundraiserId?: string
-  onSuccess?: (response: ValidationSuccess) => void
-  onError?: (error: ValidationError) => void
+// Type guard for validation errors
+function isValidationError(value: any): value is ValidationError {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'code' in value &&
+    'message' in value
+  )
 }
 
 // Utility function to format error messages
@@ -84,65 +92,6 @@ function formatErrorMessage(error: ValidationError): string {
   }
 }
 
-// Utility function to parse error response
-function parseErrorResponse(response: any, status: number): ValidationError {
-  // Helper to try parsing a string as JSON
-  const tryParseJson = (str: string) => {
-    let parsed;
-    try {
-      parsed = JSON.parse(str);
-      if (typeof parsed === 'object' && parsed !== null && 'message' in parsed) {
-        
-      }
-    } catch (e) {
-      parsed = str;
-    }
-    return parsed;
-  }
-
-  // If it's already a validation error, return it
-  if (isValidationError(response)) {
-    return response
-  }
-
-  // Handle case where the error is wrapped multiple times
-  if (typeof response === 'object' && response !== null) {
-    // First try the message field
-    if ('message' in response) {
-      const parsedMessage = typeof response.message === 'string'
-        ? tryParseJson(response.message)
-        : response.message
-
-      if (isValidationError(parsedMessage)) {
-        return parsedMessage
-      }
-    }
-
-    // Then try the details field
-    if ('details' in response) {
-      const details = response.details
-      if (typeof details === 'object' && details !== null && 'message' in details) {
-        const parsedDetails = typeof details.message === 'string'
-          ? tryParseJson(details.message)
-          : details.message
-
-        if (isValidationError(parsedDetails)) {
-          return parsedDetails
-        }
-      }
-    }
-  }
-
-  // Fallback error
-  return {
-    code: `HTTP_${status}`,
-    message: response?.message?.toString() || 'Request failed',
-    details: response,
-    timestamp: new Date().toISOString(),
-    requestId: response?.requestId
-  }
-}
-
 /**
  * Hook for validating street view images
  * @param options Configuration options for validation
@@ -159,6 +108,61 @@ function parseErrorResponse(response: any, status: number): ValidationError {
 export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) {
   const [isValidating, setIsValidating] = useState(false)
   const { show } = useToast()
+  const wsManager = WebSocketManager.getInstance()
+  const request = useRef({
+    options: defaultOptions,
+    requestId: ''
+  })
+
+  const [imageValidation] = useServerEvent.imageValidation({
+    projectId: '',
+    requestId: request.current.requestId,
+    result: {
+      isValid: false,
+      isMaybe: false,
+      description: '',
+    }
+  })
+
+  // Handle WebSocket validation response
+  useEffect(() => {
+    if (!imageValidation || !imageValidation.projectId) return
+    console.log('[StreetViewValidation] imageValidation', imageValidation)
+    if (imageValidation.requestId === request.current.requestId) return
+    
+    const { result, projectId } = imageValidation
+    const options = {
+      ...defaultOptions,
+      ...request.current.options,
+    }
+    request.current = {
+      ...request.current,
+      requestId: imageValidation.requestId
+    }
+    
+    if (result.error) {
+      const error: ValidationError = {
+        code: result.error.code,
+        message: result.error.message,
+        details: result.error.details,
+        timestamp: new Date().toISOString()
+      }
+      handleError(error, options)
+      setIsValidating(false)
+      return
+    }
+
+    // Handle success
+    const successResponse: ValidationSuccess = {
+      success: result.isMaybe ? 'maybe' : result.isValid ? 'yes' : 'no',
+      description: result.description,
+      imageUrl: '', // This will be set by the validateStreetView function
+      requestId: projectId,
+    }
+
+    options.onSuccess?.(successResponse)
+    setIsValidating(false)
+  }, [imageValidation, defaultOptions])
 
   // Centralized error handling
   const handleError = (error: ValidationError, options?: Partial<ValidationOptions>) => {
@@ -170,10 +174,7 @@ export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) 
     // Call the error callback
     if (options?.onError) {
       options.onError(error)
-    }
-
-    // Only show toast for non-validation errors (since we handle those in the UI)
-    if (error.type !== 'invalid_input') {
+    } else if (error.type !== 'invalid_input') {
       show({
         message: formatErrorMessage(error),
         type: 'error',
@@ -197,67 +198,31 @@ export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) 
         fundraiserId: options.fundraiserId
       })
 
-      const res = await client.ai.validateImage.$post({
+      if (!options.projectId || !options.fundraiserId) {
+        throw new Error('Project ID and Fundraiser ID are required')
+      }
+
+      const newRequestId = generateId()
+
+      request.current = {
+        ...request.current,
+        options,
+      }
+
+      wsManager.emit('validateImage', {
         imageSource: {
           type: 'streetView',
           params
         },
-        projectId: options.projectId || '',
-        fundraiserId: options.fundraiserId || ''
+        projectId: options.projectId,
+        fundraiserId: options.fundraiserId,
+        requestId: newRequestId
+      }, {
+        timing: 'immediate'
       })
 
-      console.log('[StreetViewValidation] Raw response status:', res.status)
-
-      let response
-      try {
-        response = await res.json()
-        console.log('[StreetViewValidation] Parsed response:', response)
-      } catch (parseError) {
-        const error: ValidationError = {
-          code: 'PARSE_ERROR',
-          message: 'Invalid response from server',
-          details: parseError,
-          timestamp: new Date().toISOString()
-        }
-        handleError(error, options)
-        return false
-      }
-
-      // Handle error responses
-      if (!res.ok || isValidationError(response)) {
-        const error = parseErrorResponse(response, res.status)
-        handleError(error, options)
-        return false
-      }
-
-      // Handle success
-      console.log('[StreetViewValidation] Validation successful:', {
-        response,
-        requestId: response.requestId
-      })
-      
-      const successResponse: ValidationSuccess = {
-        ...response,
-        params: {
-          ...params,
-          lat: params.lat,
-          lng: params.lng,
-          heading: params.heading,
-          pitch: params.pitch,
-          zoom: params.zoom
-        }
-      }
-      
-      options.onSuccess?.(successResponse)
       return true
-
     } catch (error) {
-      const parsedError = parseErrorResponse(error, 400)
-      if (isValidationError(parsedError)) {
-        handleError(parsedError, options)
-        return false
-      }
-      
       const validationError: ValidationError = {
         code: 'UNKNOWN_ERROR',
         message: error instanceof Error ? error.message : 'An unexpected error occurred',
@@ -265,9 +230,8 @@ export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) 
         timestamp: new Date().toISOString()
       }
       handleError(validationError, options)
-      return false
-    } finally {
       setIsValidating(false)
+      return false
     }
   }
 

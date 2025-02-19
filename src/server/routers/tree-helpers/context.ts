@@ -3,7 +3,7 @@ import { publicProcedure } from "../../jstack"
 import { eq, desc } from "drizzle-orm"
 import { projectImages, projects, projectSuggestions } from "@/server/db/schema"
 import { ProjectData } from "../tree-router"
-
+import type { ServerProcedure } from "../tree-router"
 type Logger = {
   info: (message: string) => void
   error: (message: string, error?: unknown) => void
@@ -329,8 +329,9 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     }
   }
 
+  type IO = Parameters<Parameters<ServerProcedure["ws"]>[0]>[0]['io']
   // Helper function to notify all project subscribers of updates
-  const notifyProjectSubscribers = async (projectId: string, io: any) => {
+  const notifyProjectSubscribers = async (projectId: string, io: IO) => {
     logger.debug(`Notifying subscribers of updates to project: ${projectId}`)
     try {
       // Get updated project data
