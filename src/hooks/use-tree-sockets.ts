@@ -3,17 +3,21 @@
 import { useMutation } from "@tanstack/react-query"
 import { client } from "@/lib/client"
 import { generateId } from "@/lib/id"
-import type { ProjectStatus, Project as ServerProject } from "@/server/routers/tree-router"
+import type { 
+  ClientEvents,
+  ServerEvents,
+} from "@/server/routers/tree-router"
 import { useEffect, useRef, useState, useMemo, Dispatch } from "react"
 import { boundsToGeohash } from "@/lib/geo/geohash"
 import { useAuth } from "@clerk/nextjs"
 import { WebSocketLogger } from "./client-log"
+import type { BaseProject, ProjectStatus } from "@/server/routers/socket/project-handlers"
 
-// Define base tree type
-export type BaseProject = ServerProject
+// WebSocket payload type with string dates
+export type ProjectPayload = BaseProject
 
-// Client-side tree type with Date objects
-export type Project = BaseProject & {
+// Client-side project type with Date objects
+export type Project = Omit<BaseProject, '_meta_updated_at' | '_meta_created_at'> & {
   _meta_updated_at: Date
   _meta_created_at: Date
 }
@@ -27,55 +31,22 @@ export type ProjectGroup = {
   state: string
 }
 
-// WebSocket payload type with string dates
-export type ProjectPayload = Omit<BaseProject, '_meta_updated_at' | '_meta_created_at'> & {
-  _meta_updated_at: string
-  _meta_created_at: string
-}
+// Connection state management
+type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
 type ClientSocket = ReturnType<typeof client.tree.live.$ws>
 
-type SystemEventName = 'ping' | 'pong';
-type ProjectEventName = 'setProject' | 'newProject' | 'subscribe' | 'unsubscribe' | 'deleteProject' | 'subscribeProject' | 'projectData';
-type EventName = SystemEventName | ProjectEventName;
+type EventName = keyof (ClientEvents & ServerEvents);
+type ServerEventName = keyof ServerEvents;
 
-type EventPayloadMap = {
-  setProject: ProjectPayload;
-  newProject: ProjectPayload;
-  subscribe: [{ geohash: string }, ProjectPayload[], ProjectGroup[]];
-  unsubscribe: { geohash: string };
-  ping: undefined;
-  pong: undefined;
-  deleteProject: { id: string };
-  subscribeProject: { projectId: string, shouldSubscribe: boolean };
-  projectData: {
-    projectId: string;
-    data: {
-      project: ProjectPayload;
-      images?: Array<{
-        id: string;
-        type: string;
-        imageUrl: string;
-        aiAnalysis?: any;
-      }>;
-      suggestions?: Array<{
-        id: string;
-        title: string;
-        summary: string;
-        imagePrompt: string;
-        generatedImageUrl?: string;
-      }>;
-      // Add other related data types as needed
-    };
-  };
-};
+type EventPayloadMap = ClientEvents & ServerEvents;
 
 // Update ExpectedArgument type to use the EventPayloadMap
-type ExpectedArgument<T extends EventName> = T extends keyof EventPayloadMap ? EventPayloadMap[T] : never;
+type ExpectedArgument<T extends keyof EventPayloadMap> = T extends keyof EventPayloadMap ? EventPayloadMap[T] : never;
 
-type Hook<T extends EventName> = (val: ExpectedArgument<T>) => void;
-type HookMap<T extends EventName> = Map<T, Set<Hook<T>>>;
-type HookCache<T extends EventName> = Map<T, ExpectedArgument<T>>;
+type Hook<T extends ServerEventName> = (val: ExpectedArgument<T>) => void;
+type HookMap<T extends ServerEventName> = Map<T, Set<Hook<T>>>;
+type HookCache<T extends ServerEventName> = Map<T, ExpectedArgument<T>>;
 
 const noop = () => {}
 
@@ -96,13 +67,17 @@ class WebSocketManager {
 
   private static instance: WebSocketManager | null = null;
   private ws: ClientSocket | null = null;
-  private hooks: HookMap<EventName> | null = null;
-  private hookCache: HookCache<EventName> | null = null;
+  private hooks: HookMap<ServerEventName> | null = null;
+  private hookCache: HookCache<ServerEventName> | null = null;
   private connectionState: ConnectionState = 'disconnected';
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectTimeout: NodeJS.Timeout | null = null;
-  private eventBuffer: Array<{ event: EventName; data: ExpectedArgument<EventName>; options: EmissionOptions }> = [];
+  private eventBuffer: Array<{
+    event: keyof ClientEvents;
+    data: ExpectedArgument<keyof ClientEvents>;
+    options: EmissionOptions
+  }> = [];
   private stateListeners: Set<(state: ConnectionState) => void> = new Set();
   private projectSubscriptions: Set<string> = new Set();
   
@@ -154,16 +129,14 @@ class WebSocketManager {
       this.handleDisconnect();
     });
 
-    this.ws.on('ping', noop);
-
     this.ws.on('pong', noop);
 
     // Initialize all possible events with no-op handlers
-    const eventNames: EventName[] = ['setProject', 'newProject', 'subscribe', 'unsubscribe', 'projectData'];
+    const eventNames: (keyof ServerEvents)[] = ['newProject', 'subscribe', 'projectData'];
     eventNames.forEach(eventName => {
       this.ws?.on(eventName, (_arg) => {
         console.log(`[WebSocketManager] Received ${eventName} event from server`);
-        if (eventName === 'ping' || eventName === 'pong') {
+        if (eventName === 'pong') {
           noop();
           return;
         }
@@ -172,7 +145,7 @@ class WebSocketManager {
         if (this.hooks?.has(eventName)) {
           const arg = _arg as unknown as ExpectedArgument<typeof eventName>;
           if (!this.hookCache) {
-            this.hookCache = new Map<EventName, ExpectedArgument<EventName>>();
+            this.hookCache = new Map<ServerEventName, ExpectedArgument<ServerEventName>>();
           }
           this.hookCache.set(eventName, arg);
           const hookSet = this.hooks.get(eventName);
@@ -198,37 +171,39 @@ class WebSocketManager {
     }
   }
 
-  registerHook<T extends EventName>(key: T, hook: Hook<T>) {
+  registerHook<T extends ServerEventName>(key: T, hook: Hook<T>) {
     console.log(`[WebSocketManager] Registering hook for event: ${key}`);
-    if (!this.hooks) {
-      console.log('[WebSocketManager] First hook registration, initializing hooks map and connecting WebSocket');
-      this.hooks = new Map<EventName, Set<Hook<EventName>>>();
-      setTimeout(() => this.connect(), 0);
-    }
+    setTimeout(() => {
+      if (!this.hooks) {
+        console.log('[WebSocketManager] First hook registration, initializing hooks map and connecting WebSocket');
+        this.hooks = new Map<ServerEventName, Set<Hook<ServerEventName>>>();
+        setTimeout(() => this.connect(), 0);
+      }
 
-    let hookSet = this.hooks.get(key) as Set<Hook<T>> | undefined;
-    if (!hookSet) {
-      console.log(`[WebSocketManager] Creating new hook set for event: ${key}`);
-      hookSet = new Set<Hook<T>>();
-    }
-    
-    hookSet.add(hook);
-    this.hooks.set(key, hookSet as unknown as Set<Hook<EventName>>);
-    console.log(`[WebSocketManager] Hook registered for ${key}, total hooks: ${hookSet.size}`);
+      let hookSet = this.hooks.get(key) as Set<Hook<T>> | undefined;
+      if (!hookSet) {
+        console.log(`[WebSocketManager] Creating new hook set for event: ${key}`);
+        hookSet = new Set<Hook<T>>();
+      }
+      
+      hookSet.add(hook);
+      this.hooks.set(key, hookSet as unknown as Set<Hook<ServerEventName>>);
+      console.log(`[WebSocketManager] Hook registered for ${key}, total hooks: ${hookSet.size}`);
 
-    // Immediately update new hook with latest state if available
-    const latestState = this.latestState.get(key);
-    if (latestState !== undefined) {
-      console.log(`[WebSocketManager] Updating new hook with latest state for ${key}`);
-      hook(latestState as ExpectedArgument<T>);
-    }
+      // Immediately update new hook with latest state if available
+      const latestState = this.latestState.get(key);
+      if (latestState !== undefined) {
+        console.log(`[WebSocketManager] Updating new hook with latest state for ${key}`);
+        hook(latestState as ExpectedArgument<T>);
+      }
+    }, 0);
   }
 
-  unregisterHook<T extends EventName>(key: T, hook: Hook<T>) {
+  unregisterHook<T extends ServerEventName>(key: T, hook: Hook<T>) {
     console.log(`[WebSocketManager] Unregistering hook for event: ${key}`);
     const hookSet = this.hooks?.get(key);
     if (hookSet) {
-      hookSet.delete(hook as unknown as Hook<EventName>);
+      hookSet.delete(hook as unknown as Hook<ServerEventName>);
       console.log(`[WebSocketManager] Hook removed, remaining hooks for ${key}: ${hookSet.size}`);
     }
     if (hookSet?.size === 0) {
@@ -287,7 +262,7 @@ class WebSocketManager {
     }, backoffTime);
   }
 
-  emit<T extends EventName>(
+  emit<T extends keyof ClientEvents>(
     event: T,
     data: ExpectedArgument<T>,
     options: { 
@@ -300,10 +275,7 @@ class WebSocketManager {
     console.log(`[WebSocketManager] Attempting to emit ${event} event`);
     if (this.connectionState !== 'connected') {
       console.log(`[WebSocketManager] Not connected, buffering ${event} event`);
-      this.eventBuffer.push(
-        { event, data, options } as
-        { event: EventName; data: ExpectedArgument<EventName>; options: EmissionOptions }
-      );
+      this.eventBuffer.push({ event, data, options });
       return false;
     }
 
@@ -317,17 +289,10 @@ class WebSocketManager {
       queue.args.forEach(arg => {
         if (this.ws) {
           console.log(`[WebSocketManager] Emitting queued ${event} event`);
-          if (event === 'ping' || event === 'pong') {
+          if (event === 'ping') {
             this.ws.emit(event, undefined as never);
           } else {
             this.ws.emit(event, arg as never);
-            // Update latest state when emitting
-            this.latestState.set(event, arg);
-            // Update all registered hooks
-            const hookSet = this.hooks?.get(event);
-            if (hookSet) {
-              hookSet.forEach(h => h(arg as ExpectedArgument<typeof event>));
-            }
           }
         }
       });
@@ -479,26 +444,13 @@ class WebSocketManager {
 
 // Update useTree to use WebSocketManager
 const useTree: {
-  [K in EventName]: (defaultValue: ExpectedArgument<K>) => [
+  [K in keyof ServerEvents]: (defaultValue: ExpectedArgument<K>) => [
     ExpectedArgument<K>,
     Dispatch<ExpectedArgument<K>>
   ]
 } = {
-  setProject: (defaultValue: ProjectPayload) => {
-    const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
-    const [value, setValue] = useState<ProjectPayload>(() => 
-      wsManager.getLatestState('setProject') ?? defaultValue
-    );
-    
-    useEffect(() => {
-      wsManager.registerHook('setProject', setValue);
-      return () => wsManager.unregisterHook('setProject', setValue);
-    }, [wsManager]);
-    
-    return [value, setValue];
-  },
-  deleteProject: (defaultValue: { id: string }) => {
-    const [value, setValue] = useState<{ id: string }>(defaultValue);
+  deleteProject: (defaultValue: EventPayloadMap['deleteProject']) => {
+    const [value, setValue] = useState<EventPayloadMap['deleteProject']>(defaultValue);
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
@@ -508,8 +460,8 @@ const useTree: {
     
     return [value, setValue];
   },
-  newProject: (defaultValue: ProjectPayload) => {
-    const [value, setValue] = useState<ProjectPayload>(defaultValue);
+  newProject: (defaultValue: EventPayloadMap['newProject']) => {
+    const [value, setValue] = useState<EventPayloadMap['newProject']>(defaultValue);
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
@@ -519,8 +471,8 @@ const useTree: {
     
     return [value, setValue];
   },
-  subscribe: (defaultValue: [{ geohash: string }, ProjectPayload[], ProjectGroup[]]) => {
-    const [value, setValue] = useState<[{ geohash: string }, ProjectPayload[], ProjectGroup[]]>(defaultValue);
+  subscribe: (defaultValue: EventPayloadMap['subscribe']) => {
+    const [value, setValue] = useState<EventPayloadMap['subscribe']>(defaultValue);
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => { 
@@ -530,34 +482,8 @@ const useTree: {
     
     return [value, setValue];
   },
-  unsubscribe: (defaultValue: { geohash: string }) => {
-    const [value, setValue] = useState<{ geohash: string }>(defaultValue);
-    const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
-    
-  useEffect(() => {
-      wsManager.registerHook('unsubscribe', setValue);
-      return () => wsManager.unregisterHook('unsubscribe', setValue);
-    }, [wsManager]);
-    
-    return [value, setValue];
-  },
-  ping: (defaultValue: undefined) => {
-    const [value, setValue] = useState<undefined>(defaultValue);
-    return [value, setValue];
-  },
-  pong: (defaultValue: undefined) => {
-    const [value, setValue] = useState<undefined>(defaultValue);
-    return [value, setValue];
-  },
-  subscribeProject: (defaultValue: { projectId: string, shouldSubscribe: boolean }) => {
-    const [value, setValue] = useState<{ projectId: string, shouldSubscribe: boolean }>(defaultValue);
-    const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
-    
-    useEffect(() => {
-      wsManager.registerHook('subscribeProject', setValue);
-      return () => wsManager.unregisterHook('subscribeProject', setValue);
-    }, [wsManager]);
-    
+  pong: (defaultValue: EventPayloadMap['pong']) => {
+    const [value, setValue] = useState<EventPayloadMap['pong']>(defaultValue);
     return [value, setValue];
   },
   projectData: (defaultValue: EventPayloadMap['projectData']) => {
@@ -572,9 +498,6 @@ const useTree: {
     return [value, setValue];
   }
 };
-
-// Connection state management
-type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
 // Update useLiveTrees hook to use the WebSocketManager
 export function useLiveTrees() {
@@ -598,7 +521,6 @@ export function useLiveTrees() {
 
   // Use the tree hooks for state updates
   const [newProjectData] = useTree.newProject({} as ProjectPayload);
-  const [setProjectData] = useTree.setProject({} as ProjectPayload);
   const [subscribeData] = useTree.subscribe([{ geohash: '' }, [], []]);
   const [deleteProjectData] = useTree.deleteProject({ id: '' });
 
@@ -637,26 +559,6 @@ export function useLiveTrees() {
     
     logger.log('debug', `Project ${processedProject.id} updated in client state via newProject`);
   }, [newProjectData, logger]);
-
-  // Handle set tree updates
-  useEffect(() => {
-    if (!setProjectData || !('id' in setProjectData)) return;
-    if (setProjectData.id === "0") return;
-
-    const processedProject: Project = {
-      ...setProjectData,
-      _meta_updated_at: new Date(setProjectData._meta_updated_at),
-      _meta_created_at: new Date(setProjectData._meta_created_at)
-    };
-    
-    setProjectMap(prev => {
-      const next = new Map(prev);
-      next.set(processedProject.id, processedProject);
-      return next;
-    });
-    
-    logger.log('debug', `Project ${processedProject.id} updated in client state via setProject`);
-  }, [setProjectData, logger]);
 
   // Handle delete tree updates
   useEffect(() => {

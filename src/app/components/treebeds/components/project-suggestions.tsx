@@ -1,5 +1,4 @@
-import { useCallback, useState, useEffect } from 'react'
-import type { Project } from '@/server/routers/tree-router'
+import { useCallback, useState } from 'react'
 import { client } from '@/lib/client'
 import Image from 'next/image'
 import { useProjectData } from '@/hooks/use-tree-sockets'

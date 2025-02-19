@@ -320,7 +320,7 @@ export function StepFormDialog({
                       type="submit"
                       onClick={onSubmit}
                       disabled={!canSubmit || isSubmitting}
-                      className="rounded-lg bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 h-12 flex items-center justify-center text-white text-xl disabled:cursor-not-allowed disabled:bg-emerald-500/50 px-6"
+                      className="rounded-lg transition-all bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 h-12 flex items-center justify-center text-white text-xl disabled:cursor-not-allowed disabled:bg-emerald-500/50 px-6"
                       aria-label="Submit"
                     >
                       <i className={`fa-solid ${isSubmitting ? 'fa-circle-notch fa-spin' : 'fa-check'} transition-opacity ${isSubmitting || !canSubmit ? 'opacity-60' : 'opacity-100'}`} aria-hidden="true" />
@@ -329,7 +329,7 @@ export function StepFormDialog({
                     <button
                       type="button"
                       onClick={() => handleStepChange(currentStep + 1)}
-                      disabled={isTransitioning || steps[currentStep]?.canProgress === false}
+                      disabled={steps[currentStep]?.canProgress === false}
                       className={cn(
                         "rounded-lg h-12 flex items-center justify-center text-xl px-6 transition-all",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
@@ -338,20 +338,18 @@ export function StepFormDialog({
                           "bg-emerald-500 hover:bg-emerald-600",
                           "focus-visible:ring-emerald-500",
                           "text-white",
-                          "disabled:bg-emerald-500/50"
                         ] : [
                           "frosted-glass",
                           "focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100",
                           "hover:ring-zinc-300 dark:hover:ring-zinc-100",
                           "text-zinc-800 dark:text-zinc-100",
-                          "disabled:hover:ring-0"
+                          "disabled:hover:ring-0 disabled:opacity-30"
                         ]
                       )}
                       aria-label="Next step"
                     >
                       <i className={cn(
-                        "fa-solid fa-arrow-right transition-opacity",
-                        (isTransitioning || steps[currentStep]?.canProgress === false) ? "opacity-60" : "opacity-100"
+                        "fa-solid fa-arrow-right transition-opacity"
                       )} aria-hidden="true" />
                     </button>
                   )}

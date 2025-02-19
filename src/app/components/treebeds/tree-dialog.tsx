@@ -3,11 +3,11 @@
 import { useRouter } from 'next/navigation'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { LocationInfo } from '@/types/types'
-import type { Project, ProjectStatus } from '@/server/routers/tree-router'
+import type { ProjectStatus } from '@/server/routers/socket/project-handlers'
 import { StepFormDialog } from '../ui/step-form-dialog'
 import { LocationInfoCard } from './components/location-info-card'
 import { useToast } from '@/app/components/toast'
-import { useLiveTrees, useProjectData } from '@/hooks/use-tree-sockets'
+import { Project, useLiveTrees, useProjectData } from '@/hooks/use-tree-sockets'
 import { useParams } from 'next/navigation'
 import { StreetViewCard } from './components/street-view-card'
 import { ProjectForm } from './components/project-form'
@@ -376,7 +376,10 @@ export function TreeDialog(props: {
         draftTitle: 'Keep draft',
         deleteTitle: 'Delete',
         subtitle: 'Would you like to keep this tree bed as a draft or delete it?',
-        onSaveAsDraft: saveDraft,
+        onSaveAsDraft: () => {
+          saveDraft()
+          handleClose()
+        },
         onDelete: handleDelete,
         isDeleting
       }}

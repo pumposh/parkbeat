@@ -7,6 +7,7 @@ import { FooterMenu } from "./components/nav/footer"
 import { Bree_Serif } from "next/font/google"
 
 import "./globals.css"
+import React from "react"
 
 const breeSerif = Bree_Serif({ 
   subsets: ['latin'],
@@ -27,9 +28,10 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <ClerkProvider>
-      <html lang="en" suppressHydrationWarning className={breeSerif.variable}>
-        <head>
+    <React.StrictMode>
+      <ClerkProvider>
+        <html lang="en" suppressHydrationWarning className={breeSerif.variable}>
+          <head>
           {/* <link
             rel="preload"
             href="/parkbeat.svg"
@@ -58,8 +60,9 @@ export default function RootLayout({
             </div>
             <FooterMenu />
           </Providers>
-        </body>
-      </html>
-    </ClerkProvider>
+          </body>
+        </html>
+      </ClerkProvider>
+    </React.StrictMode>
   )
 }

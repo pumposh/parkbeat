@@ -1,10 +1,10 @@
 import { neon } from "@neondatabase/serverless"
 import { drizzle } from "drizzle-orm/neon-http"
 import { env } from "hono/adapter"
-import { jstack } from "jstack"
+import { jstack, Procedure } from "jstack"
 import { Redis } from "@upstash/redis/cloudflare"
 
-interface Env {
+export interface Env {
   Bindings: { 
     DATABASE_URL: string;
     UPSTASH_REDIS_REST_URL: string;
@@ -55,3 +55,5 @@ const redisMiddleware = j.middleware(async ({ c, next }) => {
 export const publicProcedure = j.procedure
   .use(databaseMiddleware)
   .use(redisMiddleware)
+
+export type PublicProcedure<T extends Procedure<Env, any, any, any>> = T
