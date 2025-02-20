@@ -13,9 +13,15 @@ interface MarkersProps {
   onMarkerNearCenter: (isNear: boolean) => void
 }
 
+interface Marker {
+  position: { x: number; y: number }
+  isNearCenter: boolean
+  isDeleted?: boolean
+}
+
 export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter }: MarkersProps) => {
-  const [markers, setMarkers] = useState<{ [key: string]: { position: { x: number; y: number }, isNearCenter: boolean } }>({})
-  const [groupMarkers, setGroupMarkers] = useState<{ [key: string]: { position: { x: number; y: number }, isNearCenter: boolean } }>({})
+  const [markers, setMarkers] = useState<{ [key: string]: Marker }>({})
+  const [groupMarkers, setGroupMarkers] = useState<{ [key: string]: Marker }>({})
   const mapCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const [focusedMarkerId, setFocusedMarkerId] = useState<string | null>(null)
 
@@ -32,6 +38,13 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter }: Ma
       let isAnyMarkerNearCenter = false;
       let closestMarkerId: string | null = null;
       let minDistance = Infinity;
+
+      const currentMarkerIds = new Map([
+        ...Object.entries(markers),
+      ]);
+      const currentGroupMarkerIds = new Map([
+        ...Object.entries(groupMarkers),
+      ]);
 
       // Update individual project markers
       [...projects, ...(projectGroups || [])].forEach(project => {
@@ -62,13 +75,42 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter }: Ma
             isNearCenter
           }
         }
+        currentMarkerIds.delete(project.id)
+        currentGroupMarkerIds.delete(project.id)
       })
+
+      const deletedMarkers = Array.from(currentMarkerIds)
+        .map(([id, marker]) => ({ id, marker, isDeleted: true }))
+      const deletedGroupMarkers = Array.from(currentGroupMarkerIds)
+        .map(([id, marker]) => ({ id, marker, isDeleted: true }))
+      setTimeout(() => {
+        const deletedKeys = Object.keys({
+          ...deletedMarkers,
+          ...deletedGroupMarkers
+        })
+        const updateMarkers = (prev: { [key: string]: Marker }) => {
+          const newMarkers = { ...prev }
+          deletedKeys.forEach((id) => {
+            if (!newMarkers[id]) return
+            delete newMarkers[id]
+          })
+          return newMarkers
+        };
+        setMarkers(updateMarkers)
+        setGroupMarkers(updateMarkers)
+      }, 200)
 
       // Only update focused marker if it's near center
       setFocusedMarkerId(isAnyMarkerNearCenter ? closestMarkerId : null)
 
-      setMarkers(newMarkers)
-      setGroupMarkers(newGroupMarkers)
+      setMarkers({
+        ...newMarkers,
+        ...Object.fromEntries(currentMarkerIds)
+      })
+      setGroupMarkers({
+        ...newGroupMarkers,
+        ...Object.fromEntries(currentGroupMarkerIds)
+      })
       onMarkerNearCenter(isAnyMarkerNearCenter)
     }
 
@@ -92,6 +134,7 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter }: Ma
           <ProjectMarker
             key={group.id}
             group={group}
+            isDeleted={marker.isDeleted}
             position={marker.position}
             isNearCenter={marker.isNearCenter && focusedMarkerId === group.id}
             map={map}
@@ -107,6 +150,7 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter }: Ma
           <ProjectMarker
             key={project.id}
             project={project}
+            isDeleted={marker.isDeleted}
             position={marker.position}
             isNearCenter={marker.isNearCenter && focusedMarkerId === project.id}
             map={map}

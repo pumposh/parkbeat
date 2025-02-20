@@ -9,11 +9,11 @@ export default async function TreePage({
   params,
   searchParams
 }: {
-  params: { projectId: string }
+  params: { treeId: string }
   searchParams: { lat: string; lng: string }
 }) {
   const { lat, lng } = await searchParams
-  const { projectId } = await params
+  const { treeId: projectId } = await params
   const { userId } = await auth()
 
   // Parallel fetch both location info and tree data

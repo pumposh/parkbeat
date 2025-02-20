@@ -584,7 +584,7 @@ export const MapController = ({
           {isPlacingTree && isMapLoaded && (
             <div className={cn(
               "pin-container",
-              isMarkerNearCenter ? "hidden" : "",
+              isMarkerNearCenter ? "pin-container-hidden" : "",
               isUserInteracting || isMapMoving ? "user-interacting" : ""
             )}>
               <i 

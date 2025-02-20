@@ -1,0 +1,180 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 27d95247acf8ca59cdac6f79f9a2000e82e47028..dcbd6c0ff912ee84357833856860d319bd734ecf 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -4415,7 +4415,7 @@ var EventEmitter = class {
+   on(event, callback) {
+     if (!callback) {
+       logger.error(
+-        `No callback provided for event handler "${event.toString()}". Ppass a callback to handle this event.`
++        `No callback provided for event handler "${event.toString()}". Pass a callback to handle this event.`
+       );
+       return;
+     }
+@@ -4427,7 +4427,7 @@ var EventEmitter = class {
+ 
+ // src/socket.ts
+ var ServerSocket = class {
+-  room = "DEFAULT_ROOM";
++  subscribedRooms = /* @__PURE__ */ new Map();
+   ws;
+   controllers = /* @__PURE__ */ new Map();
+   emitter;
+@@ -4454,6 +4454,7 @@ var ServerSocket = class {
+         const [eventName, eventData] = eventSchema.parse(parsedData);
+         if (eventName === "ping") {
+           this.ws.send(JSON.stringify(["pong", null]));
++          this.emitter.handleEvent("ping", null);
+           return;
+         }
+         this.emitter.handleEvent(eventName, eventData);
+@@ -4463,7 +4464,7 @@ var ServerSocket = class {
+     });
+   }
+   get rooms() {
+-    return [this.room];
++    return Array.from(this.subscribedRooms.keys());
+   }
+   close() {
+     this.ws.close();
+@@ -4490,14 +4491,20 @@ var ServerSocket = class {
+     this.emitter.handleEvent(eventName, eventData);
+   }
+   async join(room) {
+-    this.room = room;
+     logger.info(`Socket trying to join room: "${room}".`);
++    const status = this.subscribedRooms.get(room)?.status;
++    if (status === "connecting" || status === "connected") {
++      logger.warn(`Socket is already ${status} to room: "${room}". Skipping...`);
++      return;
++    }
++    this.subscribedRooms.set(room, { status: "connecting" });
+     await this.subscribe(room).catch((error) => {
+       logger.error(`Subscription error for room ${room}:`, error);
+     }).then(() => logger.success(`Joined room: ${room}`)).then(() => this.createHeartbeat(room));
+   }
+   leave(room) {
+     const controller = this.controllers.get(room);
++    this.subscribedRooms.set(room, { status: "disconnected" });
+     if (controller) {
+       controller.abort();
+       this.controllers.delete(room);
+@@ -4540,6 +4547,7 @@ var ServerSocket = class {
+         while (reader) {
+           const { done, value } = await reader.read();
+           resolve();
++          this.subscribedRooms.set(room, { status: "connected" });
+           if (done) break;
+           const chunk = decoder.decode(value);
+           buffer += chunk;
+@@ -4587,6 +4595,7 @@ var ServerSocket = class {
+     if (controller) {
+       controller.abort();
+       this.controllers.delete(room);
++      this.subscribedRooms.set(room, { status: "disconnected" });
+       logger.info(`Unsubscribed from room: ${room}`);
+     } else {
+       logger.warn(`No active subscription found for room: ${room}`);
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index 373e563d5c46e9b3bbf6234a2541f11c057b12c7..fb64c33fca4c3c56bf8f0acc481f61bb90a321bc 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -19,7 +19,7 @@ interface SystemEvents {
+     onError: Error;
+ }
+ declare class ServerSocket<IncomingEvents, OutgoingEvents> {
+-    private room;
++    private subscribedRooms;
+     private ws;
+     private controllers;
+     private emitter;
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 373e563d5c46e9b3bbf6234a2541f11c057b12c7..fb64c33fca4c3c56bf8f0acc481f61bb90a321bc 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -19,7 +19,7 @@ interface SystemEvents {
+     onError: Error;
+ }
+ declare class ServerSocket<IncomingEvents, OutgoingEvents> {
+-    private room;
++    private subscribedRooms;
+     private ws;
+     private controllers;
+     private emitter;
+diff --git a/dist/index.js b/dist/index.js
+index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..2e662f82a5ed18bce05d4fed78d9932bda38259d 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -4406,7 +4406,7 @@ var EventEmitter = class {
+   on(event, callback) {
+     if (!callback) {
+       logger.error(
+-        `No callback provided for event handler "${event.toString()}". Ppass a callback to handle this event.`
++        `No callback provided for event handler "${event.toString()}". Pass a callback to handle this event.`
+       );
+       return;
+     }
+@@ -4418,7 +4418,7 @@ var EventEmitter = class {
+ 
+ // src/socket.ts
+ var ServerSocket = class {
+-  room = "DEFAULT_ROOM";
++  subscribedRooms = /* @__PURE__ */ new Map();
+   ws;
+   controllers = /* @__PURE__ */ new Map();
+   emitter;
+@@ -4445,6 +4445,7 @@ var ServerSocket = class {
+         const [eventName, eventData] = eventSchema.parse(parsedData);
+         if (eventName === "ping") {
+           this.ws.send(JSON.stringify(["pong", null]));
++          this.emitter.handleEvent("ping", null);
+           return;
+         }
+         this.emitter.handleEvent(eventName, eventData);
+@@ -4454,7 +4455,7 @@ var ServerSocket = class {
+     });
+   }
+   get rooms() {
+-    return [this.room];
++    return Array.from(this.subscribedRooms.keys());
+   }
+   close() {
+     this.ws.close();
+@@ -4481,14 +4482,20 @@ var ServerSocket = class {
+     this.emitter.handleEvent(eventName, eventData);
+   }
+   async join(room) {
+-    this.room = room;
+     logger.info(`Socket trying to join room: "${room}".`);
++    const status = this.subscribedRooms.get(room)?.status;
++    if (status === "connecting" || status === "connected") {
++      logger.warn(`Socket is already ${status} to room: "${room}". Skipping...`);
++      return;
++    }
++    this.subscribedRooms.set(room, { status: "connecting" });
+     await this.subscribe(room).catch((error) => {
+       logger.error(`Subscription error for room ${room}:`, error);
+     }).then(() => logger.success(`Joined room: ${room}`)).then(() => this.createHeartbeat(room));
+   }
+   leave(room) {
+     const controller = this.controllers.get(room);
++    this.subscribedRooms.set(room, { status: "disconnected" });
+     if (controller) {
+       controller.abort();
+       this.controllers.delete(room);
+@@ -4531,6 +4538,7 @@ var ServerSocket = class {
+         while (reader) {
+           const { done, value } = await reader.read();
+           resolve();
++          this.subscribedRooms.set(room, { status: "connected" });
+           if (done) break;
+           const chunk = decoder.decode(value);
+           buffer += chunk;
+@@ -4578,6 +4586,7 @@ var ServerSocket = class {
+     if (controller) {
+       controller.abort();
+       this.controllers.delete(room);
++      this.subscribedRooms.set(room, { status: "disconnected" });
+       logger.info(`Unsubscribed from room: ${room}`);
+     } else {
+       logger.warn(`No active subscription found for room: ${room}`);

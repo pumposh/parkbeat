@@ -17,6 +17,7 @@ export type BaseProject = {
   status: ProjectStatus
   _loc_lat: number
   _loc_lng: number
+  _loc_geohash?: string
   _meta_created_by: string
   _meta_updated_at: string
   _meta_updated_by: string
@@ -39,6 +40,7 @@ const projectSchema = z.object({
   status: z.enum(['draft', 'active', 'funded', 'completed', 'archived']),
   _loc_lat: z.number(),
   _loc_lng: z.number(),
+  _loc_geohash: z.string().optional(),
   _meta_created_by: z.string(),
   _meta_updated_at: z.string(),
   _meta_updated_by: z.string(),
@@ -53,12 +55,12 @@ export const projectClientEvents = {
   deleteProject: z.object({
     id: z.string(),
   }),
-  unsubscribe: z.object({
-    geohash: z.string(),
-  }),
   subscribe: z.tuple([
-    z.object({ geohash: z.string() }),
-    z.array(projectSchema),
+    z.object({
+      geohash: z.string(),
+      shouldSubscribe: z.boolean()
+    }),
+    z.array(projectSchema).optional(),
     z.array(z.object({
       id: z.string(),
       city: z.string(),
@@ -66,7 +68,7 @@ export const projectClientEvents = {
       count: z.number(),
       _loc_lat: z.number(),
       _loc_lng: z.number(),
-    })),
+    })).optional(),
   ]),
   subscribeProject: z.object({
     projectId: z.string(),
@@ -127,6 +129,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     setSocketSubscription,
     getActiveSubscribers,
     setProjectSubscription,
+    removeSocketSubscription,
     removeProjectSubscription,
     getProjectData
   } = getTreeHelpers({ ctx, logger })
@@ -138,7 +141,6 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
   socket.on('subscribeProject', async ({ projectId, shouldSubscribe }) => {
     if (shouldSubscribe) {
       logger.info(`Handling project subscription for: ${projectId}`)
-      const { db } = ctx
 
       try {
         socketId = getSocketId(socket)
@@ -146,11 +148,17 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
         
         if (socketId) await setProjectSubscription(socketId, projectId)
 
-        // Fetch project data
-        const projectData = await getProjectData(projectId)
+        let projectData: ProjectData = {
+          project: { id: projectId, status: 'draft' } as BaseProject,
+          images: [],
+          suggestions: []
+        }
 
-        if (!projectData) {
-          throw new Error('Project not found')
+        try {
+          // Fetch project data
+          projectData = await getProjectData(projectId) ?? projectData
+        } catch (error) {
+          logger.info('Project not found, creating empty project data')
         }
         
         socket.emit('projectData', {
@@ -183,51 +191,58 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
   })
 
   // Register event handlers
-  socket.on('subscribe', async ([{
-    geohash
-  }, _treesToEmit, _treeGroups]: [{
-    geohash: string
-  }, unknown[], unknown[]]) => {
-    logger.info(`Handling subscription for area: ${geohash}`)
+  socket.on('subscribe', async ([{ geohash, shouldSubscribe }]) => {
+    logger.info(`Handling ${shouldSubscribe ? 'subscription' : 'unsubscription'} for area: ${geohash}`)
     const { db } = ctx
 
     try {
       socketId = getSocketId(socket)
+      
+      if (shouldSubscribe) {
+      await socket.join(`geohash:${geohash}`)
       await socket.join(`geohash:${geohash}`)
       
-      if (socketId) await setSocketSubscription(socketId, geohash)
+        await socket.join(`geohash:${geohash}`)
+      
+        if (socketId) await setSocketSubscription(socketId, geohash)
 
-      const nearbyProjects = await db
-        .select()
-        .from(projects)
-        .where(like(projects._loc_geohash, `${geohash}%`))
-        .orderBy(desc(projects._loc_geohash))
+        const nearbyProjects = await db
+          .select()
+          .from(projects)
+          .where(like(projects._loc_geohash, `${geohash}%`))
+          .orderBy(desc(projects._loc_geohash))
 
-      const individualProjects = nearbyProjects
-        .map(project => ({
-          id: project.id,
-          name: project.name,
-          status: project.status as ProjectStatus,
-          _loc_lat: parseFloat(project._loc_lat),
-          _loc_lng: parseFloat(project._loc_lng),
-          _meta_created_by: project._meta_created_by,
-          _meta_updated_by: project._meta_updated_by,
-          _meta_updated_at: project._meta_updated_at.toISOString(),
-          _meta_created_at: project._meta_created_at.toISOString()
-        }))
+        const individualProjects = nearbyProjects
+          .map(project => ({
+            id: project.id,
+            name: project.name,
+            status: project.status as ProjectStatus,
+            _loc_lat: parseFloat(project._loc_lat),
+            _loc_lng: parseFloat(project._loc_lng),
+            _meta_created_by: project._meta_created_by,
+            _meta_updated_by: project._meta_updated_by,
+            _meta_updated_at: project._meta_updated_at.toISOString(),
+            _meta_created_at: project._meta_created_at.toISOString()
+          }))
 
-      if (individualProjects.length > 0) {
-        // Convert dates to proper format for emission
-        const projectsToEmit = individualProjects.map(project => ({
-          ...project,
-          _meta_updated_at: new Date(project._meta_updated_at).toISOString(),
-          _meta_created_at: new Date(project._meta_created_at).toISOString()
-        }));
+        if (individualProjects.length > 0) {
+          // Convert dates to proper format for emission
+          const projectsToEmit = individualProjects.map(project => ({
+            ...project,
+            _meta_updated_at: new Date(project._meta_updated_at).toISOString(),
+            _meta_created_at: new Date(project._meta_created_at).toISOString()
+          }));
 
-        await io.to(`geohash:${geohash}`).emit('subscribe', [{ geohash }, projectsToEmit, []])
+          await io.to(`geohash:${geohash}`).emit('subscribe', [{ geohash }, projectsToEmit, []])
+        }
+
+        logger.info(`Subscription complete for geohash:${geohash} - Found ${nearbyProjects.length} projects, emitted ${individualProjects.length} projects`)
+      } else {
+        // Handle unsubscription
+        await socket.leave(`geohash:${geohash}`)
+        if (socketId) await removeSocketSubscription(geohash, socketId)
+        logger.info(`Unsubscription complete for geohash:${geohash}`)
       }
-
-      logger.info(`Subscription complete for geohash:${geohash} - Found ${nearbyProjects.length} projects, emitted ${individualProjects.length} projects`)
     } catch (error) {
       logger.error('Error in subscription handler:', error)
       throw error
@@ -263,9 +278,9 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     // Emit to all parent geohashes
     for (let precision = project._loc_geohash.length; precision > 0; precision--) {
       const parentHash = project._loc_geohash.substring(0, precision)
-      const activeSocketIds = await getActiveSubscribers(parentHash, socketId ? [socketId] : [])
+      const activeSocketIds = await getActiveSubscribers(parentHash)
       for (const socketId of activeSocketIds) {
-        await io.to(`geohash:${socketId}`).emit('deleteProject', { id: data.id })
+        await io.to(`geohash:${parentHash}`).emit('deleteProject', { id: data.id })
       }
     }
 
@@ -373,7 +388,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
       // Emit to all parent geohashes
       for (let precision = projectHash.length; precision > 0; precision--) {
         const parentHash = projectHash.substring(0, precision)
-        const activeSocketIds = await getActiveSubscribers(parentHash, socketId ? [socketId] : [])
+        const activeSocketIds = await getActiveSubscribers(parentHash)
         totalSubscribers += activeSocketIds.length
         
         if (activeSocketIds.length > 0) {
@@ -385,7 +400,9 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
       }
 
       // Emit project data update to project subscribers
-      const projectDataUpdate: ProjectData = await getProjectData(result.id)
+      const projectDataUpdate = await getProjectData(result.id)
+
+      if (!projectDataUpdate) return;
       
       await io.to(`project:${result.id}`).emit('projectData', {
         projectId: result.id,

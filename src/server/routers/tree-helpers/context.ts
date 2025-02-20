@@ -1,23 +1,24 @@
 import { generateId } from "@/lib/id"
 import { publicProcedure } from "../../jstack"
-import { eq, desc } from "drizzle-orm"
+import { eq, desc, like } from "drizzle-orm"
 import { projectImages, projects, projectSuggestions } from "@/server/db/schema"
 import { ProjectData } from "../tree-router"
 import type { ServerProcedure } from "../tree-router"
+import { ProjectStatus } from "../socket/project-handlers"
 type Logger = {
-  info: (message: string) => void
-  error: (message: string, error?: unknown) => void
-  debug: (message: string) => void
+  info: (...args: Parameters<typeof console.info>) => void
+  error: (...args: Parameters<typeof console.error>) => void
+  debug: (...args: Parameters<typeof console.debug>) => void
 }
 
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
 
 export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger: Logger }) => {
   // Helper function to get Redis key for geohash subscriptions
-  const getGeohashKey = (geohash: string) => `geohash:${geohash}:sockets`
-  const getSocketKey = (socketId: string) => `sockets:${socketId}:geohashes`
-  const getProjectKey = (projectId: string) => `project:${projectId}:sockets`
-  const getSocketProjectsKey = (socketId: string) => `sockets:${socketId}:projects`
+  const getGeohashKey = (geohash: string): string => `geohash:${geohash}:sockets`
+  const getProjectKey = (projectId: string): string => `project:${projectId}:sockets`
+  const getSocketGeohashKey = (socketId: string): string => `sockets:${socketId}:geohashes`
+  const getSocketProjectsKey = (socketId: string): string => `sockets:${socketId}:projects`
 
   const getSocketId = (socket: any) => {
     if ('_socketId' in socket) {
@@ -29,14 +30,14 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
   }
 
   const getMostRecentSubscription = async (socketId: string) => {
-    const socketKey = getSocketKey(socketId)
+    const socketKey = getSocketGeohashKey(socketId)
     const geohashes = await ctx.redis.smembers(socketKey)
     if (geohashes.length === 0) return null
     return geohashes[geohashes.length - 1]
   }
 
   const getLastSubscriptionTime = async (socketId: string) => {
-    const socketKey = getSocketKey(socketId)
+    const socketKey = getSocketGeohashKey(socketId)
     const geohashes = await ctx.redis.smembers(socketKey)
     if (geohashes.length === 0) return null
 
@@ -65,7 +66,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
 
   // Helper function to add socket subscription
   const setSocketSubscription = async (socketId: string, geohash?: string) => {
-    const socketKey = getSocketKey(socketId)
+    const socketKey = getSocketGeohashKey(socketId)
     const geohashKey = geohash ? getGeohashKey(geohash) : await getMostRecentSubscription(socketId)
     
     logger.debug(`Setting subscription: Socket=${socketKey}, Geohash=${geohashKey}`)
@@ -109,7 +110,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
   // Helper function to remove socket subscription
   const removeSocketSubscription = async (geohash: string, socketId: string) => {
     const geohashKey = getGeohashKey(geohash)
-    const socketKey = getSocketKey(socketId)
+    const socketKey = getSocketGeohashKey(socketId)
     
     // Remove socket from geohash's subscribers
     await ctx.redis.hdel(geohashKey, socketId)
@@ -125,47 +126,17 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     return count
   }
 
-  const cleanupInactiveSubscriptions = async (geohash: string) => {
-    const key = getGeohashKey(geohash)
-    const sockets = await ctx.redis.smembers(key)
-    for (const socket of sockets) {
-      const socketId = socket.split(':')[1]
-      if (!socketId) continue
-      await cleanup(socketId)
-    }
-  }
-
   // Helper function to get active subscribers and clean up inactive ones
   const getActiveSubscribers = async (geohash: string, excludeSocketIds: string[] = []) => {
     const key = getGeohashKey(geohash)
     const subscribers = (await ctx.redis.hgetall(key)) || {}
     const activeSocketIds: Set<string> = new Set()
-    const cleanupPromises: Promise<void>[] = []
+    const excludedSocketIds: Set<string> = new Set(excludeSocketIds)
 
-    const twentySecondsAgo = Date.now() - 20000
-
-    for (const [socketId, timestampStr] of Object.entries(subscribers)) {
-      const timestamp = parseInt(String(timestampStr))
-      if (timestamp > twentySecondsAgo) {
-        activeSocketIds.add(socketId)
-      } else {
-        // Add cleanup promise for inactive subscriber
-        cleanupPromises.push(
-          cleanup(socketId).catch(error => {
-            logger.error(`Error cleaning up inactive socket ${socketId}:`, error)
-          })
-        )
-      }
+    for (const socketId of Object.keys(subscribers)) {
+      if (excludedSocketIds.has(socketId)) continue
+      activeSocketIds.add(socketId)
     }
-
-    // Execute all cleanup operations in parallel
-    if (cleanupPromises.length > 0) {
-      await Promise.all(cleanupPromises)
-    }
-
-    excludeSocketIds.forEach(socketId => {
-      activeSocketIds.delete(socketId)
-    })
 
     return Array.from(activeSocketIds)
   }
@@ -258,8 +229,34 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     return Array.from(activeSocketIds)
   }
 
+  const notifyGeohashSubscribers = async (geohash: string, io: IO) => {
+    const key = getGeohashKey(geohash)
+    const sockets = await ctx.redis.smembers(key)
+    for (const socket of sockets) {
+      const nearbyProjects = await ctx.db
+        .select()
+        .from(projects)
+        .where(like(projects._loc_geohash, `${geohash}%`))
+        .orderBy(desc(projects._loc_geohash))
+
+      const individualProjects = nearbyProjects
+        .map(project => ({
+          id: project.id,
+          name: project.name,
+          status: project.status as ProjectStatus,
+          _loc_lat: parseFloat(project._loc_lat),
+          _loc_lng: parseFloat(project._loc_lng),
+          _meta_created_by: project._meta_created_by,
+          _meta_updated_by: project._meta_updated_by,
+          _meta_updated_at: project._meta_updated_at.toISOString(),
+          _meta_created_at: project._meta_created_at.toISOString()
+        }))
+
+    }
+  }
+
   // Helper function to get all project data
-  const getProjectData = async (projectId: string): Promise<ProjectData> => {
+  const getProjectData = async (projectId: string): Promise<ProjectData | null> => {
     logger.debug(`Getting project data for: ${projectId}`)
     const { db } = ctx
 
@@ -273,7 +270,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
 
       if (!project) {
         logger.error(`Project not found: ${projectId}`)
-        throw new Error('Project not found')
+        return null;
       }
 
       // Format project data
@@ -284,6 +281,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
         status: project.status,
         _loc_lat: parseFloat(project._loc_lat),
         _loc_lng: parseFloat(project._loc_lng),
+        _loc_geohash: project._loc_geohash,
         _meta_created_by: project._meta_created_by,
         _meta_updated_by: project._meta_updated_by,
         _meta_updated_at: project._meta_updated_at.toISOString(),
@@ -331,17 +329,34 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
 
   type IO = Parameters<Parameters<ServerProcedure["ws"]>[0]>[0]['io']
   // Helper function to notify all project subscribers of updates
-  const notifyProjectSubscribers = async (projectId: string, io: IO) => {
+  const notifyProjectSubscribers = async (projectId: string, socketId: string | null, io: IO) => {
     logger.debug(`Notifying subscribers of updates to project: ${projectId}`)
     try {
       // Get updated project data
       const projectData = await getProjectData(projectId)
+
+      if (!projectData) return;
       
       // Emit to all subscribers in the project's room
       await io.to(`project:${projectId}`).emit('projectData', {
         projectId,
         data: projectData
       })
+
+      const project = projectData?.project;
+
+      if (project?._loc_geohash) {
+        for (let precision = project._loc_geohash.length; precision > 0; precision--) {
+          const parentHash = project._loc_geohash.substring(0, precision)
+          const activeSocketIds = await getActiveSubscribers(parentHash)
+          if (activeSocketIds.length > 0) {
+            await io.to(`geohash:${parentHash}`).emit('projectData', {
+              projectId,
+              data: projectData
+            })
+          }
+        }
+      }
       
       logger.debug(`Successfully notified project subscribers for ${projectId}`)
     } catch (error) {
@@ -356,13 +371,15 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
       logger.info(`Client ${socketId} disconnected, cleaning up subscriptions`)
 
       // Get all geohashes this socket was subscribed to
-      const socketKey = getSocketKey(socketId)
+      const socketKey = getSocketGeohashKey(socketId)
       const socketProjectsKey = getSocketProjectsKey(socketId)
+
       logger.debug(`Checking Redis keys: ${socketKey}, ${socketProjectsKey}`)
       
       let geohashes: string[]
       let projectIds: string[]
       try {
+        logger.debug(`WOOOO ${socketId}`, await ctx.redis.smembers(socketKey));
         [geohashes, projectIds] = await Promise.all([
           ctx.redis.smembers(socketKey),
           ctx.redis.smembers(socketProjectsKey)
@@ -371,6 +388,18 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
       } catch (error) {
         logger.error('Error getting socket subscriptions:', error)
         return
+      }
+
+      // Clean up the socket's sets of subscriptions
+      try {
+        await Promise.all([
+          ctx.redis.del(socketKey),
+          ctx.redis.del(socketProjectsKey),
+          ctx.redis.hdel('cleanupQueue', socketId)
+        ])
+        logger.info(`Cleaned up all subscriptions for socket ${socketId}`)
+      } catch (error) {
+        logger.error('Error deleting socket keys:', error)
       }
       
       // Remove all subscriptions
@@ -390,17 +419,6 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
         } catch (error) {
           logger.error(`Error removing subscription for project ${projectId}:`, error)
         }
-      }
-
-      // Clean up the socket's sets of subscriptions
-      try {
-        await Promise.all([
-          ctx.redis.del(socketKey),
-          ctx.redis.del(socketProjectsKey)
-        ])
-        logger.info(`Cleaned up all subscriptions for socket ${socketId}`)
-      } catch (error) {
-        logger.error('Error deleting socket keys:', error)
       }
     } catch (error) {
       logger.error('Error in cleanup:', error)

@@ -11,9 +11,10 @@ interface ProjectInfoPanelProps {
   group?: ProjectGroup
   position: { x: number; y: number }
   isVisible: boolean
+  className?: string
 }
 
-export const ProjectInfoPanel = ({ project, group, position, isVisible }: ProjectInfoPanelProps) => {
+export const ProjectInfoPanel = ({ project, group, position, isVisible, className }: ProjectInfoPanelProps) => {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -64,6 +65,7 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible }: Projec
       data-loading={isNavigating ? "true" : "false"}
       className={cn(
         "tree-info-panel frosted-glass",
+        className,
         isVisible && "visible",
         "text-zinc-800 dark:text-zinc-50",
         (isAdmin || (project?.status === 'active')) && "cursor-pointer hover:scale-[1.02] active:scale-[0.98]",

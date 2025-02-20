@@ -160,7 +160,8 @@ type AIIO = Parameters<Parameters<LocalProcedure["ws"]>[0]>[0]['io']
 export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AIIO, c: ProcedureEnv) => {
   logger.info('Initializing AI WebSocket handler')
   const {
-    notifyProjectSubscribers
+    notifyProjectSubscribers,
+    getSocketId
   } = getTreeHelpers({ ctx, logger })
 
 
@@ -356,7 +357,8 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
           }
         })
 
-        notifyProjectSubscribers(projectId, io)
+        const socketId = getSocketId(socket)
+        notifyProjectSubscribers(projectId, socketId, io)
       } else {
         // Emit only to requesting client
         socket.emit('imageValidation', {

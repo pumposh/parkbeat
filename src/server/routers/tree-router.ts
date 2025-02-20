@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger"
 import { projectClientEvents, projectServerEvents, ProjectStatus, setupProjectHandlers } from "./socket/project-handlers"
 import { setupAIHandlers, aiClientEvents, aiServerEvents } from "./socket/ai-handlers"
 import { Procedure } from "jstack"
+import { Redis } from "@upstash/redis/cloudflare";
 
 const killActiveSocketsSchema = z.object({
   socketId: z.string(),
@@ -21,13 +22,14 @@ const getProjectSchema = z.object({
 /** Client sends to server */
 const clientEvents = z.object({
   ping: z.undefined(),
+  pong: z.function().args(z.void()).returns(z.void()),
   ...projectClientEvents,
   ...aiClientEvents
 })
 
 /** Server sends to client */
 const serverEvents = z.object({
-  pong: z.void(),
+  pong: z.function().args(z.void()).returns(z.void()),
   provideSocketId: z.string().optional(),
   ...projectServerEvents,
   ...aiServerEvents
@@ -45,6 +47,7 @@ export const treeRouter = j.router({
     .input(killActiveSocketsSchema)
     .post(async ({ ctx, input }) => {
       const { socketId } = input
+      logger.info(`\n\n[Process ${process.pid}] Killing socket ${socketId}`)
       const { cleanup } = getTreeHelpers({ ctx, logger })
       try {
         await cleanup(socketId)
@@ -87,9 +90,9 @@ export const treeRouter = j.router({
     .outgoing(serverEvents)
     .ws(({ io, ctx, c }) => {
       const logger = {
-        info: (message: string) => console.log('Server:', message),
-        error: (message: string, error?: unknown) => console.error('Server:', message, error),
-        debug: (message: string) => console.log('Server:', message)
+        info: (...args: Parameters<typeof console.log>) => console.log('Server:', ...args),
+        error: (...args: Parameters<typeof console.error>) => console.error('Server:', ...args),
+        debug: (...args: Parameters<typeof console.debug>) => console.debug('Server:', ...args)
       }
 
       const {
@@ -100,7 +103,59 @@ export const treeRouter = j.router({
 
       let socketId: string | null = null
 
-      logger.info('Initializing WebSocket handler')
+      const queueSocketForCleanup = (socketId: string) => {
+        try {
+          logger.info(`[Process ${process.pid}] Adding socket ${socketId} to cleanup queue`)
+          
+          // Get Redis connection details from environment
+          const redisUrl = c.env.UPSTASH_REDIS_REST_URL
+
+          // Use global fetch for network request
+          fetch(redisUrl + '/hset/cleanupQueue/' + socketId , {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${c.env.UPSTASH_REDIS_REST_TOKEN}`,
+            },
+            body: Date.now().toString()
+          })
+
+        } catch (error) {
+          logger.error(`[Process ${process.pid}] Failed to queue socket ${socketId} for cleanup:`, error)
+        }
+      }
+
+      const processCleanupQueue = async () => {
+        try {
+          // Get all entries from cleanup queue
+          const queueEntries = await ctx.redis.hgetall('cleanupQueue')
+          if (!queueEntries || Object.keys(queueEntries).length === 0) return
+
+          logger.info(`[Process ${process.pid}] Processing cleanup queue with ${Object.keys(queueEntries).length} entries`)
+
+          // Process each socket in parallel
+          await Promise.allSettled(
+            Object.entries(queueEntries).map(async ([socketId, timestamp]) => {
+              try {
+                await cleanup(socketId)
+                // Remove from queue only if cleanup succeeds
+                await ctx.redis.hdel('cleanupQueue', socketId)
+                logger.info(`[Process ${process.pid}] Cleaned up and removed socket ${socketId} from queue`)
+              } catch (error) {
+                // If the socket is too old, remove it from the queue
+                const age = Date.now() - parseInt(`${timestamp}`)
+                if (age > 24 * 60 * 60 * 1000) { // 24 hours
+                  await ctx.redis.hdel('cleanupQueue', socketId)
+                  logger.info(`[Process ${process.pid}] Removed stale socket ${socketId} from queue (age: ${age}ms)`)
+                } else {
+                  logger.error(`[Process ${process.pid}] Failed to clean up socket ${socketId}:`, error)
+                }
+              }
+            })
+          )
+        } catch (error) {
+          logger.error(`[Process ${process.pid}] Error processing cleanup queue:`, error)
+        }
+      }
 
       return {
         onMessage(data: any[]) {
@@ -124,78 +179,58 @@ export const treeRouter = j.router({
           socketId = getSocketId(socket)
           logger.info('Client connected to tree updates')
 
+          // Process any outstanding cleanup tasks
+          processCleanupQueue().catch(error => {
+            logger.error(`[Process ${process.pid}] Error processing cleanup queue on connect:`, error)
+          })
+
           setupProjectHandlers(socket, ctx, io)
           setupAIHandlers(socket, ctx, io, c)
           
           // Send initial message to confirm connection
           logger.debug('Sending connection confirmation message')
-          socket.emit('pong', undefined);
+          socket.on('onHeartbeat' as any, () => {
+            logger.info('heartbeat received')
+          });
           socket.emit('provideSocketId', socketId ?? undefined)
 
           // Return cleanup function
           socketId = getSocketId(socket)
 
+          // queueSocketForCleanup('asdf')
+          // logger.info('test fetch')
+          // fetch( + '/api/tree/killActiveSockets', {
+          //   method: 'POST',
+          //   body: JSON.stringify({ socketId: 'asdfasdf' })
+          // }).catch((error) => {
+          //   logger.error('test fetch error', error)
+          // }).finally(() => {
+          //   logger.info('test fetch')
+          // })
+
           return () => {
             if (!socketId) return
-            cleanup(socketId)
+            queueSocketForCleanup(socketId)
           }
         },
-        
-        onError: async ({ error }: { error: Event }) => {
-          logger.info(`[Process ${process.pid}] WebSocket: ${socketId}`)
-          logger.error('WebSocket error:', error)
-          if (!socketId) return;
-          
-          logger.info(`[Process ${process.pid}] Initiating cleanup via REST for socket ${socketId} in onError`)
-          try {
-            // Call the killActiveSockets endpoint instead of direct cleanup
-            const response = await fetch('/api/tree/killActiveSockets', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                socketId
-              })
-            })
 
-            if (!response.ok) {
-              throw new Error(`Failed to kill socket: ${response.statusText}`)
-            }
-
-            logger.info(`[Process ${process.pid}] REST cleanup initiated for socket ${socketId} in onError`)
-          } catch (error) {
-            logger.error(`[Process ${process.pid}] Error initiating REST cleanup in onError:`, error)
-          }
-        },
-        
-        onClose: async ({ socket }: { socket: any }) => {
+        onDisconnect: ({ socket }) => {
           logger.info(`[Process ${process.pid}] WebSocket connection closed`)
           socketId = getSocketId(socket)
           if (!socketId) return;
           
-          logger.info(`[Process ${process.pid}] Initiating cleanup via REST for socket ${socketId} in onClose`)
-          try {
-            // Call the killActiveSockets endpoint instead of direct cleanup
-            const response = await fetch('/api/tree/killActiveSockets', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                socketId
-              })
-            })
-
-            if (!response.ok) {
-              throw new Error(`Failed to kill socket: ${response.statusText}`)
-            }
-
-            logger.info(`[Process ${process.pid}] REST cleanup initiated for socket ${socketId} in onClose`)
-          } catch (error) {
-            logger.error(`[Process ${process.pid}] Error initiating REST cleanup in onClose:`, error)
-          }
-        }
+          // Queue for cleanup without waiting
+          queueSocketForCleanup(socketId)
+        },
+        onError: ({ error, socket }) => {
+          logger.info(`[Process ${process.pid}] WebSocket connection closed: error=${error}`)
+          socket.close();
+          socketId = getSocketId(socket)
+          if (!socketId) return;
+          
+          // Queue for cleanup without waiting
+          queueSocketForCleanup(socketId)
+        },
       }
     })
 }) 

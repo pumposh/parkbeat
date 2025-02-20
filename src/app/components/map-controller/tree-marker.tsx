@@ -5,16 +5,18 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { ProjectInfoPanel } from './tree-info-panel'
 import type maplibregl from 'maplibre-gl'
+import { cn } from '@/lib/utils'
 
 interface ProjectMarkerProps {
   project?: Project
   group?: ProjectGroup
   position: { x: number; y: number }
   isNearCenter?: boolean
+  isDeleted?: boolean
   map: maplibregl.Map
 }
 
-export const ProjectMarker = ({ project, group, position, isNearCenter, map }: ProjectMarkerProps) => {
+export const ProjectMarker = ({ project, group, position, isNearCenter, isDeleted, map }: ProjectMarkerProps) => {
   const [showInfoPanel, setShowInfoPanel] = useState(false)
 
   useEffect(() => {
@@ -36,15 +38,20 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, map }: P
           project={project}
           group={group}
           position={position}   
-          isVisible={showInfoPanel}
+          isVisible={showInfoPanel && !isDeleted}
         />,
         map.getCanvasContainer()
       )}
       <button
-        className="absolute pointer-events-auto"
+        className={cn(
+          "project-marker-button",
+          isDeleted && "leaving"
+        )}
         style={{ 
-          transform: `translate(${position.x}px, ${position.y}px) translate(-50%, -100%)`,
-        }}
+          '--marker-x': `${position.x}px`,
+          '--marker-y': `${position.y}px`,
+          transform: `translate(${position.x}px, ${position.y}px)`,
+        } as React.CSSProperties}
         onClick={(e) => {
           e.stopPropagation()
           e.preventDefault()

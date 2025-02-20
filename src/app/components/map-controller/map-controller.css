@@ -46,6 +46,28 @@
   }
 }
 
+@keyframes markerEnter {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -100%) scale(1);
+  }
+}
+
+@keyframes markerLeave {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -100%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(0.8);
+  }
+}
+
 @layer map-components {
   .map-container {
     @apply fixed inset-0;
@@ -151,14 +173,13 @@
     opacity: 1;
     visibility: visible;
     transform: translate(-50%, calc(-50% - 10px)) scale(1);
-    transition: opacity 0.3s ease-out, visibility 0s linear 0s, transform 0.3s ease-out;
+    transition: opacity 0.1s ease-out, visibility 0s linear 0s, transform 0.1s ease-out;
   }
 
-  .pin-container.hidden {
+  .pin-container-hidden {
     opacity: 0;
     visibility: hidden;
-    transform: translate(-50%, calc(-50% - 10px)) scale(0.95);
-    transition: opacity 0.2s ease-in, visibility 0s linear 0.2s, transform 0.2s ease-in;
+    transition: opacity 0.1s ease-in, visibility 0s linear 0.1s, transform 0.1s ease-in;
   }
 
   .pin {
@@ -255,6 +276,33 @@
 
   .projects-route-leave {
     animation: projectsRouteLeave 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .project-marker-container {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(0.8);
+    animation: markerEnter 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    will-change: transform, opacity;
+  }
+
+  /* Add transition for smooth leave animation */
+  .project-marker-button {
+    @apply absolute pointer-events-auto;
+    transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 1;
+    transform-origin: center bottom;
+  }
+
+  .project-marker-button .leaving {
+    opacity: 0;
+    transform: translate(var(--marker-x), var(--marker-y)) scale(0.8);
+    pointer-events: none;
+  }
+
+  /* Remove old marker animations */
+  .project-marker-enter,
+  .project-marker-leave {
+    display: none;
   }
 }
 

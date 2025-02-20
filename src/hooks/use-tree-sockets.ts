@@ -49,7 +49,7 @@ export function useLiveTrees() {
 
   // Use the tree hooks for state updates
   const [newProjectData] = useServerEvent.newProject({} as ProjectPayload);
-  const [subscribeData] = useServerEvent.subscribe([{ geohash: '' }, [], []]);
+  const [subscribeData] = useServerEvent.subscribe([{ geohash: '', shouldSubscribe: true }, [], []]);
   const [deleteProjectData] = useServerEvent.deleteProject({ id: '' });
 
   // Register handler on mount and handle connection state
@@ -70,6 +70,7 @@ export function useLiveTrees() {
 
   // Handle new tree updates
   useEffect(() => {
+    console.log('[useLiveTrees] newProjectData', newProjectData)
     if (!newProjectData || !('id' in newProjectData)) return;
     if (newProjectData.id === "0") return;
 
@@ -90,6 +91,7 @@ export function useLiveTrees() {
 
   // Handle delete tree updates
   useEffect(() => {
+    console.log('[useLiveTrees] deleteProjectData', deleteProjectData)
     if (!deleteProjectData || !('id' in deleteProjectData)) return;
     if (deleteProjectData.id === "0") return;
 
@@ -157,12 +159,18 @@ export function useLiveTrees() {
           logger.log('debug', `Changing geohash subscription from ${currentGeohash} to ${geohash}`);
           
           if (currentGeohash) {
-            await wsManager.emit('unsubscribe', { geohash: currentGeohash });
+            await wsManager.emit('subscribe', [{
+              geohash: currentGeohash,
+              shouldSubscribe: false
+            }, [], []], { argBehavior: 'append' });
             logger.log('info', `Unsubscribed from geohash: ${currentGeohash}`);
           }
 
           logger.log('info', `Subscribing to geohash: ${geohash}`);
-          await wsManager.emit('subscribe', [{ geohash }, [], []]);
+          await wsManager.emit('subscribe', [{
+            geohash,
+            shouldSubscribe: true
+          }, [], []], { argBehavior: 'append', timing: 'immediate' });
         }
       }, 500);
     };
@@ -171,7 +179,11 @@ export function useLiveTrees() {
     return () => {
       window.removeEventListener('map:newBounds', handleBoundsChange as EventListener);
       if (currentGeohash) {
-        wsManager.emit('unsubscribe', { geohash: currentGeohash });
+        wsManager.emit('subscribe', [{
+          geohash: currentGeohash,
+          shouldSubscribe: false
+        }, [], []], { argBehavior: 'replace' });
+        setCurrentGeohash(null);
       }
     };
   }, [currentGeohash]);

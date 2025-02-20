@@ -59,5 +59,8 @@
     "eslint-plugin-drizzle": "^0.2.3",
     "tailwindcss": "^3.3.0",
     "typescript": "^5"
+  },
+  "patchedDependencies": {
+    "jstack-shared@0.0.2": "patches/jstack-shared@0.0.2.patch"
   }
 }

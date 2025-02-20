@@ -113,33 +113,47 @@ export class WebSocketManager {
     this.ws.on('pong', noop);
 
     // Initialize all possible events with no-op handlers
-    const eventNames: (keyof ServerEvents)[] = ['newProject', 'subscribe', 'projectData', 'imageAnalysis', 'imageValidation', 'projectVision', 'costEstimate'];
-    eventNames.forEach(eventName => {
-      this.ws?.on(eventName, (_arg) => {
-        console.log(`[WebSocketManager] Received ${eventName} event from server`);
-        if (eventName === 'pong') {
-          noop();
-          return;
-        }
-
-        // For non-system events, process through hook system if hooks exist
-        if (this.hooks?.has(eventName)) {
-          const arg = _arg as unknown as ExpectedArgument<typeof eventName>;
-          if (!this.hookCache) {
-            this.hookCache = new Map<ServerEventName, ExpectedArgument<ServerEventName>>();
-          }
-          this.hookCache.set(eventName, arg);
-          const hookSet = this.hooks.get(eventName);
-          hookSet?.forEach(h => h(arg));
-        } else {
-          console.log(`[WebSocketManager] No hooks registered for ${eventName}, using no-op handler`);
-          noop();
-        }
-      });
+    const eventNames: (keyof ServerEvents)[] = [
+      'newProject',
+      'deleteProject',
+      'subscribe',
+      'projectData',
+      'imageAnalysis',
+      'imageValidation',
+      'projectVision',
+      'costEstimate',
+      'pong'
+    ];
+    eventNames.forEach((eventName: keyof ServerEvents) => {
+      this.ws?.on(eventName, (arg) =>
+        this.handleEvent(eventName, arg as ExpectedArgument<keyof ServerEvents>)
+      );
     });
 
     console.log('[WebSocketManager] Initiating WebSocket connection');
     this.ws.connect();
+  }
+
+  handleEvent<T extends keyof ServerEvents>(eventName: T, _arg: ExpectedArgument<T>) {
+    console.log(`[WebSocketManager] Received ${eventName} event from server`);
+    if (eventName === 'pong') {
+      noop();
+      return;
+    }
+
+    // For non-system events, process through hook system if hooks exist
+    if (this.hooks?.has(eventName)) {
+      const arg = _arg as unknown as ExpectedArgument<typeof eventName>;
+      if (!this.hookCache) {
+        this.hookCache = new Map<ServerEventName, ExpectedArgument<ServerEventName>>();
+      }
+      this.hookCache.set(eventName, arg);
+      const hookSet = this.hooks.get(eventName);
+      hookSet?.forEach(h => h(arg));
+    } else {
+      console.log(`[WebSocketManager] No hooks registered for ${eventName}, using no-op handler`);
+      noop();
+    }
   }
 
   private disconnectWs() {
@@ -275,6 +289,9 @@ export class WebSocketManager {
           console.log(`[WebSocketManager] Emitting queued ${event} event`);
           if (event === 'ping') {
             this.ws.emit(event, undefined as never);
+            this.ws.emit('pong', () => {
+              console.log('pong received')
+            });
           } else {
             this.ws.emit(event, arg as never);
           }
