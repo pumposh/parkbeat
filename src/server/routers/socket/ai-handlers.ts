@@ -9,7 +9,7 @@ import { costEstimates, projectImages } from "@/server/db/schema";
 import { getLocationInfo } from "@/lib/location";
 import { env } from "hono/adapter";
 import type { publicProcedure } from "@/server/jstack";
-import { Procedure } from "jstack";
+import { ContextWithSuperJSON, Procedure } from "jstack";
 import { eq, desc } from "drizzle-orm";
 import { getTreeHelpers } from "../tree-helpers/context";
 
@@ -151,7 +151,7 @@ export const aiServerEvents = {
 const clientEvents = z.object(aiClientEvents)
 const serverEvents = z.object(aiServerEvents)
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
-type ProcedureEnv = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['c']
+type ProcedureEnv = ContextWithSuperJSON<JStackEnv>
 
 type LocalProcedure = Procedure<JStackEnv, ProcedureContext, void, typeof clientEvents, typeof serverEvents>
 type AISocket = Parameters<NonNullable<Awaited<ReturnType<Parameters<LocalProcedure["ws"]>[0]>>['onConnect']>>[0]['socket']

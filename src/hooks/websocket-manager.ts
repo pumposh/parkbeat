@@ -122,7 +122,8 @@ export class WebSocketManager {
       'imageValidation',
       'projectVision',
       'costEstimate',
-      'pong'
+      'pong',
+      'ping' as keyof ServerEvents
     ];
     eventNames.forEach((eventName: keyof ServerEvents) => {
       this.ws?.on(eventName, (arg) =>
@@ -266,6 +267,11 @@ export class WebSocketManager {
     options: { 
       argBehavior?: 'append' | 'replace', 
       timing?: 'immediate' | 'delayed' 
+      /**
+       * If the arg behavior is replace, it will only be replaced if the value of uniqueKey is the same as the existing value
+       * This is useful for preventing subscribe/unsubscribe events from conflicting with unrelated subscriptions
+       */
+      uniqueKey?: keyof typeof data,
     } = {
       argBehavior: 'append',
       timing: 'delayed'
@@ -283,7 +289,11 @@ export class WebSocketManager {
     const emissionAction = () => {
       console.log(`[WebSocketManager] Processing queued ${event} events`);
       const queue = this.emitQueueRef.current[event];
-      if (!queue) return;
+      if (!queue || !queue.args) return;
+      console.log(`[WebSocketManager] Queue for ${event}:`);
+      queue.args.forEach(arg => {
+        console.log(arg);
+      });
       queue.args.forEach(arg => {
         if (this.ws) {
           console.log(`[WebSocketManager] Emitting queued ${event} event`);
@@ -306,14 +316,30 @@ export class WebSocketManager {
     };
 
     let args = eventQueue?.args;
+    const existingArg = options.uniqueKey ? Array.from(args ?? []).find(arg =>
+      !options.uniqueKey || !arg || !data ? false :
+      (arg as any)[options.uniqueKey] === (data as any)[options.uniqueKey]
+    ) : null;
+
+    console.log(`[WebSocketManager] Considering new arg for ${event}:`, data);
+
     if (options.argBehavior === 'append' && args) {
       console.log(`[WebSocketManager] Appending to existing ${event} queue`);
       args.add(data);
+    } else if (existingArg) {
+      console.log(`[WebSocketManager] Event ${event} has unique key ${options.uniqueKey?.toString() ?? 'undefined'}`);
+      args?.delete(existingArg);
+      args?.add(data);
     } else {
       console.log(`[WebSocketManager] Creating new ${event} queue`);
       args?.clear();
       args = new Set([data]);
     }
+
+    console.log(`[WebSocketManager] Queue for ${event}:`);
+    args?.forEach(arg => {
+      console.log(arg);
+    });
 
     let timeout: ReturnType<typeof setTimeout> | null = null;
     if (options.timing === 'immediate') {

@@ -99,63 +99,12 @@ export const treeRouter = j.router({
         getSocketId,
         setSocketSubscription,
         cleanup,
+        enqueueSubscriptionCleanup,
+        processCleanupQueue
       } = getTreeHelpers({ ctx, logger })
 
       let socketId: string | null = null
 
-      const queueSocketForCleanup = (socketId: string) => {
-        try {
-          logger.info(`[Process ${process.pid}] Adding socket ${socketId} to cleanup queue`)
-          
-          // Get Redis connection details from environment
-          const redisUrl = c.env.UPSTASH_REDIS_REST_URL
-
-          // Use global fetch for network request
-          fetch(redisUrl + '/hset/cleanupQueue/' + socketId , {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${c.env.UPSTASH_REDIS_REST_TOKEN}`,
-            },
-            body: Date.now().toString()
-          })
-
-        } catch (error) {
-          logger.error(`[Process ${process.pid}] Failed to queue socket ${socketId} for cleanup:`, error)
-        }
-      }
-
-      const processCleanupQueue = async () => {
-        try {
-          // Get all entries from cleanup queue
-          const queueEntries = await ctx.redis.hgetall('cleanupQueue')
-          if (!queueEntries || Object.keys(queueEntries).length === 0) return
-
-          logger.info(`[Process ${process.pid}] Processing cleanup queue with ${Object.keys(queueEntries).length} entries`)
-
-          // Process each socket in parallel
-          await Promise.allSettled(
-            Object.entries(queueEntries).map(async ([socketId, timestamp]) => {
-              try {
-                await cleanup(socketId)
-                // Remove from queue only if cleanup succeeds
-                await ctx.redis.hdel('cleanupQueue', socketId)
-                logger.info(`[Process ${process.pid}] Cleaned up and removed socket ${socketId} from queue`)
-              } catch (error) {
-                // If the socket is too old, remove it from the queue
-                const age = Date.now() - parseInt(`${timestamp}`)
-                if (age > 24 * 60 * 60 * 1000) { // 24 hours
-                  await ctx.redis.hdel('cleanupQueue', socketId)
-                  logger.info(`[Process ${process.pid}] Removed stale socket ${socketId} from queue (age: ${age}ms)`)
-                } else {
-                  logger.error(`[Process ${process.pid}] Failed to clean up socket ${socketId}:`, error)
-                }
-              }
-            })
-          )
-        } catch (error) {
-          logger.error(`[Process ${process.pid}] Error processing cleanup queue:`, error)
-        }
-      }
 
       return {
         onMessage(data: any[]) {
@@ -184,7 +133,7 @@ export const treeRouter = j.router({
             logger.error(`[Process ${process.pid}] Error processing cleanup queue on connect:`, error)
           })
 
-          setupProjectHandlers(socket, ctx, io)
+          setupProjectHandlers(socket, ctx, io, c)
           setupAIHandlers(socket, ctx, io, c)
           
           // Send initial message to confirm connection
@@ -210,7 +159,7 @@ export const treeRouter = j.router({
 
           return () => {
             if (!socketId) return
-            queueSocketForCleanup(socketId)
+            enqueueSubscriptionCleanup(c, socketId)
           }
         },
 
@@ -220,7 +169,7 @@ export const treeRouter = j.router({
           if (!socketId) return;
           
           // Queue for cleanup without waiting
-          queueSocketForCleanup(socketId)
+          enqueueSubscriptionCleanup(c, socketId)
         },
         onError: ({ error, socket }) => {
           logger.info(`[Process ${process.pid}] WebSocket connection closed: error=${error}`)
@@ -229,7 +178,7 @@ export const treeRouter = j.router({
           if (!socketId) return;
           
           // Queue for cleanup without waiting
-          queueSocketForCleanup(socketId)
+          enqueueSubscriptionCleanup(c, socketId)
         },
       }
     })

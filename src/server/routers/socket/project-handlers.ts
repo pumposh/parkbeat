@@ -6,7 +6,7 @@ import { getTreeHelpers } from "../tree-helpers/context";
 import { desc, eq, InferInsertModel, like } from "drizzle-orm";
 import { projects } from "@/server/db/schema";
 import geohash from 'ngeohash'
-import { Procedure } from "jstack";
+import { ContextWithSuperJSON, Procedure } from "jstack";
 
 export type ProjectStatus = 'draft' | 'active' | 'funded' | 'completed' | 'archived'
 
@@ -55,21 +55,11 @@ export const projectClientEvents = {
   deleteProject: z.object({
     id: z.string(),
   }),
-  subscribe: z.tuple([
-    z.object({
-      geohash: z.string(),
-      shouldSubscribe: z.boolean()
-    }),
-    z.array(projectSchema).optional(),
-    z.array(z.object({
-      id: z.string(),
-      city: z.string(),
-      state: z.string(),
-      count: z.number(),
-      _loc_lat: z.number(),
-      _loc_lng: z.number(),
-    })).optional(),
-  ]),
+  subscribe: z.object({
+    geohash: z.string(),
+    shouldSubscribe: z.boolean(),
+    projects: z.array(projectSchema).optional(),
+  }),
   subscribeProject: z.object({
     projectId: z.string(),
     shouldSubscribe: z.boolean()  
@@ -97,18 +87,10 @@ export const projectServerEvents = {
       })).optional()
     })
   }),
-  subscribe: z.tuple([
-    z.object({ geohash: z.string() }),
-    z.array(projectSchema),
-    z.array(z.object({
-      id: z.string(),
-      city: z.string(),
-      state: z.string(),
-      count: z.number(),
-      _loc_lat: z.number(),
-      _loc_lng: z.number(),
-    })),
-  ]),
+  subscribe: z.object({
+    geohash: z.string(),
+    projects: z.array(projectSchema).optional(),
+  }),
   deleteProject: z.object({
     id: z.string(),
   })}
@@ -116,6 +98,7 @@ export const projectServerEvents = {
   
 const clientEvents = z.object(projectClientEvents)
 const serverEvents = z.object(projectServerEvents)
+type ProcedureEnv = ContextWithSuperJSON<Env>
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
 
 type LocalProcedure = Procedure<Env, ProcedureContext, void, typeof clientEvents, typeof serverEvents>
@@ -123,15 +106,16 @@ type ProcedureIO = Parameters<Parameters<LocalProcedure["ws"]>[0]>[0]['io']
 type ProjectSocket = Parameters<NonNullable<Awaited<ReturnType<Parameters<LocalProcedure["ws"]>[0]>>['onConnect']>>[0]['socket']
 
 
-export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContext, io: ProcedureIO) => {
+export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContext, io: ProcedureIO, c: ProcedureEnv) => {
   const {
     getSocketId,
     setSocketSubscription,
     getActiveSubscribers,
     setProjectSubscription,
-    removeSocketSubscription,
-    removeProjectSubscription,
-    getProjectData
+    getProjectData,
+    enqueueSubscriptionCleanup,
+    processCleanupQueue,
+    cleanup
   } = getTreeHelpers({ ctx, logger })
 
   let socketId: string | null = null
@@ -143,7 +127,10 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
       logger.info(`Handling project subscription for: ${projectId}`)
 
       try {
+        await processCleanupQueue()
         socketId = getSocketId(socket)
+
+        if (socketId) await cleanup(socketId, ['project'])
         await socket.join(`project:${projectId}`)
         
         if (socketId) await setProjectSubscription(socketId, projectId)
@@ -179,10 +166,6 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
         // Leave the Redis room for this project
         socket.leave(`project:${projectId}`)
         logger.info(`Client left Redis room for project:${projectId}`)
-
-        // Remove socket from project subscription map
-        if (!socketId) return
-        await removeProjectSubscription(projectId, socketId)
       } catch (error) {
         logger.error('Error in project unsubscribe handler:', error)
         throw error
@@ -191,7 +174,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
   })
 
   // Register event handlers
-  socket.on('subscribe', async ([{ geohash, shouldSubscribe }]) => {
+  socket.on('subscribe', async ({ geohash, shouldSubscribe }) => {
     logger.info(`Handling ${shouldSubscribe ? 'subscription' : 'unsubscription'} for area: ${geohash}`)
     const { db } = ctx
 
@@ -199,9 +182,9 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
       socketId = getSocketId(socket)
       
       if (shouldSubscribe) {
-      await socket.join(`geohash:${geohash}`)
-      await socket.join(`geohash:${geohash}`)
-      
+        await processCleanupQueue()
+        if (socketId) await cleanup(socketId, ['geohash'])
+
         await socket.join(`geohash:${geohash}`)
       
         if (socketId) await setSocketSubscription(socketId, geohash)
@@ -233,15 +216,14 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
             _meta_created_at: new Date(project._meta_created_at).toISOString()
           }));
 
-          await io.to(`geohash:${geohash}`).emit('subscribe', [{ geohash }, projectsToEmit, []])
+          await io.to(`geohash:${geohash}`).emit('subscribe', { geohash, projects: projectsToEmit })
         }
 
-        logger.info(`Subscription complete for geohash:${geohash} - Found ${nearbyProjects.length} projects, emitted ${individualProjects.length} projects`)
+        logger.info(`\n\nSubscription complete for geohash:${geohash} - Found ${nearbyProjects.length} projects, emitted ${individualProjects.length} projects`)
       } else {
         // Handle unsubscription
-        await socket.leave(`geohash:${geohash}`)
-        if (socketId) await removeSocketSubscription(geohash, socketId)
-        logger.info(`Unsubscription complete for geohash:${geohash}`)
+        socket.leave(`geohash:${geohash}`)
+        logger.info(`\n\nUnsubscription complete for geohash:${geohash}`)
       }
     } catch (error) {
       logger.error('Error in subscription handler:', error)
@@ -279,7 +261,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     for (let precision = project._loc_geohash.length; precision > 0; precision--) {
       const parentHash = project._loc_geohash.substring(0, precision)
       const activeSocketIds = await getActiveSubscribers(parentHash)
-      for (const socketId of activeSocketIds) {
+      if (activeSocketIds.length > 0) {
         await io.to(`geohash:${parentHash}`).emit('deleteProject', { id: data.id })
       }
     }

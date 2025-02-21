@@ -49,7 +49,7 @@ export function useLiveTrees() {
 
   // Use the tree hooks for state updates
   const [newProjectData] = useServerEvent.newProject({} as ProjectPayload);
-  const [subscribeData] = useServerEvent.subscribe([{ geohash: '', shouldSubscribe: true }, [], []]);
+  const [subscribeData] = useServerEvent.subscribe({ geohash: '', shouldSubscribe: true, projects: [] });
   const [deleteProjectData] = useServerEvent.deleteProject({ id: '' });
 
   // Register handler on mount and handle connection state
@@ -106,10 +106,13 @@ export function useLiveTrees() {
 
   // Handle subscription updates
   useEffect(() => {
-    if (!subscribeData || !Array.isArray(subscribeData)) return;
+    console.log('\n\n[useLiveTrees] subscribeData', subscribeData)
+    if (!subscribeData) return;
     
-    const [{ geohash }, projects, groups] = subscribeData;
-    logger.log('info', `[subscribe] Processing subscription data for geohash: ${geohash} (${projects.length} projects, ${groups.length} groups)`);
+    const { geohash, projects } = subscribeData;
+    setCurrentGeohash(geohash);
+
+    logger.log('info', `[subscribe] Processing subscription data for geohash: ${geohash} (${projects?.length ?? 0} projects)`);
 
     if (Array.isArray(projects)) {
       const processedProjects = projects.map(project => ({
@@ -118,18 +121,11 @@ export function useLiveTrees() {
         _meta_created_at: new Date(project._meta_created_at)
       }));
 
-        setProjectMap(prev => {
+      setProjectMap(prev => {
         const next = new Map(prev);
         processedProjects.forEach(project => next.set(project.id, project));
         return next;
       });
-
-      setCurrentGeohash(geohash);
-    }
-
-    if (Array.isArray(groups)) {
-      setProjectGroups(groups);
-      logger.log('debug', `Updated project groups: ${groups.length} groups`);
     }
   }, [subscribeData, logger]);
 
@@ -159,18 +155,19 @@ export function useLiveTrees() {
           logger.log('debug', `Changing geohash subscription from ${currentGeohash} to ${geohash}`);
           
           if (currentGeohash) {
-            await wsManager.emit('subscribe', [{
+            await wsManager.emit('subscribe', {
               geohash: currentGeohash,
               shouldSubscribe: false
-            }, [], []], { argBehavior: 'append' });
+            }, { argBehavior: 'replace', uniqueKey: 'geohash' });
             logger.log('info', `Unsubscribed from geohash: ${currentGeohash}`);
           }
-
+          
           logger.log('info', `Subscribing to geohash: ${geohash}`);
-          await wsManager.emit('subscribe', [{
+          await wsManager.emit('subscribe', {
             geohash,
             shouldSubscribe: true
-          }, [], []], { argBehavior: 'append', timing: 'immediate' });
+          }, { argBehavior: 'replace', uniqueKey: 'geohash' });
+          setCurrentGeohash(geohash);
         }
       }, 500);
     };
@@ -178,13 +175,6 @@ export function useLiveTrees() {
     window.addEventListener('map:newBounds', handleBoundsChange as EventListener);
     return () => {
       window.removeEventListener('map:newBounds', handleBoundsChange as EventListener);
-      if (currentGeohash) {
-        wsManager.emit('subscribe', [{
-          geohash: currentGeohash,
-          shouldSubscribe: false
-        }, [], []], { argBehavior: 'replace' });
-        setCurrentGeohash(null);
-      }
     };
   }, [currentGeohash]);
 
@@ -265,6 +255,14 @@ export function useLiveTrees() {
     window.addEventListener('beforeunload', cleanup);
     return () => {
       window.removeEventListener('beforeunload', cleanup);
+      if (currentGeohash) {
+        logger.log('info', `Unsubscribing from geohash: ${currentGeohash} via destructor`);
+        wsManager.emit('subscribe', {
+          geohash: currentGeohash,
+          shouldSubscribe: false
+        }, { argBehavior: 'replace', uniqueKey: 'geohash' });
+        setCurrentGeohash(null);
+      }
     };
   }, []);
 

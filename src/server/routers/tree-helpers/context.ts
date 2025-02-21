@@ -5,12 +5,16 @@ import { projectImages, projects, projectSuggestions } from "@/server/db/schema"
 import { ProjectData } from "../tree-router"
 import type { ServerProcedure } from "../tree-router"
 import { ProjectStatus } from "../socket/project-handlers"
+import { ContextWithSuperJSON } from "jstack"
+import { Env as JstackEnv } from "../../jstack"
+
 type Logger = {
   info: (...args: Parameters<typeof console.info>) => void
   error: (...args: Parameters<typeof console.error>) => void
   debug: (...args: Parameters<typeof console.debug>) => void
 }
 
+type ProcedureEnv = ContextWithSuperJSON<JstackEnv>
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
 
 export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger: Logger }) => {
@@ -366,25 +370,27 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
   }
 
   // Clean up subscriptions on close
-  const cleanup = async (socketId: string) => {
+  const cleanup = async (socketId: string, subscriptions: ('geohash' | 'project')[] = ['geohash', 'project']) => {
     try {
-      logger.info(`Client ${socketId} disconnected, cleaning up subscriptions`)
+      logger.info(`Client ${socketId}: cleaning up subscriptions`)
 
       // Get all geohashes this socket was subscribed to
       const socketKey = getSocketGeohashKey(socketId)
       const socketProjectsKey = getSocketProjectsKey(socketId)
+      const keys = [];
+      if (subscriptions.includes('geohash')) {
+        keys.push(socketKey)
+      }
+      if (subscriptions.includes('project')) {
+        keys.push(socketProjectsKey)
+      }
 
       logger.debug(`Checking Redis keys: ${socketKey}, ${socketProjectsKey}`)
       
-      let geohashes: string[]
-      let projectIds: string[]
+      let refKeys: string[]
       try {
-        logger.debug(`WOOOO ${socketId}`, await ctx.redis.smembers(socketKey));
-        [geohashes, projectIds] = await Promise.all([
-          ctx.redis.smembers(socketKey),
-          ctx.redis.smembers(socketProjectsKey)
-        ])
-        logger.info(`Found ${geohashes.length} geohash subscriptions and ${projectIds.length} project subscriptions for socket ${socketId}`)
+        refKeys = await Promise.all(keys.map(key => ctx.redis.smembers(key))).then(keys => keys.flat());
+        logger.info(`Found ${refKeys.length} subscriptions for socket ${socketId}`)
       } catch (error) {
         logger.error('Error getting socket subscriptions:', error)
         return
@@ -393,8 +399,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
       // Clean up the socket's sets of subscriptions
       try {
         await Promise.all([
-          ctx.redis.del(socketKey),
-          ctx.redis.del(socketProjectsKey),
+          ...keys.map(key => ctx.redis.del(key)),
           ctx.redis.hdel('cleanupQueue', socketId)
         ])
         logger.info(`Cleaned up all subscriptions for socket ${socketId}`)
@@ -403,21 +408,12 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
       }
       
       // Remove all subscriptions
-      for (const geohash of geohashes) {
+      for (const refKey of refKeys) {
         try {
-          await removeSocketSubscription(geohash, socketId)
-          logger.debug(`Cleaned up geohash subscription for ${socketId} from ${geohash}`)
+          await removeSocketSubscription(refKey, socketId)
+          logger.debug(`Cleaned up geohash subscription for ${socketId} from ${refKey}`)
         } catch (error) {
-          logger.error(`Error removing subscription for geohash ${geohash}:`, error)
-        }
-      }
-
-      for (const projectId of projectIds) {
-        try {
-          await removeProjectSubscription(projectId, socketId)
-          logger.debug(`Cleaned up project subscription for ${socketId} from ${projectId}`)
-        } catch (error) {
-          logger.error(`Error removing subscription for project ${projectId}:`, error)
+          logger.error(`Error removing subscription for ${refKey}:`, error)
         }
       }
     } catch (error) {
@@ -425,6 +421,72 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     }
   }
 
+  const enqueueSubscriptionCleanup = (
+    c: ProcedureEnv,
+    socketId: string,
+    subscriptions: ('geohash' | 'project')[] = ['geohash', 'project'],
+  ) => {
+    try {
+      logger.info(`[Process ${process.pid}] Adding socket ${socketId} to cleanup queue`)
+      
+      // Get Redis connection details from environment
+      const redisUrl = c.env.UPSTASH_REDIS_REST_URL
+
+      const body = {
+        timestamp: Date.now(),
+        subscriptions
+      }
+
+      // Use global fetch for network request
+      fetch(redisUrl + '/hset/cleanupQueue/' + socketId , {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${c.env.UPSTASH_REDIS_REST_TOKEN}`,
+        },
+        body: JSON.stringify(body)
+      })
+
+    } catch (error) {
+      logger.error(`[Process ${process.pid}] Failed to queue socket ${socketId} for cleanup:`, error)
+    }
+  }
+
+  const processCleanupQueue = async () => {
+    try {
+      // Get all entries from cleanup queue
+      const queueEntries: Record<string, {
+        timestamp: number,
+        subscriptions: ('geohash' | 'project')[]
+      }> | null = await ctx.redis.hgetall('cleanupQueue')
+
+      if (!queueEntries || Object.keys(queueEntries).length === 0) return
+
+      logger.info(`[Process ${process.pid}] Processing cleanup queue with ${Object.keys(queueEntries).length} entries`)
+
+      // Process each socket in parallel
+      await Promise.allSettled(
+        Object.entries(queueEntries).map(async ([socketId, { timestamp, subscriptions }]) => {
+          try {
+            await cleanup(socketId, subscriptions)
+            // Remove from queue only if cleanup succeeds
+            // await ctx.redis.hdel('cleanupQueue', socketId)
+            logger.info(`[Process ${process.pid}] Cleaned up and removed socket ${socketId} from queue`)
+          } catch (error) {
+            // If the socket is too old, remove it from the queue
+            const age = Date.now() - parseInt(`${timestamp}`)
+            if (age > 24 * 60 * 60 * 1000) { // 24 hours
+              await ctx.redis.hdel('cleanupQueue', socketId)
+              logger.info(`[Process ${process.pid}] Removed stale socket ${socketId} from queue (age: ${age}ms)`)
+            } else {
+              logger.error(`[Process ${process.pid}] Failed to clean up socket ${socketId}:`, error)
+            }
+          }
+        })
+      )
+    } catch (error) {
+      logger.error(`[Process ${process.pid}] Error processing cleanup queue:`, error)
+    }
+  }
   return {
     getSocketId,
     setSocketSubscription,
@@ -436,6 +498,8 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     removeProjectSubscription,
     getActiveProjectSubscribers,
     getProjectData,
-    notifyProjectSubscribers
+    notifyProjectSubscribers,
+    enqueueSubscriptionCleanup,
+    processCleanupQueue
   }
 }   
