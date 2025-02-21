@@ -113,7 +113,6 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     getActiveSubscribers,
     setProjectSubscription,
     getProjectData,
-    enqueueSubscriptionCleanup,
     processCleanupQueue,
     cleanup
   } = getTreeHelpers({ ctx, logger })

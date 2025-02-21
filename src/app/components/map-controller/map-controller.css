@@ -281,8 +281,14 @@
   .project-marker-container {
     opacity: 0;
     transform: translate(-50%, -100%) scale(0.8);
-    animation: markerEnter 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: markerEnter 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     will-change: transform, opacity;
+  }
+
+  .project-marker-container.leaving {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(0.8);
+    animation: markerLeave 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   }
 
   /* Add transition for smooth leave animation */
@@ -297,12 +303,6 @@
     opacity: 0;
     transform: translate(var(--marker-x), var(--marker-y)) scale(0.8);
     pointer-events: none;
-  }
-
-  /* Remove old marker animations */
-  .project-marker-enter,
-  .project-marker-leave {
-    display: none;
   }
 }
 

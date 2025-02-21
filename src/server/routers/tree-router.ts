@@ -159,7 +159,7 @@ export const treeRouter = j.router({
 
           return () => {
             if (!socketId) return
-            enqueueSubscriptionCleanup(c, socketId)
+            enqueueSubscriptionCleanup(c, socketId, ['geohash', 'project'])
           }
         },
 
@@ -169,7 +169,7 @@ export const treeRouter = j.router({
           if (!socketId) return;
           
           // Queue for cleanup without waiting
-          enqueueSubscriptionCleanup(c, socketId)
+          enqueueSubscriptionCleanup(c, socketId, ['geohash', 'project'])
         },
         onError: ({ error, socket }) => {
           logger.info(`[Process ${process.pid}] WebSocket connection closed: error=${error}`)
@@ -178,7 +178,7 @@ export const treeRouter = j.router({
           if (!socketId) return;
           
           // Queue for cleanup without waiting
-          enqueueSubscriptionCleanup(c, socketId)
+          enqueueSubscriptionCleanup(c, socketId, ['geohash', 'project'])
         },
       }
     })

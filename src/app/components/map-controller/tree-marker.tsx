@@ -45,7 +45,7 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
       <button
         className={cn(
           "project-marker-button",
-          isDeleted && "leaving"
+          isDeleted ? "leaving" : ""
         )}
         style={{ 
           '--marker-x': `${position.x}px`,
@@ -53,6 +53,7 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
           transform: `translate(${position.x}px, ${position.y}px)`,
         } as React.CSSProperties}
         onClick={(e) => {
+          if (isDeleted) return
           e.stopPropagation()
           e.preventDefault()
 
@@ -72,7 +73,10 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
       >
         <div className="relative group cursor-pointer">
           <div 
-            className="project-marker-container duration-200 ease-out group-hover:scale-110"
+            className={cn(
+              "project-marker-container duration-200 ease-out group-hover:scale-110",
+              isDeleted ? "leaving" : ""
+            )}
             style={{ 
               filter: 'drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1)) invert(1) brightness(0.15)',
               opacity: project?.status === 'draft' ? 0.6 : 1,
