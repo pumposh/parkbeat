@@ -56,19 +56,40 @@ export interface ProjectSuggestion {
     }
   }
   images?: {
-    generated: Array<{
+    generated?: Array<{
       url: string
       generatedAt: string
       generationId: string
+      error?: {
+        code: string
+        message: string
+      }
     }>
     source?: {
       url?: string
       id?: string
+      error?: {
+        code: string
+        message: string
+      }
     }
     upscaled?: {
       url?: string
       id?: string
       upscaledAt?: string
+      error?: {
+        code: string
+        message: string
+      }
+    }
+    status?: {
+      isUpscaling: boolean
+      isGenerating: boolean
+      lastError?: {
+        code: string
+        message: string
+        timestamp: string
+      }
     }
   }
   metadata?: Record<string, any>

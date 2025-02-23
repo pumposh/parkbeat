@@ -267,8 +267,8 @@ export function ProjectSuggestions({
   type ImageStage = 'upscaled' | 'source' | 'generated'
 
   const stageLabels: Record<ImageStage, string> = {
-    generated: 'AI Generated',
-    upscaled: 'Enhanced Original',
+    generated: 'Imagined',
+    upscaled: 'Original',
     source: 'Original'
   }
   
@@ -286,7 +286,7 @@ export function ProjectSuggestions({
     if (suggestion.images.upscaled?.url) {
       images.push({ src: suggestion.images.upscaled.url, stage: 'upscaled' })
     }
-    if (suggestion.images.source?.url) {
+    if (!images.length &&suggestion.images.source?.url) {
       images.push({ src: suggestion.images.source.url, stage: 'source' })
     }
     return images

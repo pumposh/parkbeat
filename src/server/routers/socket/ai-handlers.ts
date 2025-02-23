@@ -165,6 +165,14 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
       projectId
     })
 
+    // Helper function to update suggestion images and notify subscribers
+    const updateSuggestionImages = async (images: ProjectSuggestion['images']) => {
+      await db.update(projectSuggestions)
+        .set({ images })
+        .where(eq(projectSuggestions.id, suggestion.id))
+      notifyProjectSubscribers(projectId, socketId, io)
+    }
+
     try {
       let upscaledImageUrl = sourceImage.image_url
       let upscaleId: string | undefined
@@ -180,77 +188,97 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
       } else {
         // First upscale the source image
         try {
-          logger.info(`[generateImagesForSuggestion] Starting upscaling process for source image`, {
-            sourceImageId: sourceImage.id,
-            sourceImageUrl: sourceImage.image_url
+          // Initialize or update status
+          await updateSuggestionImages({
+            ...suggestion.images,
+            source: {
+              url: sourceImage.image_url,
+              id: sourceImage.id
+            },
+            status: {
+              isUpscaling: true,
+              isGenerating: false
+            }
           })
-
+    
           const upscaledImage = await leonardoAgent.upscaleImage({
             imageUrl: sourceImage.image_url,
             upscaleMultiplier: 1.5,
             style: 'REALISTIC'
           })
 
-          logger.info(`[generateImagesForSuggestion] Successfully upscaled image`, {
-            upscaleId: upscaledImage.id,
-            upscaledUrl: upscaledImage.url
-          })
-
           upscaledImageUrl = upscaledImage.url
           upscaleId = upscaledImage.id
 
-          logger.info(`[generateImagesForSuggestion] Updating suggestion with upscaled image info`, {
-            suggestionId: suggestion.id,
-            upscaleId,
-            sourceImageId: sourceImage.id
+          await updateSuggestionImages({
+            ...suggestion.images,
+            source: {
+              url: sourceImage.image_url,
+              id: sourceImage.id
+            },
+            upscaled: {
+              url: upscaledImage.url,
+              id: upscaledImage.id,
+              upscaledAt: new Date().toISOString()
+            },
+            status: {
+              isUpscaling: false,
+              isGenerating: false
+            }
           })
 
-          // Update the suggestion with upscaled source image info
-          await db.update(projectSuggestions)
-            .set({
-              images: {
-                ...suggestion.images,
-                source: {
-                  url: sourceImage.image_url,
-                  id: sourceImage.id
-                },
-                upscaled: {
-                  url: upscaledImage.url,
-                  id: upscaledImage.id,
-                  upscaledAt: new Date().toISOString()
-                }
-              }
-            })
-            .where(eq(projectSuggestions.id, suggestion.id))
-
-          logger.info(`[generateImagesForSuggestion] Successfully updated suggestion with upscaled image`, {
-            suggestionId: suggestion.id
-          })
-
-          // Notify subscribers about upscaled image
-          notifyProjectSubscribers(projectId, socketId, io)
         } catch (error) {
           logger.error(`[generateImagesForSuggestion] Error upscaling image ${sourceImage.id}:`, {
             error,
             sourceImageId: sourceImage.id,
             suggestionId: suggestion.id
           })
-          // Continue with original image if upscaling fails
-          logger.info(`[generateImagesForSuggestion] Continuing with original image after upscale failure`, {
-            sourceImageUrl: sourceImage.image_url
+
+          await updateSuggestionImages({
+            ...suggestion.images,
+            source: {
+              url: sourceImage.image_url,
+              id: sourceImage.id
+            },
+            upscaled: {
+              error: {
+                code: 'UPSCALE_ERROR',
+                message: error instanceof Error ? error.message : 'Failed to upscale image'
+              }
+            },
+            status: {
+              isUpscaling: false,
+              isGenerating: false,
+              lastError: {
+                code: 'UPSCALE_ERROR',
+                message: error instanceof Error ? error.message : 'Failed to upscale image',
+                timestamp: new Date().toISOString()
+              }
+            }
           })
+
+          // Continue with original image if upscaling fails
+          logger.info(`[generateImagesForSuggestion] Continuing with original image after upscale failure`)
         }
       }
 
-      logger.info(`[generateImagesForSuggestion] Starting image reimagination`, {
-        suggestionId: suggestion.id,
-        imagePrompt: suggestion.imagePrompt,
-        upscaledImageUrl
+      // Update status for generation phase
+      await updateSuggestionImages({
+        ...suggestion.images,
+        source: {
+          url: sourceImage.image_url,
+          id: sourceImage.id
+        },
+        upscaled: suggestion.images?.upscaled,
+        status: {
+          isUpscaling: false,
+          isGenerating: true
+        }
       })
 
       const costs = calculateProjectCosts(suggestion.estimatedCost?.breakdown)
       const projectDetails = costs ? `
-        Project Breakdown:
+        Project Budget Breakdown:
         - Materials (${costs.materials.formatted})
         - Labor Requirements: ${costs.labor.formatted}
         - Additional Costs: ${costs.other.formatted}
@@ -271,74 +299,43 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
         `
       })
 
-      logger.info(`[generateImagesForSuggestion] Successfully generated reimagined images`, {
-        suggestionId: suggestion.id,
-        generationId: imageResult.generationId,
-        imageCount: imageResult.urls.length
-      })
-
-      // Update the suggestion with the generated image URL
       if (imageResult.urls.length > 0) {
         const newGeneratedImage = {
-          url: imageResult.urls[0],
+          url: imageResult.urls[0] || '',
           generatedAt: new Date().toISOString(),
           generationId: imageResult.generationId
         }
 
-        logger.info(`[generateImagesForSuggestion] Updating suggestion with generated image`, {
-          suggestionId: suggestion.id,
-          generationId: imageResult.generationId,
-          imageUrl: newGeneratedImage.url
-        })
-
-        await db.update(projectSuggestions)
-          .set({
-            images: {
-              ...suggestion.images,
-              source: {
-                url: sourceImage.image_url,
-                id: sourceImage.id
-              },
-              upscaled: {
-                url: upscaledImageUrl,
-                id: upscaleId,
-                upscaledAt: suggestion.images?.upscaled?.upscaledAt || new Date().toISOString()
-              },
-              generated: [...(suggestion.images?.generated || []), newGeneratedImage]
-            },
-            metadata: {
-              ...suggestion.metadata,
-              leonardoGenerationId: imageResult.generationId,
-              imageGeneratedAt: new Date().toISOString(),
-              sourceImageId: sourceImage.id,
-              originalSourceImageUrl: sourceImage.image_url,
-              upscaledSourceImageUrl: upscaledImageUrl,
-              leonardoUpscaleId: upscaleId,
-              generatedAt: suggestion.metadata?.generatedAt,
-              sourceImageCount: suggestion.metadata?.sourceImageCount
-            }
-          })
-          .where(eq(projectSuggestions.id, suggestion.id))
-
-        logger.info(`[generateImagesForSuggestion] Successfully updated suggestion with generated image`, {
-          suggestionId: suggestion.id,
-          generationId: imageResult.generationId
-        })
-
-        // Notify subscribers about generated image
-        notifyProjectSubscribers(projectId, socketId, io)
-
-        logger.info(`[generateImagesForSuggestion] Successfully completed image generation process`, {
-          suggestionId: suggestion.id,
-          projectId,
-          generationId: imageResult.generationId
+        await updateSuggestionImages({
+          source: {
+            url: sourceImage.image_url,
+            id: sourceImage.id
+          },
+          upscaled: {
+            url: upscaledImageUrl,
+            id: upscaleId,
+            upscaledAt: suggestion.images?.upscaled?.upscaledAt || new Date().toISOString()
+          },
+          generated: [...(suggestion.images?.generated || []), newGeneratedImage],
+          status: {
+            isUpscaling: false,
+            isGenerating: false
+          }
         })
 
         return imageResult
       } else {
-        logger.debug(`[generateImagesForSuggestion] No images were generated`, {
-          suggestionId: suggestion.id,
-          generationId: imageResult.generationId
+        await updateSuggestionImages({
+          ...suggestion.images,
+          status: {
+            isUpscaling: false,
+            isGenerating: false,
+            lastError: {
+              code: 'GENERATION_ERROR',
+              message: 'No images were generated',
+              timestamp: new Date().toISOString()
+            }
+          }
         })
       }
     } catch (error) {
@@ -348,6 +345,20 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
         projectId,
         sourceImageId: sourceImage.id
       })
+
+      await updateSuggestionImages({
+        ...suggestion.images,
+        status: {
+          isUpscaling: false,
+          isGenerating: false,
+          lastError: {
+            code: 'GENERATION_ERROR',
+            message: error instanceof Error ? error.message : 'Failed to generate image',
+            timestamp: new Date().toISOString()
+          }
+        }
+      })
+
       throw error
     }
   }

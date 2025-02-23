@@ -5,6 +5,7 @@ import { Header } from "./components/nav/header"
 import { MapController } from "./components/map-controller/index"
 import { FooterMenu } from "./components/nav/footer"
 import { Bree_Serif } from "next/font/google"
+import { Suspense } from "react"
 
 import "./globals.css"
 import React from "react"
@@ -53,7 +54,9 @@ export default function RootLayout({
         </head>
         <body suppressHydrationWarning className="antialiased bg-background text-foreground">
           <Providers>
-            <MapController />
+            <Suspense fallback={<div>Loading map...</div>}>
+              <MapController />
+            </Suspense>
             <Header />
             <div className="root-layout-container fixed flex flex-col items-center inset-x-0 bottom-0 pointer-events-none pb-[2.5rem]" style={{ zIndex: 'var(--z-content)' }}>
               {children}

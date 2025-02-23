@@ -282,7 +282,6 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
         id: project.id,
         name: project.name,
         description: project.description || undefined,
-        fundraiser_id: project.fundraiser_id,
         status: project.status,
         _loc_lat: parseFloat(project._loc_lat),
         _loc_lng: parseFloat(project._loc_lng),

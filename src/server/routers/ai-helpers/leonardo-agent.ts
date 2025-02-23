@@ -396,9 +396,8 @@ export class LeonardoAgent implements ImageGenerationAgent {
         Style Guidelines:
         - Create clean, professional improvements
         - Maintain a tidy, well-maintained appearance
-      `.trim()
+      `.trim().replace(/\n/g, ' ').substring(0, 1500)
 
-      console.log('[LeonardoAgent] Enhanced prompt', { enhancedPrompt })
       const models = {
         Pheonix: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",
         Albedo: "2067ae52-33fd-4a82-bb92-c2c55e7d2786"

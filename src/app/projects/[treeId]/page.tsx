@@ -4,13 +4,14 @@ import { client } from '@/lib/client'
 import { getLocationInfo } from "@/lib/location"
 import { TreeDialog } from "@/app/components/treebeds/tree-dialog"
 import { auth } from '@clerk/nextjs/server'
+import { Project } from '@/hooks/use-tree-sockets'
 
 export default async function TreePage({
   params,
   searchParams
 }: {
-  params: { treeId: string }
-  searchParams: { lat: string; lng: string }
+  params: Promise<{ treeId: string }>
+  searchParams: Promise<{ lat: string; lng: string }>
 }) {
   const { lat, lng } = await searchParams
   const { treeId: projectId } = await params
@@ -41,7 +42,7 @@ export default async function TreePage({
       lat={Number(lat)} 
       lng={Number(lng)} 
       info={info} 
-      project={project}
+      project={project as Project}
       userId={userId || ''}
     />
   )

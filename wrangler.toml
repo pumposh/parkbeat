@@ -11,7 +11,6 @@ preview_bucket_name = "parkbeat-images-dev"
 
 [vars]
 # Reference environment variables without exposing them in the file
-DATABASE_URL = ""
 R2_BUCKET_NAME = "parkbeat-images"
 
 [dev]
@@ -24,3 +23,7 @@ class_name = "WebSocketDO"
 [[migrations]]
 tag = "v1"
 new_classes = ["WebSocketDO"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1 # optional. default = 1.

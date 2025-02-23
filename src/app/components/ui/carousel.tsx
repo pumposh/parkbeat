@@ -113,7 +113,6 @@ export function Carousel({
                 className={cn(
                   "w-full h-full object-cover",
                   "transition-opacity duration-500",
-                  isTransitioning ? "opacity-50" : "opacity-100"
                 )}
                 loading="lazy"
               />

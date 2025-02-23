@@ -68,9 +68,14 @@ export const projectSuggestions = pgTable(
     project_id: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
     imagePrompt: text("image_prompt").notNull(),
     images: jsonb("images").default({
-      generated: [] as Array<{ url: string; generatedAt: string; generationId: string }>,
-      source: {} as { url?: string; id?: string },
-      upscaled: {} as { url?: string; id?: string; upscaledAt?: string },
+      generated: [] as Array<{ url: string; generatedAt: string; generationId: string; error?: { code: string; message: string } }>,
+      source: {} as { url?: string; id?: string; error?: { code: string; message: string } },
+      upscaled: {} as { url?: string; id?: string; upscaledAt?: string; error?: { code: string; message: string } },
+      status: {
+        isUpscaling: false,
+        isGenerating: false,
+        lastError: null
+      }
     }),
     category: text("category").notNull(),
     estimated_cost: jsonb("estimated_cost").default(null),

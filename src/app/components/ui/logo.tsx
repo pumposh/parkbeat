@@ -46,11 +46,6 @@ const MaskEl = () => {
 }
 
 export const Logo = ({ className, maskWithBackground = true }: { className?: string, maskWithBackground?: boolean }) => {
-  // return (
-  //   <div className={cn("relative w-24 h-24 dark:invert transition-opacity duration-300 ease-in-out", className)}>
-  //     <Tree className="dark:invert overflow-visible" />
-  //   </div>
-  // )
   return (
     <div className={cn("relative dark:bg-[#ffffff69] w-24 h-24 rounded-full p-2 outline outline-8 outline-zinc-300 dark:outline-zinc-500 dark:invert shadow-xl overflow-visible transition-opacity duration-300 ease-in-out", className)}
     style={{ backgroundColor: '#F2F0E630' }}>

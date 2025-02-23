@@ -3,8 +3,9 @@
 import { PlaceTreeForm } from "@/app/components/treebeds/place-tree-form"
 import { useLiveTrees } from "@/hooks/use-tree-sockets"
 import { cn } from "@/lib/utils"
+import { Suspense } from "react"
 
-export default function PlaceTreePage() {
+function PlaceTreeContent() {
   const { projectMap, setProject, isPending } = useLiveTrees()
 
   if (isPending) {
@@ -32,5 +33,13 @@ export default function PlaceTreePage() {
         </div>
       </div>
     </main>
+  )
+}
+
+export default function PlaceTreePage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <PlaceTreeContent />
+    </Suspense>
   )
 }
