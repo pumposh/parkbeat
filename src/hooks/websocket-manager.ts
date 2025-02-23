@@ -148,6 +148,7 @@ export class WebSocketManager {
       if (!this.hookCache) {
         this.hookCache = new Map<ServerEventName, ExpectedArgument<ServerEventName>>();
       }
+      this.latestState.set(eventName, arg);
       this.hookCache.set(eventName, arg);
       const hookSet = this.hooks.get(eventName);
       hookSet?.forEach(h => h(arg));
@@ -445,10 +446,17 @@ export class WebSocketManager {
 
     this.projectSubscriptions.add(projectId);
     setTimeout(() => {
-      this.emit('subscribeProject', { projectId, shouldSubscribe: true }, {
-        timing: 'immediate',
-        argBehavior: 'replace'
-      });
+      if (
+        this.projectSubscriptions.has(projectId)
+        && this.emitQueueRef.current.subscribeProject?.args.has({ projectId, shouldSubscribe: false })
+      ) {
+        this.emitQueueRef.current.subscribeProject?.args.clear();
+      } else {
+        this.emit('subscribeProject', { projectId, shouldSubscribe: true }, {
+          argBehavior: 'replace',
+          uniqueKey: 'projectId'
+        });
+      }
     }, 0);
   }
 
@@ -461,10 +469,17 @@ export class WebSocketManager {
 
     this.projectSubscriptions.delete(projectId);
     setTimeout(() => {
-      this.emit('subscribeProject', { projectId, shouldSubscribe: false }, {
-        timing: 'immediate',
-        argBehavior: 'replace'
-      });
+      if (
+        !this.projectSubscriptions.has(projectId)
+        && this.emitQueueRef.current.subscribeProject?.args.has({ projectId, shouldSubscribe: true })
+      ) {
+        this.emitQueueRef.current.subscribeProject?.args.clear();
+      } else {
+        this.emit('subscribeProject', { projectId, shouldSubscribe: false }, {
+          argBehavior: 'replace',
+          uniqueKey: 'projectId'
+        });
+      }
     }, 0);
   }
 }
@@ -481,6 +496,9 @@ export const useServerEvent: {
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
+      const latestState = wsManager.getLatestState('deleteProject');
+      if (latestState) { setValue(latestState); }
+
       wsManager.registerHook('deleteProject', setValue);
       return () => wsManager.unregisterHook('deleteProject', setValue);
     }, [wsManager]);
@@ -492,6 +510,9 @@ export const useServerEvent: {
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
+      const latestState = wsManager.getLatestState('newProject');
+      if (latestState) { setValue(latestState); }
+
       wsManager.registerHook('newProject', setValue);
       return () => wsManager.unregisterHook('newProject', setValue);
     }, [wsManager]);
@@ -503,6 +524,9 @@ export const useServerEvent: {
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => { 
+      const latestState = wsManager.getLatestState('subscribe');
+      if (latestState) { setValue(latestState); }
+
       wsManager.registerHook('subscribe', setValue);
       return () => wsManager.unregisterHook('subscribe', setValue);
     }, [wsManager]);
@@ -518,6 +542,9 @@ export const useServerEvent: {
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
+      const latestState = wsManager.getLatestState('projectData');
+      if (latestState) { setValue(latestState); }
+
       wsManager.registerHook('projectData', setValue);
       return () => wsManager.unregisterHook('projectData', setValue);
     }, [wsManager]);
@@ -529,6 +556,9 @@ export const useServerEvent: {
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
+      const latestState = wsManager.getLatestState('imageAnalysis');
+      if (latestState) { setValue(latestState); }
+
       wsManager.registerHook('imageAnalysis', setValue);
       return () => wsManager.unregisterHook('imageAnalysis', setValue);
     }, [wsManager]);
@@ -540,6 +570,9 @@ export const useServerEvent: {
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
+      const latestState = wsManager.getLatestState('imageValidation');
+      if (latestState) { setValue(latestState); }
+
       wsManager.registerHook('imageValidation', setValue);
       return () => wsManager.unregisterHook('imageValidation', setValue);
     }, [wsManager]);
@@ -551,6 +584,9 @@ export const useServerEvent: {
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
+      const latestState = wsManager.getLatestState('projectVision');
+      if (latestState) { setValue(latestState); }
+
       wsManager.registerHook('projectVision', setValue);
       return () => wsManager.unregisterHook('projectVision', setValue);
     }, [wsManager]);
@@ -562,6 +598,9 @@ export const useServerEvent: {
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
     
     useEffect(() => {
+      const latestState = wsManager.getLatestState('costEstimate');
+      if (latestState) { setValue(latestState); }
+
       wsManager.registerHook('costEstimate', setValue);
       return () => wsManager.unregisterHook('costEstimate', setValue);
     }, [wsManager]);

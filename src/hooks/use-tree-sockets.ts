@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, useMemo } from "react"
 import { boundsToGeohash } from "@/lib/geo/geohash"
 import { useAuth } from "@clerk/nextjs"
 import { WebSocketLogger } from "./client-log"
-import type { BaseProject, ProjectStatus } from "@/server/routers/socket/project-handlers"
+import type { BaseProject, ProjectStatus } from "@/server/types/shared"
 import { useServerEvent, WebSocketManager, type ConnectionState } from "./websocket-manager"
 
 // WebSocket payload type with string dates
@@ -76,6 +76,7 @@ export function useLiveTrees() {
 
     const processedProject: Project = {
       ...newProjectData,
+      fundraiser_id: "",
       _meta_updated_at: new Date(newProjectData._meta_updated_at),
       _meta_created_at: new Date(newProjectData._meta_created_at)
     };
@@ -115,15 +116,16 @@ export function useLiveTrees() {
     logger.log('info', `[subscribe] Processing subscription data for geohash: ${geohash} (${projects?.length ?? 0} projects)`);
 
     if (Array.isArray(projects)) {
-      const processedProjects = projects.map(project => ({
+      const processedProjects: Project[] = projects.map(project => ({
         ...project,
+        fundraiser_id: "",
         _meta_updated_at: new Date(project._meta_updated_at),
         _meta_created_at: new Date(project._meta_created_at)
       }));
 
       setProjectMap(prev => {
         const next = new Map(prev);
-        processedProjects.forEach(project => next.set(project.id, project));
+        processedProjects.forEach(project => next.set(project.id, project as Project));
         return next;
       });
     }
@@ -211,6 +213,7 @@ export function useLiveTrees() {
         name,
         description,
         status,
+        fundraiser_id: "",
         _loc_lat: lat,
         _loc_lng: lng,
         _meta_created_by: userId || "unknown",
@@ -281,6 +284,7 @@ export function useLiveTrees() {
 // Update useProjectData to use the WebSocketManager
 export function useProjectData(projectId: string) {
   const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
+  const currentProjectId = useRef<string | null>(null);
 
   const [projectData] = useServerEvent.projectData({
     projectId,
@@ -292,13 +296,28 @@ export function useProjectData(projectId: string) {
   });
 
   useEffect(() => {
-    if (projectId) {
-      wsManager.subscribeToProject(projectId);
+    console.log('[useProjectData] projectId', projectId)
+    if (currentProjectId.current === projectId) return;
+
+    if (currentProjectId.current) {
+      console.log('[useProjectData] unsubscribing from project', currentProjectId.current)
+      wsManager.unsubscribeFromProject(currentProjectId.current);
+      currentProjectId.current = null;
     }
-    return () => {
-      wsManager.unsubscribeFromProject(projectId);
+
+    if (projectId) {
+      console.log('[useProjectData] subscribing to project', projectId)
+      wsManager.subscribeToProject(projectId);
+      currentProjectId.current = projectId;
     }
   }, [projectId, wsManager]);
 
-  return projectData;
+  return {
+    projectData,
+    disconnect: () => {
+      if (!currentProjectId.current) return;
+      wsManager.unsubscribeFromProject(currentProjectId.current);
+      currentProjectId.current = null;
+    }
+  };
 }

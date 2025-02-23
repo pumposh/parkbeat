@@ -1,0 +1,1 @@
+ALTER TABLE "project_suggestions" ADD COLUMN "summary" text;

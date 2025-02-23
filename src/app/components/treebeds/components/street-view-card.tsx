@@ -66,9 +66,9 @@ export const StreetViewCard = ({
     onSuccess: onValidationSuccess
   })
 
-  const projectData = useProjectData(projectId)
+  const { projectData: { data: projectData } } = useProjectData(projectId)
   useEffect(() => {
-    if (projectData?.data?.images?.length) {
+    if (projectData?.images?.length) {
       onValidationStateChange?.({ isValid: true })
     }
   }, [projectData])

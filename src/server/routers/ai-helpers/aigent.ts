@@ -5,6 +5,8 @@ import { OpenAIAgent } from './openai-agent'
 import { Context } from "hono"
 import { env } from "hono/adapter"
 import { Env } from "./types"
+import { generateId } from "@/lib/id"
+import { LeonardoAgent, ImageGenerationAgent } from './leonardo-agent'
 
 // Core output interfaces that serve as source of truth
 export interface ProjectRecommendation {
@@ -33,8 +35,8 @@ export interface ProjectVision {
 export interface ProjectEstimate {
   totalEstimate: number
   breakdown: {
-    materials: Array<{ name: string; cost: number }>
-    labor: Array<{ type: string; hours: number; rate: number }>
+    materials: Array<{ item: string; cost: number }>
+    labor: Array<{ task: string; cost: number }>
     permits: number
     management: number
     contingency: number
@@ -44,18 +46,38 @@ export interface ProjectEstimate {
 }
 
 export interface ProjectSuggestion {
+  id: string
   title: string
-  summary: string
+  summary: string | null
   imagePrompt: string
-  projectType: ProjectCategory
-  estimatedCost: {
+  category: ProjectCategory | string
+  estimatedCost?: {
     total: number
     breakdown?: {
-      materials: number
-      labor: number
+      materials: Array<{ item: string; cost: number }>
+      labor: Array<{ task: string; rate: number; hours: number }>
       permits: number
+      management: number
+      contingency: number
     }
   }
+  images?: {
+    generated: Array<{
+      url: string
+      generatedAt: string
+      generationId: string
+    }>
+    source?: {
+      url?: string
+      id?: string
+    }
+    upscaled?: {
+      url?: string
+      id?: string
+      upscaledAt?: string
+    }
+  }
+  metadata?: Record<string, any>
 }
 
 // Main interface results that use the core interfaces
@@ -66,38 +88,41 @@ export interface AIAnalysisResult {
   suggestions?: ProjectSuggestion[]
 }
 
-export interface AIVisionResult {
-  vision: {
-    description: string
-    existingElements: string[]
-    newElements: string[]
-    communityBenefits: string[]
-    maintenanceConsiderations: string[]
-    imagePrompt?: string
-    imageUrl?: string
-  }
-}
-
 export interface AIEstimateResult {
-  analysis: string
-  estimate: {
-    totalEstimate: number
-    breakdown: {
-      materials: Array<{ item: string; cost: number }>
-      labor: Array<{ task: string; cost: number }>
-      permits: number
-      management: number
-      contingency: number
-    }
-    assumptions: string[]
-    confidenceScore: number
+  totalEstimate: number
+  breakdown: {
+    materials: Array<{ item: string; cost: number }>
+    labor: Array<{ task: string; rate: number; hours: number }>
+    permits: number
+    management: number
+    contingency: number
   }
+  assumptions: string[]
+  confidenceScore: number
 }
 
 // Main AI Agent interface
 export interface AIAgent {
-  validateImage(params: { 
-    imageUrl: string 
+  analyzeImage(params: {
+    imageUrl: string
+    locationContext?: string
+    userContext?: string
+  }): Promise<AIAnalysisResult>
+
+  analyzeImages(params: {
+    images: Array<{
+      imageUrl: string
+      locationContext?: string
+      userContext?: string
+    }>
+    maxSuggestions: number
+    locationContext?: string
+  }): Promise<{
+    suggestions: Array<ProjectSuggestion>
+  }>
+
+  validateImage(params: {
+    imageUrl: string
   }): Promise<{
     isValid: boolean
     isMaybe: boolean
@@ -105,32 +130,34 @@ export interface AIAgent {
     error?: string
   }>
 
-  generateVision(params: { 
-    imageUrl: string
-    desiredChanges: string
-    initialDescription: string
-  }): Promise<AIVisionResult>
-
-  analyzeImage(params: {
-    imageUrl: string
-    locationContext?: string
-    userContext?: string
-  }): Promise<AIAnalysisResult>
+  generateImage(params: {
+    prompt: string
+    originalImage: string
+  }): Promise<{
+    url: string
+  }>
 
   generateEstimate(params: {
     description: string
-    category: ProjectCategory
+    category: string
     scope: {
       size: number
       complexity: 'low' | 'medium' | 'high'
       timeline: number
     }
-  }): Promise<AIEstimateResult>
+  }): Promise<{
+    analysis: string
+    estimate: AIEstimateResult
+  }>
 
-  generateImage(params: {
+  generateReimagination?(params: {
+    imageUrl: string
     prompt: string
-    originalImage: string
-  }): Promise<{ url: string }>
+    projectContext?: string
+  }): Promise<{
+    urls: string[]
+    generationId: string
+  }>
 }
 
 // Gemini implementation
@@ -230,50 +257,16 @@ export class GeminiAgent implements AIAgent {
       description,
       analysis,
       suggestions: [{
+        id: generateId(),
         title: recommendation.title,
         summary: recommendation.description,
         imagePrompt: recommendation.imagePrompt,
-        projectType: recommendation.projectTypes[0] as ProjectCategory,
+        category: recommendation.projectTypes[0] as ProjectCategory,
         estimatedCost: {
           total: recommendation.estimatedCosts.total,
-          breakdown: {
-            materials: recommendation.estimatedCosts.materials.reduce((sum, material) => sum + material.cost, 0),
-            labor: recommendation.estimatedCosts.labor,
-            permits: 0
-          }
         }
       }]
     }
-  }
-
-  async generateVision({ imageUrl, desiredChanges, initialDescription }: {
-    imageUrl: string
-    desiredChanges: string
-    initialDescription: string
-  }): Promise<AIVisionResult> {
-    const prompt = PromptManager.getVisionPrompt({
-      model: 'gemini-pro-vision',
-      desiredChanges
-    })
-
-    const result = await this.visionModel.generateContent([
-      imageUrl,
-      prompt.userPrompt
-    ])
-
-    const response = result.response.text()
-    
-    // Parse the response into structured vision object
-    const sections = response.split('\n\n')
-    const vision: ProjectVision = {
-      description: initialDescription || sections[0] || '',
-      existingElements: sections.find((s: string) => s.includes('existing'))?.split('\n').filter((l: string) => l.startsWith('-')) || [],
-      newElements: sections.find((s: string) => s.includes('new'))?.split('\n').filter((l: string) => l.startsWith('-')) || [],
-      communityBenefits: sections.find((s: string) => s.includes('benefit'))?.split('\n').filter((l: string) => l.startsWith('-')) || [],
-      maintenanceConsiderations: sections.find((s: string) => s.includes('maintenance'))?.split('\n').filter((l: string) => l.startsWith('-')) || []
-    }
-
-    return { vision }
   }
 
   async generateEstimate({ description, category, scope }: {
@@ -284,7 +277,10 @@ export class GeminiAgent implements AIAgent {
       complexity: 'low' | 'medium' | 'high'
       timeline: number
     }
-  }): Promise<AIEstimateResult> {
+  }): Promise<{
+    analysis: string
+    estimate: AIEstimateResult
+  }> {
     const prompt = PromptManager.getCostEstimatePrompt({
       model: 'gemini-1.5-pro',
       description,
@@ -304,7 +300,7 @@ export class GeminiAgent implements AIAgent {
       totalEstimate: number
       breakdown: {
         materials: Array<{ item: string; cost: number }>
-        labor: Array<{ task: string; cost: number }>
+        labor: Array<{ task: string; rate: number; hours: number }>
         permits: number
         management: number
         contingency: number
@@ -350,7 +346,8 @@ export class GeminiAgent implements AIAgent {
           const [rate, hours] = details?.split('x').map((s: string) => parseFloat(s.replace(/[^0-9.]/g, ''))) || [0, 0]
           return {
             task: type?.trim() || '',
-            cost: rate || 0
+            rate,
+            hours
           }
         })
     }
@@ -405,6 +402,32 @@ export class GeminiAgent implements AIAgent {
     // Implementation of generateImage method
     throw new Error('Method not implemented')
   }
+
+  async analyzeImages(params: {
+    images: Array<{
+      imageUrl: string
+      locationContext?: string
+      userContext?: string
+    }>
+    maxSuggestions: number
+  }): Promise<{
+    suggestions: Array<ProjectSuggestion>
+  }> {
+    // Implementation of analyzeImages method
+    throw new Error('Method not implemented')
+  }
+
+  async generateReimagination({ imageUrl, prompt, projectContext }: {
+    imageUrl: string
+    prompt: string
+    projectContext?: string
+  }): Promise<{
+    urls: string[]
+    generationId: string
+  }> {
+    // Implementation of generateReimagination method
+    throw new Error('Method not implemented')
+  }
 }
 
 // Example of how another provider could be implemented:
@@ -452,4 +475,13 @@ export function createAIAgent(
     default:
       throw new Error(`Unknown AI provider: ${provider}`)
   }
+}
+
+export function createAIImageAgent(c: Context): ImageGenerationAgent {
+  const { LEONARDO_API_KEY } = env<Env>(c)
+  
+  if (!LEONARDO_API_KEY) {
+    throw new Error('LEONARDO_API_KEY is not set')
+  }
+  return new LeonardoAgent(LEONARDO_API_KEY)
 }

@@ -87,7 +87,7 @@ function determineLocationInfo(locationInfo?: SuperLocationInfo): LocationDispla
 }
 
 export const LocationInfoCard = ({ isLoading, location, locationInfo, children, projectId }: LocationInfoCardProps) => {
-  const { data: projectData } = useProjectData(projectId)
+  const { projectData: { data: projectData } } = useProjectData(projectId)
 
   const projectImages = projectData?.images
 

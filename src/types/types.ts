@@ -54,6 +54,7 @@ export interface LocationInfo {
 
 export interface NominatimResponse {
   address?: {
+    borough?: string
     road?: string
     street?: string
     house_number?: string

@@ -1,64 +1,54 @@
 import { logger } from "@/lib/logger";
 import { z } from "zod";
-import type { ProjectData } from "../tree-router";
 import { Env, publicProcedure } from "@/server/jstack";
 import { getTreeHelpers } from "../tree-helpers/context";
 import { desc, eq, InferInsertModel, like } from "drizzle-orm";
 import { projects } from "@/server/db/schema";
 import geohash from 'ngeohash'
-import { ContextWithSuperJSON, Procedure } from "jstack";
-
-export type ProjectStatus = 'draft' | 'active' | 'funded' | 'completed' | 'archived'
-
-export type BaseProject = {
-  id: string
-  name: string  
-  description?: string
-  status: ProjectStatus
-  _loc_lat: number
-  _loc_lng: number
-  _loc_geohash?: string
-  _meta_created_by: string
-  _meta_updated_at: string
-  _meta_updated_by: string
-  _meta_created_at: string
-  _view_heading?: number
-  _view_pitch?: number
-  _view_zoom?: number
-}
-
-// Define the tree type
-export type Project = Omit<BaseProject, '_meta_updated_at' | '_meta_created_at'> & {
-  ["_meta_updated_at"]: Date
-  ["_meta_created_at"]: Date
-}
-
-const projectSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().optional(),
-  status: z.enum(['draft', 'active', 'funded', 'completed', 'archived']),
-  _loc_lat: z.number(),
-  _loc_lng: z.number(),
-  _loc_geohash: z.string().optional(),
-  _meta_created_by: z.string(),
-  _meta_updated_at: z.string(),
-  _meta_updated_by: z.string(),
-  _meta_created_at: z.string(),
-  _view_heading: z.number().optional(),
-  _view_pitch: z.number().optional(),
-  _view_zoom: z.number().optional(),
-})
+import type { ProjectStatus, BaseProject, ProjectData } from "../../types/shared";
+import { Procedure } from "jstack";
+import { ContextWithSuperJSON } from "jstack";
+import { Project } from "@/hooks/use-tree-sockets";
 
 export const projectClientEvents = {
-  setProject: projectSchema,
+  setProject: z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().optional(),
+    status: z.enum(['draft', 'active', 'funded', 'completed', 'archived']),
+    _loc_lat: z.number(),
+    _loc_lng: z.number(),
+    _loc_geohash: z.string().optional(),
+    _meta_created_by: z.string(),
+    _meta_updated_at: z.string(),
+    _meta_updated_by: z.string(),
+    _meta_created_at: z.string(),
+    _view_heading: z.number().optional(),
+    _view_pitch: z.number().optional(),
+    _view_zoom: z.number().optional(),
+  }),
   deleteProject: z.object({
     id: z.string(),
   }),
   subscribe: z.object({
     geohash: z.string(),
     shouldSubscribe: z.boolean(),
-    projects: z.array(projectSchema).optional(),
+    projects: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string().optional(),
+      status: z.enum(['draft', 'active', 'funded', 'completed', 'archived']),
+      _loc_lat: z.number(),
+      _loc_lng: z.number(),
+      _loc_geohash: z.string().optional(),
+      _meta_created_by: z.string(),
+      _meta_updated_at: z.string(),
+      _meta_updated_by: z.string(),
+      _meta_created_at: z.string(),
+      _view_heading: z.number().optional(),
+      _view_pitch: z.number().optional(),
+      _view_zoom: z.number().optional(),
+    })).optional(),
   }),
   subscribeProject: z.object({
     projectId: z.string(),
@@ -67,11 +57,41 @@ export const projectClientEvents = {
 };
 
 export const projectServerEvents = {
-  newProject: projectSchema,
+  newProject: z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().optional(),
+    status: z.enum(['draft', 'active', 'funded', 'completed', 'archived']),
+    _loc_lat: z.number(),
+    _loc_lng: z.number(),
+    _loc_geohash: z.string().optional(),
+    _meta_created_by: z.string(),
+    _meta_updated_at: z.string(),
+    _meta_updated_by: z.string(),
+    _meta_created_at: z.string(),
+    _view_heading: z.number().optional(),
+    _view_pitch: z.number().optional(),
+    _view_zoom: z.number().optional(),
+  }),
   projectData: z.object({
     projectId: z.string(),
     data: z.object({
-      project: projectSchema,
+      project: z.object({
+        id: z.string(),
+        name: z.string(),
+        description: z.string().optional(),
+        status: z.enum(['draft', 'active', 'funded', 'completed', 'archived']),
+        _loc_lat: z.number(),
+        _loc_lng: z.number(),
+        _loc_geohash: z.string().optional(),
+        _meta_created_by: z.string(),
+        _meta_updated_at: z.string(),
+        _meta_updated_by: z.string(),
+        _meta_created_at: z.string(),
+        _view_heading: z.number().optional(),
+        _view_pitch: z.number().optional(),
+        _view_zoom: z.number().optional(),
+      }),
       images: z.array(z.object({
         id: z.string(),
         type: z.string(),
@@ -81,21 +101,69 @@ export const projectServerEvents = {
       suggestions: z.array(z.object({
         id: z.string(),
         title: z.string(),
-        summary: z.string(),
+        summary: z.string().nullable(),
         imagePrompt: z.string(),
-        generatedImageUrl: z.string().optional()
+        category: z.string(),
+        estimatedCost: z.object({
+          total: z.number(),
+          breakdown: z.object({
+            materials: z.array(z.object({
+              item: z.string(),
+              cost: z.number()
+            })),
+            labor: z.array(z.object({
+              task: z.string(),
+              rate: z.number(),
+              hours: z.number()
+            })),
+            permits: z.number(),
+            management: z.number(),
+            contingency: z.number()
+          }).optional(),
+        }).optional(),
+        images: z.object({
+          generated: z.array(z.object({
+            url: z.string(),
+            generatedAt: z.string(),
+            generationId: z.string()
+          })).optional(),
+          source: z.object({
+            url: z.string().optional(),
+            id: z.string().optional()
+          }).optional(),
+          upscaled: z.object({
+            url: z.string().optional(),
+            id: z.string().optional(),
+            upscaledAt: z.string().optional()
+          }).optional()
+        }).optional()
       })).optional()
     })
   }),
   subscribe: z.object({
     geohash: z.string(),
-    projects: z.array(projectSchema).optional(),
+    projects: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string().optional(),
+      status: z.enum(['draft', 'active', 'funded', 'completed', 'archived']),
+      _loc_lat: z.number(),
+      _loc_lng: z.number(),
+      _loc_geohash: z.string().optional(),
+      _meta_created_by: z.string(),
+      _meta_updated_at: z.string(),
+      _meta_updated_by: z.string(),
+      _meta_created_at: z.string(),
+      _view_heading: z.number().optional(),
+      _view_pitch: z.number().optional(),
+      _view_zoom: z.number().optional(),
+    })).optional(),
   }),
   deleteProject: z.object({
     id: z.string(),
-  })}
+  })
+};
 
-  
 const clientEvents = z.object(projectClientEvents)
 const serverEvents = z.object(projectServerEvents)
 type ProcedureEnv = ContextWithSuperJSON<Env>
@@ -104,7 +172,6 @@ type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0][
 type LocalProcedure = Procedure<Env, ProcedureContext, void, typeof clientEvents, typeof serverEvents>
 type ProcedureIO = Parameters<Parameters<LocalProcedure["ws"]>[0]>[0]['io']
 type ProjectSocket = Parameters<NonNullable<Awaited<ReturnType<Parameters<LocalProcedure["ws"]>[0]>>['onConnect']>>[0]['socket']
-
 
 export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContext, io: ProcedureIO, c: ProcedureEnv) => {
   const {
@@ -121,7 +188,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
 
   logger.info('Initializing WebSocket handler')
   // Project subscription handlers
-  socket.on('subscribeProject', async ({ projectId, shouldSubscribe }) => {
+  socket.on('subscribeProject', async ({ projectId, shouldSubscribe }: { projectId: string; shouldSubscribe: boolean }) => {
     if (shouldSubscribe) {
       logger.info(`Handling project subscription for: ${projectId}`)
 
@@ -173,7 +240,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
   })
 
   // Register event handlers
-  socket.on('subscribe', async ({ geohash, shouldSubscribe }) => {
+  socket.on('subscribe', async ({ geohash, shouldSubscribe }: { geohash: string; shouldSubscribe: boolean }) => {
     logger.info(`Handling ${shouldSubscribe ? 'subscription' : 'unsubscription'} for area: ${geohash}`)
     const { db } = ctx
 
@@ -230,9 +297,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     }
   })
 
-  socket.on('deleteProject', async (data: {
-    id: string
-  }) => {
+  socket.on('deleteProject', async (data: { id: string }) => {
     logger.info(`Processing project deletion: ${data.id}`)
     const { db } = ctx
 
@@ -280,8 +345,8 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     status: ProjectStatus
     _loc_lat: number
     _loc_lng: number
-    _meta_updated_by: string
     _meta_created_by: string
+    _meta_updated_by: string
     _meta_updated_at: string
     _meta_created_at: string
     _view_heading?: number
@@ -347,8 +412,10 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
         name: result.name,
         description: result?.description || undefined,
         status: result.status as ProjectStatus,
+        fundraiser_id: result.fundraiser_id,
         _loc_lat: parseFloat(result._loc_lat),
         _loc_lng: parseFloat(result._loc_lng),
+        _loc_geohash: result._loc_geohash,
         _meta_created_by: result._meta_created_by,
         _meta_updated_by: result._meta_updated_by,
         _meta_updated_at: result._meta_updated_at.toISOString(),

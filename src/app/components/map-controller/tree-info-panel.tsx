@@ -2,9 +2,8 @@ import { cn } from '@/lib/utils'
 import { capitalize } from '@/lib/str'
 import type { Project, ProjectGroup } from '@/hooks/use-tree-sockets'
 import { useUser } from '@clerk/nextjs'
-import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { useState, useEffect, useRef } from 'react'
-import { useToast } from '../toast'
+import { useRouter, usePathname } from 'next/navigation'
+import { useNavigationState } from '@/hooks/use-nav-state'
 
 interface ProjectInfoPanelProps {
   project?: Project
@@ -17,25 +16,13 @@ interface ProjectInfoPanelProps {
 export const ProjectInfoPanel = ({ project, group, position, isVisible, className }: ProjectInfoPanelProps) => {
   const router = useRouter()
   const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const [isNavigating, setIsNavigating] = useState(false)
+  const [isNavigating, startNavigating] = useNavigationState()
   const { user } = useUser()
   const isAdmin = user?.organizationMemberships?.some(
     (membership) => membership.role === "org:admin"
   )
-  const { show } = useToast()
   const isProjectsRoute = pathname === '/projects'
   
-  // Reset navigation state when pathname or search params change
-  const timeout = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    if (timeout.current) {
-      clearTimeout(timeout.current)
-      timeout.current = null
-    }
-    setIsNavigating(false)
-  }, [pathname, searchParams])
-
   // Don't render the panel if not on the projects route
   if (!isProjectsRoute) return null
 
@@ -47,17 +34,8 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
 
   const handleEdit = () => {
     if (!project) return
-    setIsNavigating(true)
+    startNavigating()
     router.push(`/projects/${project.id}?lat=${project._loc_lat}&lng=${project._loc_lng}`)
-
-    /** Timeout in case of SSR issues */
-    timeout.current = setTimeout(() => {
-      show({
-        message: 'There was an issue loading this project\'s details. Please try again.',
-        type: 'error',
-      })
-      setIsNavigating(false)
-    }, 5000)
   }
 
   return (

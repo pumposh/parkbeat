@@ -1,8 +1,9 @@
 import OpenAI from 'openai'
-import type { AIAgent, AIAnalysisResult, AIVisionResult, AIEstimateResult, ProjectVision, ProjectSuggestion } from './aigent'
+import type { AIAgent, AIAnalysisResult, AIEstimateResult, ProjectSuggestion } from './aigent'
 import type { ProjectCategory } from "@/types/types"
 import { PromptManager } from './prompts'
-
+import { generateId } from '@/lib/id'
+import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs'
 export class OpenAIAgent implements AIAgent {
   private client: OpenAI
   private model = 'gpt-4o'
@@ -67,73 +68,6 @@ export class OpenAIAgent implements AIAgent {
     }
   }
 
-  async generateVision({ imageUrl, desiredChanges, initialDescription }: {
-    imageUrl: string
-    desiredChanges: string
-    initialDescription: string
-  }): Promise<AIVisionResult> {
-    const prompt = PromptManager.getVisionPrompt({
-      model: this.model,
-      desiredChanges,
-          })
-
-    const result = await this.client.chat.completions.create({
-      model: this.model,
-      messages: [
-        {
-          role: 'system',
-          content: prompt.systemPrompt
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt.userPrompt },
-            {
-              type: 'image_url',
-              image_url: { url: imageUrl }
-            }
-          ]
-        }
-      ],
-      temperature: prompt.temperature,
-      max_tokens: 1000
-    })
-
-    const content = result.choices[0]?.message?.content
-    if (!content) {
-      throw new Error('Failed to get vision description from OpenAI')
-    }
-
-    // Parse the response into structured sections
-    const sections = content.split('\n\n')
-    const vision: ProjectVision = {
-      description: sections[0] || initialDescription,
-      existingElements: sections.find((s: string) => s.toLowerCase().includes('existing'))
-        ?.split('\n')
-        .filter((l: string) => l.startsWith('-'))
-        .map((l: string) => l.slice(1).trim()) || [],
-      newElements: sections.find((s: string) => s.toLowerCase().includes('new'))
-        ?.split('\n')
-        .filter((l: string) => l.startsWith('-'))
-        .map((l: string) => l.slice(1).trim()) || [],
-      communityBenefits: sections.find((s: string) => s.toLowerCase().includes('benefit'))
-        ?.split('\n')
-        .filter((l: string) => l.startsWith('-'))
-        .map((l: string) => l.slice(1).trim()) || [],
-      maintenanceConsiderations: sections.find((s: string) => s.toLowerCase().includes('maintenance'))
-        ?.split('\n')
-        .filter((l: string) => l.startsWith('-'))
-        .map((l: string) => l.slice(1).trim()) || [],
-      imagePrompt: sections.find((s: string) => s.toLowerCase().includes('image prompt'))
-        ?.split('\n')
-        .filter((l: string) => !l.toLowerCase().includes('image prompt'))
-        .join('\n')
-        .trim()
-    }
-
-    return { vision }
-  }
-
   async analyzeImage({ imageUrl, locationContext, userContext }: {
     imageUrl: string
     locationContext?: string
@@ -184,7 +118,8 @@ export class OpenAIAgent implements AIAgent {
     const suggestionsPrompt = PromptManager.getProjectSuggestionsPrompt({
       model: this.model,
       locationContext,
-      userContext
+      userContext,
+      maxSuggestions: 3
     })
 
     const result = await this.client.chat.completions.create({
@@ -234,23 +169,19 @@ export class OpenAIAgent implements AIAgent {
         const lines = section.trim().split('\n')
         const title = lines.find(l => l.toLowerCase().startsWith('title:'))?.split(':')[1]?.trim() || ''
         const summary = lines.find(l => l.toLowerCase().startsWith('summary:'))?.split(':')[1]?.trim() || ''
-        const projectType = lines.find(l => l.toLowerCase().startsWith('type:'))?.split(':')[1]?.trim() as ProjectCategory || 'other'
+        const category = lines.find(l => l.toLowerCase().startsWith('type:'))?.split(':')[1]?.trim() as ProjectCategory || 'other'
         const imagePrompt = lines.find(l => l.toLowerCase().startsWith('image prompt:'))?.split(':')[1]?.trim() || ''
         const costLine = lines.find(l => l.toLowerCase().startsWith('estimated cost:'))?.split(':')[1]?.trim() || '0'
         const cost = parseInt(costLine.replace(/[^0-9]/g, '')) || 0
 
         return {
+          id: generateId(),
           title,
           summary,
           imagePrompt,
-          projectType,
+          category,
           estimatedCost: {
-            total: cost,
-            breakdown: {
-              materials: Math.round(cost * 0.6),
-              labor: Math.round(cost * 0.3),
-              permits: Math.round(cost * 0.1)
-            }
+            total: cost
           }
         }
       })
@@ -290,17 +221,20 @@ export class OpenAIAgent implements AIAgent {
 
   async generateEstimate({ description, category, scope }: {
     description: string
-    category: ProjectCategory
+    category: string
     scope: {
       size: number
       complexity: 'low' | 'medium' | 'high'
       timeline: number
     }
-  }): Promise<AIEstimateResult> {
+  }): Promise<{
+    analysis: string
+    estimate: AIEstimateResult
+  }> {
     const prompt = PromptManager.getCostEstimatePrompt({
       model: this.textModel,
       description,
-      category,
+      category: category as ProjectCategory,
       scope
     })
 
@@ -325,20 +259,197 @@ export class OpenAIAgent implements AIAgent {
       throw new Error('Failed to get cost estimate from OpenAI')
     }
 
+    // Parse the response into structured sections
+    const sections = analysis.split('\n\n')
+    const estimate: AIEstimateResult = {
+      totalEstimate: 0,
+      breakdown: {
+        materials: [],
+        labor: [],
+        permits: 0,
+        management: 0,
+        contingency: 0
+      },
+      assumptions: [],
+      confidenceScore: 0.8
+    }
+
+    // Parse materials section
+    const materialsSection = sections.find(s => s.includes('MATERIALS BREAKDOWN'))
+    if (materialsSection) {
+      estimate.breakdown.materials = materialsSection
+        .split('\n')
+        .filter(l => l.includes('$'))
+        .map(l => {
+          const [item, cost] = l.split('$')
+          const parsedCost = parseFloat(cost?.replace(/[^0-9.]/g, '') || '0')
+          return {
+            item: item?.trim() || '',
+            cost: parsedCost
+          }
+        })
+    }
+
+    // Parse labor section
+    const laborSection = sections.find(s => s.includes('LABOR COSTS'))
+    if (laborSection) {
+      estimate.breakdown.labor = laborSection
+        .split('\n')
+        .filter(l => l.includes('$'))
+        .map(l => {
+          const [task, details] = l.split(':')
+          const match = details?.match(/\$(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/)
+          if (match) {
+            const rate = parseFloat(match[1] || '0')
+            const hours = parseFloat(match[2] || '0')
+            return {
+              task: task?.trim() || '',
+              rate,
+              hours
+            }
+          }
+          return {
+            task: task?.trim() || '',
+            rate: 0,
+            hours: 0
+          }
+        })
+    }
+
+    // Parse other costs
+    const otherSection = sections.find(s => s.includes('OTHER COSTS'))
+    if (otherSection) {
+      const lines = otherSection.split('\n')
+      estimate.breakdown.permits = parseFloat(lines.find(l => l.includes('Permits'))?.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
+      estimate.breakdown.management = parseFloat(lines.find(l => l.includes('Management'))?.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
+      estimate.breakdown.contingency = parseFloat(lines.find(l => l.includes('Contingency'))?.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
+    }
+
+    // Calculate total estimate by summing all components
+    const materialTotal = estimate.breakdown.materials.reduce((sum, item) => sum + item.cost, 0)
+    const laborTotal = estimate.breakdown.labor.reduce((sum, item) => sum + item.rate * item.hours, 0)
+    estimate.totalEstimate = materialTotal + laborTotal + 
+      estimate.breakdown.permits + 
+      estimate.breakdown.management + 
+      estimate.breakdown.contingency
+
+    // Parse assumptions
+    const assumptionsSection = sections.find(s => s.includes('ASSUMPTIONS'))
+    if (assumptionsSection) {
+      estimate.assumptions = assumptionsSection
+        .split('\n')
+        .filter(l => l.startsWith('-'))
+        .map(l => l.slice(1).trim())
+    }
+
     return {
       analysis,
-      estimate: {
-        totalEstimate: 0, // Would be parsed from analysis
-        breakdown: {
-          materials: [],    // Would be parsed from analysis
-          labor: [],
-          permits: 0,
-          management: 0,
-          contingency: 0
-        },
-        assumptions: [],  // Would be parsed from analysis
-        confidenceScore: 0.8
+      estimate
+    }
+  }
+
+  async analyzeImages(params: {
+    images: Array<{
+      imageUrl: string
+      locationContext?: string
+      userContext?: string
+    }>
+    maxSuggestions: number
+    locationContext?: string
+  }): Promise<{
+    suggestions: Array<ProjectSuggestion>
+  }> {
+    const prompt = PromptManager.getProjectSuggestionsPrompt({
+      model: this.model,
+      locationContext: params.locationContext,
+      userContext: params.images.map(img => img.userContext).filter(Boolean).join('\n'),
+      maxSuggestions: params.maxSuggestions
+    })
+
+    const messages: ChatCompletionMessageParam[] = [
+      { role: 'system', content: prompt.systemPrompt },
+      { role: 'user', content: prompt.userPrompt }
+    ]
+
+    // Add each image to the messages
+    for (const image of params.images) {
+      messages.push({
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: { url: image.imageUrl }
+          }
+        ]
+      })
+    }
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages,
+      max_tokens: 2000,
+      temperature: prompt.temperature
+    })
+
+    const content = response.choices[0]?.message?.content
+    if (!content) {
+      throw new Error('No response from OpenAI')
+    }
+
+    // Parse the suggestions from the response
+    const suggestions = this.parseSuggestions(content)
+    return { suggestions: suggestions.slice(0, params.maxSuggestions) }
+  }
+
+  private parseSuggestions(content: string): Array<ProjectSuggestion> {
+    const suggestions: Array<ProjectSuggestion> = []
+    const sections = content.split('---').filter(Boolean)
+
+    for (const section of sections) {
+      const lines = section.trim().split('\n')
+      let currentSuggestion: Partial<ProjectSuggestion> = {}
+
+      for (const line of lines) {
+        const [key, ...valueParts] = line.split(':')
+        const value = valueParts.join(':').trim()
+
+        switch (key?.trim().toUpperCase()) {
+          case 'TITLE':
+            currentSuggestion.title = value
+            break
+          case 'TYPE':
+            currentSuggestion.category = value.toLowerCase().replace(/ /g, '_')
+            break
+          case 'SUMMARY':
+            currentSuggestion.summary = value
+            break
+          case 'IMAGE PROMPT':
+            currentSuggestion.imagePrompt = value
+            break
+          case 'ESTIMATED COST':
+            try {
+              const cost = parseFloat(value.replace(/[^0-9.]/g, ''))
+              currentSuggestion.estimatedCost = {
+                total: cost
+              }
+            } catch (e) {
+              currentSuggestion.estimatedCost = {
+                total: 0
+              }
+            }
+            break
+        }
+      }
+
+      if (currentSuggestion.title && 
+          currentSuggestion.summary && 
+          currentSuggestion.category && 
+          currentSuggestion.imagePrompt && 
+          currentSuggestion.estimatedCost) {
+        suggestions.push(currentSuggestion as ProjectSuggestion)
       }
     }
+
+    return suggestions
   }
 } 

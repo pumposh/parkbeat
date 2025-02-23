@@ -1,17 +1,20 @@
 import { z } from "zod";
 import { logger } from "@/lib/logger";
-import { createAIAgent } from "../ai-helpers/aigent";
-
+import { createAIAgent, createAIImageAgent, type AIAgent } from "../ai-helpers/aigent";
 import { Env } from "../ai-helpers/types";
 import { Env as JStackEnv } from "@/server/jstack";
 import { generateId } from "@/lib/id";
-import { costEstimates, projectImages } from "@/server/db/schema";
+import { costEstimates, projectImages, projectSuggestions, projects } from "@/server/db/schema";
 import { getLocationInfo } from "@/lib/location";
 import { env } from "hono/adapter";
 import type { publicProcedure } from "@/server/jstack";
 import { ContextWithSuperJSON, Procedure } from "jstack";
 import { eq, desc } from "drizzle-orm";
 import { getTreeHelpers } from "../tree-helpers/context";
+import type { ProjectSuggestion } from "../../types/shared";
+import { Logger } from "./types";
+import { ImageGenerationAgent } from "../ai-helpers/leonardo-agent";
+import { calculateProjectCosts } from "@/lib/cost";
 
 const streetViewParamsSchema = z.object({
   lat: z.number(),
@@ -34,48 +37,19 @@ const imageSourceSchema = z.discriminatedUnion('type', [
 
 // Client -> Server event schemas
 export const aiClientEvents = {
-  analyzeImage: z.object({
-    imageSource: imageSourceSchema,
-    projectId: z.string().optional(),
-    context: z.string().optional(),
-    fundraiserId: z.string(),
-    requestId: z.string(),
-  }),
   validateImage: z.object({
     imageSource: imageSourceSchema,
     projectId: z.string(),
     fundraiserId: z.string(),
     requestId: z.string(),
   }),
-  generateProjectVision: z.object({
-    projectId: z.string(),
-    currentImageSource: imageSourceSchema,
-    desiredChanges: z.string(),
-    requestId: z.string(),
-  }),
-  generateCostEstimate: z.object({
-    projectId: z.string(),
-    description: z.string(),
-    requestId: z.string(),
-    category: z.enum([
-      'urban_greening',
-      'park_improvement',
-      'community_garden',
-      'playground',
-      'public_art',
-      'sustainability',
-      'accessibility',
-      'other'
-    ] as const),
-    scope: z.object({
-      size: z.number(),
-      complexity: z.enum(['low', 'medium', 'high']),
-      timeline: z.number(),
-    }),
-  }),
   subscribeToProject: z.object({
     projectId: z.string(),
     shouldSubscribe: z.boolean(),
+  }),
+  generateImagesForSuggestions: z.object({
+    projectId: z.string(),
+    suggestionIds: z.array(z.string()).optional(),
   }),
 };
 
@@ -98,6 +72,7 @@ export const aiServerEvents = {
         summary: z.string(),
         imagePrompt: z.string(),
         generatedImageUrl: z.string().optional(),
+        category: z.string(),
       })).optional(),
     }),
   }),
@@ -145,7 +120,7 @@ export const aiServerEvents = {
       }),
       errorSchema
     ]),
-  }),
+  })
 };
 
 const clientEvents = z.object(aiClientEvents)
@@ -164,127 +139,438 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
     getSocketId
   } = getTreeHelpers({ ctx, logger })
 
+  // Helper function to generate images for suggestions
+  const generateImagesForSuggestion = async ({
+    suggestion,
+    sourceImage,
+    leonardoAgent,
+    db,
+    projectId,
+    socketId,
+    io,
+    logger
+  }: {
+    suggestion: ProjectSuggestion
+    sourceImage: { id: string; image_url: string }
+    leonardoAgent: ImageGenerationAgent
+    db: any
+    projectId: string
+    socketId: string
+    io: AIIO
+    logger: Logger
+  }) => {
+    logger.info(`[generateImagesForSuggestion] Starting process for suggestion ${suggestion.id}`, {
+      suggestionTitle: suggestion.title,
+      sourceImageId: sourceImage.id,
+      projectId
+    })
 
-  // Image Analysis Handler
-  socket.on('analyzeImage', async ({ requestId, imageSource, projectId, context, fundraiserId }) => {
-    logger.info(`Processing image analysis for project: ${projectId || 'new'}`)
     try {
-      const { GOOGLE_AI_API_KEY, GOOGLE_MAPS_API_KEY } = env<Env>(c)
+      let upscaledImageUrl = sourceImage.image_url
+      let upscaleId: string | undefined
       
-      if (!GOOGLE_AI_API_KEY || !GOOGLE_MAPS_API_KEY) {
-        throw new Error('Missing required API configuration')
+      // Check if we already have an upscaled version
+      if (suggestion.images?.upscaled?.url && suggestion.images?.upscaled?.id) {
+        logger.info(`[generateImagesForSuggestion] Using existing upscaled image for suggestion ${suggestion.id}`, {
+          upscaleId: suggestion.images.upscaled.id,
+          upscaledUrl: suggestion.images.upscaled.url
+        })
+        upscaledImageUrl = suggestion.images.upscaled.url
+        upscaleId = suggestion.images.upscaled.id
+      } else {
+        // First upscale the source image
+        try {
+          logger.info(`[generateImagesForSuggestion] Starting upscaling process for source image`, {
+            sourceImageId: sourceImage.id,
+            sourceImageUrl: sourceImage.image_url
+          })
+
+          const upscaledImage = await leonardoAgent.upscaleImage({
+            imageUrl: sourceImage.image_url,
+            upscaleMultiplier: 1.5,
+            style: 'REALISTIC'
+          })
+
+          logger.info(`[generateImagesForSuggestion] Successfully upscaled image`, {
+            upscaleId: upscaledImage.id,
+            upscaledUrl: upscaledImage.url
+          })
+
+          upscaledImageUrl = upscaledImage.url
+          upscaleId = upscaledImage.id
+
+          logger.info(`[generateImagesForSuggestion] Updating suggestion with upscaled image info`, {
+            suggestionId: suggestion.id,
+            upscaleId,
+            sourceImageId: sourceImage.id
+          })
+
+          // Update the suggestion with upscaled source image info
+          await db.update(projectSuggestions)
+            .set({
+              images: {
+                ...suggestion.images,
+                source: {
+                  url: sourceImage.image_url,
+                  id: sourceImage.id
+                },
+                upscaled: {
+                  url: upscaledImage.url,
+                  id: upscaledImage.id,
+                  upscaledAt: new Date().toISOString()
+                }
+              }
+            })
+            .where(eq(projectSuggestions.id, suggestion.id))
+
+          logger.info(`[generateImagesForSuggestion] Successfully updated suggestion with upscaled image`, {
+            suggestionId: suggestion.id
+          })
+
+          // Notify subscribers about upscaled image
+          notifyProjectSubscribers(projectId, socketId, io)
+        } catch (error) {
+          logger.error(`[generateImagesForSuggestion] Error upscaling image ${sourceImage.id}:`, {
+            error,
+            sourceImageId: sourceImage.id,
+            suggestionId: suggestion.id
+          })
+          // Continue with original image if upscaling fails
+          logger.info(`[generateImagesForSuggestion] Continuing with original image after upscale failure`, {
+            sourceImageUrl: sourceImage.image_url
+          })
+        }
       }
 
-      const imageUrl = imageSource.type === 'url' 
-        ? imageSource.url 
-        : `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${imageSource.params.lat},${imageSource.params.lng}&heading=${imageSource.params.heading}&pitch=${imageSource.params.pitch}&fov=${90/imageSource.params.zoom}&key=${GOOGLE_MAPS_API_KEY}`
-
-      const locationInfo = imageSource.type === 'streetView'
-        ? await getLocationInfo(
-            imageSource.params.lat,
-            imageSource.params.lng
-          )
-        : null
-
-      const locationContext = locationInfo?.address ? [
-        locationInfo.address.street && `Located on ${locationInfo.address.street}`,
-        locationInfo.address.neighborhood && `in the ${locationInfo.address.neighborhood} neighborhood`,
-        locationInfo.address.city && 
-          (locationInfo.address.city.toLowerCase().includes('new york') 
-            ? locationInfo.address.neighborhood 
-            : `in ${locationInfo.address.city}`),
-      ].filter(Boolean).join(' ') : ''
-
-      const agent = createAIAgent('openai', c)
-      const result = await agent.analyzeImage({
-        imageUrl,
-        locationContext,
-        userContext: context,
+      logger.info(`[generateImagesForSuggestion] Starting image reimagination`, {
+        suggestionId: suggestion.id,
+        imagePrompt: suggestion.imagePrompt,
+        upscaledImageUrl
       })
 
-      if (!result.isOutdoorSpace) {
-        socket.emit('imageAnalysis', {
-          projectId: projectId || 'temp',
-          analysis: {
-            isOutdoorSpace: false,
-            description: result.analysis,
-            analysis: result.analysis,
-            suggestions: []
-          }
+      const costs = calculateProjectCosts(suggestion.estimatedCost?.breakdown)
+      const projectDetails = costs ? `
+        Project Breakdown:
+        - Materials (${costs.materials.formatted})
+        - Labor Requirements: ${costs.labor.formatted}
+        - Additional Costs: ${costs.other.formatted}
+        Total Budget: $${costs.total.toLocaleString()}
+      ` : ''
+
+      const imageResult = await leonardoAgent.reimagineFromPrompt({
+        originalImageUrl: upscaledImageUrl,
+        prompt: suggestion.imagePrompt,
+        projectContext: `
+          Project Title: "${suggestion.title}"
+          Project Description: ${suggestion.description || suggestion.summary}
+          ${projectDetails}
+          Implementation Requirements:
+          1. Add all specified materials and elements from the materials list
+          2. Ensure the scale of improvements matches the budget
+          3. Show realistic construction quality matching the labor specifications
+        `
+      })
+
+      logger.info(`[generateImagesForSuggestion] Successfully generated reimagined images`, {
+        suggestionId: suggestion.id,
+        generationId: imageResult.generationId,
+        imageCount: imageResult.urls.length
+      })
+
+      // Update the suggestion with the generated image URL
+      if (imageResult.urls.length > 0) {
+        const newGeneratedImage = {
+          url: imageResult.urls[0],
+          generatedAt: new Date().toISOString(),
+          generationId: imageResult.generationId
+        }
+
+        logger.info(`[generateImagesForSuggestion] Updating suggestion with generated image`, {
+          suggestionId: suggestion.id,
+          generationId: imageResult.generationId,
+          imageUrl: newGeneratedImage.url
         })
-        return
-      }
 
-      // Generate images for suggestions
-      const suggestions = await Promise.all(
-        result.suggestions?.map(async (suggestion) => {
-          try {
-            const imageResponse = await agent.generateImage({
-              prompt: suggestion.imagePrompt,
-              originalImage: imageUrl
-            })
-
-            return {
-              ...suggestion,
-              generatedImageUrl: imageResponse.url
+        await db.update(projectSuggestions)
+          .set({
+            images: {
+              ...suggestion.images,
+              source: {
+                url: sourceImage.image_url,
+                id: sourceImage.id
+              },
+              upscaled: {
+                url: upscaledImageUrl,
+                id: upscaleId,
+                upscaledAt: suggestion.images?.upscaled?.upscaledAt || new Date().toISOString()
+              },
+              generated: [...(suggestion.images?.generated || []), newGeneratedImage]
+            },
+            metadata: {
+              ...suggestion.metadata,
+              leonardoGenerationId: imageResult.generationId,
+              imageGeneratedAt: new Date().toISOString(),
+              sourceImageId: sourceImage.id,
+              originalSourceImageUrl: sourceImage.image_url,
+              upscaledSourceImageUrl: upscaledImageUrl,
+              leonardoUpscaleId: upscaleId,
+              generatedAt: suggestion.metadata?.generatedAt,
+              sourceImageCount: suggestion.metadata?.sourceImageCount
             }
-          } catch (error) {
-            logger.error('Failed to generate image for suggestion:', error)
-            return suggestion
-          }
-        }) ?? []
-      )
+          })
+          .where(eq(projectSuggestions.id, suggestion.id))
 
-      // Store image analysis if associated with a project
-      if (projectId) {
-        const { db } = ctx
-        await db.insert(projectImages).values({
-          id: generateId(),
-          project_id: projectId,
-          type: 'current',
-          image_url: imageUrl,
-          ai_analysis: { 
-            analysis: result.analysis,
-            streetViewParams: imageSource.type === 'streetView' ? imageSource.params : undefined,
-            suggestions
-          },
-          metadata: { 
-            context: locationContext,
-            userContext: context
-          }
+        logger.info(`[generateImagesForSuggestion] Successfully updated suggestion with generated image`, {
+          suggestionId: suggestion.id,
+          generationId: imageResult.generationId
         })
 
-        // Emit to project room
-        io.to(`project:${projectId}`).emit('imageAnalysis', {
+        // Notify subscribers about generated image
+        notifyProjectSubscribers(projectId, socketId, io)
+
+        logger.info(`[generateImagesForSuggestion] Successfully completed image generation process`, {
+          suggestionId: suggestion.id,
           projectId,
-          analysis: {
-            ...result,
-            suggestions
-          }
+          generationId: imageResult.generationId
         })
+
+        return imageResult
       } else {
-        // Emit only to requesting client
-        socket.emit('imageAnalysis', {
-          projectId: 'temp',
-          analysis: {
-            ...result,
-            suggestions
-          }
+        logger.debug(`[generateImagesForSuggestion] No images were generated`, {
+          suggestionId: suggestion.id,
+          generationId: imageResult.generationId
         })
       }
     } catch (error) {
-      logger.error('Error in analyzeImage:', error)
-      socket.emit('imageAnalysis', {
-        projectId: projectId || 'temp',
-        analysis: {
-          isOutdoorSpace: false,
-          description: error instanceof Error ? error.message : 'Failed to analyze image',
-          analysis: 'Failed to analyze image',
-          suggestions: []
-        }
+      logger.error(`[generateImagesForSuggestion] Error in image generation process`, {
+        error,
+        suggestionId: suggestion.id,
+        projectId,
+        sourceImageId: sourceImage.id
       })
+      throw error
     }
-  })
+  }
+
+  // Helper function to generate suggestions for a project
+  const generateSuggestionsForProject = async (projectId: string) => {
+    logger.info(`[generateSuggestionsForProject] Starting suggestion generation for project: ${projectId}`)
+    const socketId = getSocketId(socket)
+    
+    try {
+      const { db } = ctx
+      const { GOOGLE_AI_API_KEY, GOOGLE_MAPS_API_KEY, MAPTILER_API_KEY, LEONARDO_API_KEY } = env<Env>(c)
+      
+      if (!GOOGLE_AI_API_KEY || !GOOGLE_MAPS_API_KEY || !LEONARDO_API_KEY) {
+        throw new Error('Missing required API configuration')
+      }
+
+      // Get the current execution ID from Redis
+      const executionKey = `project:suggestionGenerationExecution:${projectId}`
+      const executionId = generateId()
+      const currentExecution = await ctx.redis.get(executionKey)
+      
+      // If there's already an execution in progress, skip
+      if (currentExecution) {
+        logger.info(`[generateSuggestionsForProject] Skipping - already running with ID: ${currentExecution}`)
+        return
+      }
+
+      // Set the new execution ID
+      await ctx.redis.set(executionKey, executionId)
+
+      // Get all validated images for the project
+      const images = await db
+        .select()
+        .from(projectImages)
+        .where(eq(projectImages.project_id, projectId))
+        .orderBy(desc(projectImages.created_at))
+
+      if (!images.length) {
+        logger.info(`[generateSuggestionsForProject] No images found for project: ${projectId}`)
+        await ctx.redis.del(executionKey)
+        return
+      }
+
+      const agent = createAIAgent('openai', c)
+
+      // Verify we're still the current execution
+      const currentId = await ctx.redis.get(executionKey)
+      if (currentId !== executionId) {
+        logger.info(`[generateSuggestionsForProject] Execution ${executionId} was superseded by ${currentId}`)
+        return
+      }
+
+      // Delete existing suggestions for this project before starting
+      await db.delete(projectSuggestions)
+        .where(eq(projectSuggestions.project_id, projectId))
+
+      notifyProjectSubscribers(projectId, socketId, io)
+
+      // Analyze all images together to generate consolidated suggestions
+      try {
+        const imageAnalyses = await Promise.all(images.map(image => ({
+          imageUrl: image.image_url,
+          locationContext: (image.metadata as { context: string })?.context,
+          userContext: (image.metadata as { userContext: string })?.userContext
+        })))
+
+        const locationContext = imageAnalyses.find(({ locationContext }) => locationContext)?.locationContext
+        console.log('[generateSuggestionsForProject] locationContext', locationContext)
+
+        let finalLocationContext = locationContext
+        if (!finalLocationContext) {
+          // If no location context from images, get it from project coordinates
+          const project = await db
+            .select()
+            .from(projects)
+            .where(eq(projects.id, projectId))
+            .limit(1)
+
+          if (project[0]) {
+            const key = MAPTILER_API_KEY
+            const locationInfo = await getLocationInfo(Number(project[0]._loc_lat), Number(project[0]._loc_lng), key)
+            console.log('[generateSuggestionsForProject] locationInfo', locationInfo)
+            if (locationInfo.address) {
+              finalLocationContext = [
+                locationInfo.address.street || locationInfo.address.road && `Located on ${locationInfo.address.street || locationInfo.address.road}`,
+                locationInfo.address.neighborhood || locationInfo.address.suburb && `in the ${locationInfo.address.neighborhood || locationInfo.address.suburb} neighborhood`,
+                locationInfo.address.city && 
+                  (locationInfo.address.city.toLowerCase().includes('new york') 
+                    ? locationInfo.address.neighborhood || locationInfo.address.borough
+                    : `in ${locationInfo.address.city}`),
+              ].filter(Boolean).join(' ')
+            }
+          }
+        }
+
+        console.log('[generateSuggestionsForProject] finalLocationContext', finalLocationContext)
+
+        const result = await agent.analyzeImages({
+          images: imageAnalyses,
+          locationContext: finalLocationContext,
+          maxSuggestions: 3 
+        })
+
+        if (!result.suggestions?.length) {
+          logger.info(`[generateSuggestionsForProject] No suggestions generated`)
+          return
+        }
+
+        // Save new suggestions to database
+        const metadata = images[0]?.metadata as { fundraiserId?: string } | null
+
+        // Save suggestions first without cost estimates
+        const savedSuggestions = await Promise.all(result.suggestions.map(async suggestion => {
+          const suggestionId = generateId()
+          const newSuggestion: ProjectSuggestion = {
+            id: suggestionId,
+            project_id: projectId,
+            fundraiser_id: metadata?.fundraiserId || projectId,
+            title: suggestion.title,
+            description: suggestion.summary || undefined,
+            summary: suggestion.summary,
+            imagePrompt: suggestion.imagePrompt,
+            category: suggestion.category,
+            confidence: '0.8',
+            reasoning_context: 'Generated from consolidated image analysis',
+            status: 'pending',
+            created_at: new Date(),
+            metadata: {
+              generatedAt: new Date().toISOString(),
+              sourceImageCount: images.length
+            }
+          }
+          
+          await db.insert(projectSuggestions).values({
+            ...newSuggestion,
+            description: newSuggestion.description || ''
+          })
+          return newSuggestion
+        }))
+
+        notifyProjectSubscribers(projectId, socketId, io)
+
+        // Generate cost estimates for all suggestions in parallel
+        await Promise.all(savedSuggestions.map(async suggestion => {
+          try {
+            const costEstimate = await agent.generateEstimate({
+              description: suggestion.summary || suggestion.description || '',
+              category: suggestion.category,
+              scope: {
+                size: 100, // Default size in square meters
+                complexity: 'low',
+                timeline: 3 // Default timeline in months
+              }
+            })
+
+            // Update the suggestion with the cost estimate
+            await db.update(projectSuggestions)
+              .set({
+                estimated_cost: {
+                  total: costEstimate.estimate.totalEstimate,
+                  breakdown: costEstimate.estimate.breakdown,
+                  assumptions: costEstimate.estimate.assumptions
+                }
+              })
+              .where(eq(projectSuggestions.id, suggestion.id))
+
+            logger.info(`[generateSuggestionsForProject] Generated cost estimate for suggestion: ${suggestion.id}`)
+          } catch (error) {
+            logger.error(`[generateSuggestionsForProject] Error generating cost estimate for suggestion ${suggestion.id}:`, error)
+          }
+        }))
+
+        notifyProjectSubscribers(projectId, socketId, io)
+        // After saving suggestions, generate reimagined images using Leonardo
+        logger.info(`[generateSuggestionsForProject] Starting image generation for ${savedSuggestions.length} suggestions`)
+        
+        const leonardoAgent = createAIImageAgent(c)
+        
+        // Generate images for all suggestions in parallel
+        await Promise.all(savedSuggestions.map(async (suggestion) => {
+          try {
+            const randomIndex = Math.floor(Math.random() * images.length)
+            const sourceImage = images[randomIndex]
+            if (!sourceImage) {
+              logger.warn(`[generateSuggestionsForProject] No source image found for suggestion ${suggestion.id}`)
+              return
+            }
+
+            await generateImagesForSuggestion({
+              suggestion,
+              sourceImage,
+              leonardoAgent,
+              db: ctx.db,
+              projectId,
+              socketId,
+              io,
+              logger
+            })
+
+            notifyProjectSubscribers(projectId, socketId, io)
+          } catch (error) {
+            logger.error(`[generateSuggestionsForProject] Error processing suggestion ${suggestion.id}:`, error)
+          }
+        }))
+
+        // Clear the execution ID
+        await ctx.redis.del(executionKey)
+
+        // Notify subscribers after all images are generated
+        notifyProjectSubscribers(projectId, socketId, io)
+
+        logger.info(`[generateSuggestionsForProject] Successfully completed suggestion and image generation for project: ${projectId}`)
+      } catch (error) {
+        await ctx.redis.del(executionKey)
+        logger.error(`[generateSuggestionsForProject] Error analyzing images:`, error)
+        throw error
+      }
+    } catch (error) {
+      logger.error(`[generateSuggestionsForProject] Error generating suggestions:`, error)
+      throw error
+    }
+  }
 
   // Image Validation Handler
   socket.on('validateImage', async ({ requestId, imageSource, projectId, fundraiserId }) => {
@@ -309,7 +595,6 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
       const validationResult = await agent.validateImage({ imageUrl })
 
       if (projectId) {
-
         if (validationResult.isMaybe || validationResult.isValid) {
           const { db } = ctx
 
@@ -341,6 +626,11 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
               }
             })
           }
+
+          // Trigger suggestion generation after successful validation
+          generateSuggestionsForProject(projectId).catch(error => {
+            logger.error(`[validateImage] Error generating suggestions:`, error)
+          })
         }
 
         // Emit to project room
@@ -395,117 +685,6 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
     }
   })
 
-  // Project Vision Generation Handler
-  socket.on('generateProjectVision', async ({ requestId, projectId, currentImageSource, desiredChanges }) => {
-    logger.info(`Generating project vision for: ${projectId}`)
-    try {
-      const { db } = ctx
-      const { GOOGLE_MAPS_API_KEY } = env<Env>(c)
-
-      const initialImage = await db
-        .select()
-        .from(projectImages)
-        .where(eq(projectImages.project_id, projectId))
-        .orderBy(desc(projectImages.created_at))
-        .limit(1)
-
-      if (!initialImage[0]) {
-        throw new Error('No validated image found for this project')
-      }
-
-      const imageUrl = currentImageSource.type === 'url' 
-        ? currentImageSource.url
-        : `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${currentImageSource.params.lat},${currentImageSource.params.lng}&heading=${currentImageSource.params.heading}&pitch=${currentImageSource.params.pitch}&fov=${90/currentImageSource.params.zoom}&key=${GOOGLE_MAPS_API_KEY}`
-
-      const agent = createAIAgent('openai', c)
-      const result = await agent.generateVision({
-        imageUrl,
-        desiredChanges,
-        initialDescription: (initialImage[0].ai_analysis as { description: string }).description
-      })
-
-      // Store the vision
-      await db.insert(projectImages).values({
-        id: generateId(),
-        project_id: projectId,
-        type: 'vision',
-        image_url: imageUrl,
-        ai_generated_url: result.vision.imageUrl || null,
-        ai_analysis: {
-          description: result.vision.description,
-          existingElements: result.vision.existingElements,
-          newElements: result.vision.newElements,
-          community_benefits: result.vision.communityBenefits,
-          maintenance_considerations: result.vision.maintenanceConsiderations,
-          image_prompt: result.vision.imagePrompt,
-          desired_changes: desiredChanges,
-          street_view_params: currentImageSource.type === 'streetView' ? currentImageSource.params : undefined
-        }
-      })
-
-      // Emit to project room
-      io.to(`project:${projectId}`).emit('projectVision', {
-        projectId,
-        requestId,
-        vision: result.vision
-      })
-    } catch (error) {
-      logger.error('Error generating project vision:', error)
-      socket.emit('projectVision', {
-        projectId: 'temp',
-        requestId,
-        vision: {
-          code: 'VISION_ERROR',
-          message: 'Failed to generate project vision',
-          details: error
-        }
-      })
-    }
-  })
-
-  // Cost Estimate Generation Handler
-  socket.on('generateCostEstimate', async ({ requestId, projectId, description, category, scope }) => {
-    logger.info(`Generating cost estimate for project: ${projectId}`)
-    try {
-      const { db } = ctx
-      const agent = createAIAgent('openai', c)
-      const result = await agent.generateEstimate({
-        description,
-        category,
-        scope
-      })
-
-      // Store the estimate
-      await db.insert(costEstimates).values({
-        id: generateId(),
-        project_id: projectId,
-        version: '1',
-        total_estimate: result.estimate.totalEstimate.toString(),
-        breakdown: result.estimate.breakdown,
-        assumptions: result.estimate.assumptions,
-        confidence_scores: { overall: result.estimate.confidenceScore }
-      })
-
-      // Emit to project room
-      io.to(`project:${projectId}`).emit('costEstimate', {
-        projectId,
-        requestId,
-        estimate: result.estimate
-      })
-    } catch (error) {
-      logger.error('Error generating cost estimate:', error)
-      socket.emit('costEstimate', {
-        projectId: 'temp',
-        requestId,
-        estimate: {
-          code: 'ESTIMATE_ERROR',
-          message: 'Failed to generate cost estimate',
-          details: error
-        }
-      })
-    }
-  })
-
   // Project Subscription Handler
   socket.on('subscribeToProject', async ({ projectId, shouldSubscribe }) => {
     if (shouldSubscribe) {
@@ -514,6 +693,88 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
     } else {
       logger.info(`Client unsubscribing from project: ${projectId}`)
       await socket.leave(`project:${projectId}`)
+    }
+  })
+
+  // Update the generateImagesForSuggestions handler to use the shared helper
+  socket.on('generateImagesForSuggestions', async ({ projectId, suggestionIds }) => {
+    logger.info(`[generateImagesForSuggestions] Starting image generation for project: ${projectId}`, {
+      suggestionIds: suggestionIds || 'all'
+    })
+
+    try {
+      const { db } = ctx
+      const { LEONARDO_API_KEY } = env<Env>(c)
+      
+      if (!LEONARDO_API_KEY) {
+        throw new Error('Missing LEONARDO_API_KEY')
+      }
+
+      // Get all images for the project
+      const images = await db
+        .select()
+        .from(projectImages)
+        .where(eq(projectImages.project_id, projectId))
+        .orderBy(desc(projectImages.created_at))
+
+      if (!images.length) {
+        throw new Error('No images found for project')
+      }
+
+      // Get suggestions to process
+      const suggestions = await db
+        .select()
+        .from(projectSuggestions)
+        .where(eq(projectSuggestions.project_id, projectId))
+        .orderBy(desc(projectSuggestions.created_at))
+
+      if (!suggestions.length) {
+        throw new Error('No suggestions found for project')
+      }
+
+      // Filter suggestions if specific IDs were provided
+      const suggestionsToProcess: ProjectSuggestion[] = (suggestionIds 
+        ? suggestions.filter(s => suggestionIds.includes(s.id))
+        : suggestions).map(s => ({
+          ...s,
+          description: s.description || '',
+          summary: s.summary || '',
+          images: s.images as ProjectSuggestion['images'],
+          metadata: s.metadata as ProjectSuggestion['metadata']
+        }))
+
+      const leonardoAgent = createAIImageAgent(c)
+      const socketId = getSocketId(socket)
+      
+      // Process each suggestion
+      await Promise.all(suggestionsToProcess.map(async (suggestion) => {
+        try {
+          // Get a random image from the available images
+          const randomIndex = Math.floor(Math.random() * images.length)
+          const sourceImage = images[randomIndex]
+          if (!sourceImage) {
+            logger.warn(`[generateImagesForSuggestions] No source image found for suggestion ${suggestion.id}`)
+            return
+          }
+
+          await generateImagesForSuggestion({
+            suggestion: suggestion as ProjectSuggestion,
+            sourceImage,
+            leonardoAgent,
+            db,
+            projectId,
+            socketId,
+            io,
+            logger
+          })
+        } catch (error) {
+          logger.error(`[generateImagesForSuggestions] Error processing suggestion ${suggestion.id}:`, error)
+        }
+      }))
+
+      logger.info(`[generateImagesForSuggestions] Completed image generation for project: ${projectId}`)
+    } catch (error) {
+      logger.error(`[generateImagesForSuggestions] Error:`, error)
     }
   })
 } 

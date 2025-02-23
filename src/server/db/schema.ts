@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, index, numeric, jsonb, pgEnum } from "drizzle-orm/pg-core"
+import type { ProjectCategory, ProjectStatus } from "../types/shared"
 
 export const posts = pgTable(
   "posts",
@@ -15,6 +16,18 @@ export const posts = pgTable(
 
 // Project status enum
 export const projectStatusEnum = pgEnum('project_status', ['draft', 'active', 'funded', 'completed', 'archived'])
+
+// Project categories for better organization and discovery
+export const projectCategoryEnum = pgEnum('project_category', [
+  'urban_greening',
+  'park_improvement',
+  'community_garden',
+  'playground',
+  'public_art',
+  'sustainability',
+  'accessibility',
+  'other'
+])
 
 /** Renamed from 'trees' */
 export const projects = pgTable(
@@ -44,18 +57,6 @@ export const projects = pgTable(
 // User roles enum
 export const userRoleEnum = pgEnum('user_role', ['donor', 'fundraiser', 'both'])
 
-// Project categories for better organization and discovery
-export const projectCategoryEnum = pgEnum('project_category', [
-  'urban_greening',
-  'park_improvement',
-  'community_garden',
-  'playground',
-  'public_art',
-  'sustainability',
-  'accessibility',
-  'other'
-])
-
 // AI Project Recommendations table
 export const projectSuggestions = pgTable(
   "project_suggestions",
@@ -65,15 +66,18 @@ export const projectSuggestions = pgTable(
     title: text("title").notNull(),
     description: text("description").notNull(),
     project_id: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
-    image_prompt: text("image_prompt").notNull(),
-    generated_image_url: text("generated_image_url"),
-    category: projectCategoryEnum("category").notNull(),
-    estimated_cost: jsonb("estimated_cost").notNull(), // Detailed cost breakdown
-    confidence: numeric("confidence").notNull(), // AI's confidence in the recommendation
-    inspiration_images: jsonb("inspiration_images"), // Array of image URLs that inspired this
-    suggested_location: jsonb("suggested_location"), // Suggested coordinates and area
-    reasoning_context: text("reasoning_context").notNull(), // AI's explanation for the recommendation
-    status: text("status").notNull().default('pending'), // 'pending', 'accepted', 'rejected'
+    imagePrompt: text("image_prompt").notNull(),
+    images: jsonb("images").default({
+      generated: [] as Array<{ url: string; generatedAt: string; generationId: string }>,
+      source: {} as { url?: string; id?: string },
+      upscaled: {} as { url?: string; id?: string; upscaledAt?: string },
+    }),
+    category: text("category").notNull(),
+    estimated_cost: jsonb("estimated_cost").default(null),
+    confidence: numeric("confidence").notNull(),
+    reasoning_context: text("reasoning_context").notNull(),
+    summary: text("summary"),
+    status: text("status").notNull().default('pending'),
     created_at: timestamp("created_at").defaultNow().notNull(),
     metadata: jsonb("metadata"),
   },
@@ -88,17 +92,14 @@ export const projectImages = pgTable(
   {
     id: text("id").primaryKey(),
     project_id: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
-    suggestion_id: text("suggestion_id").references(() => projectSuggestions.id, { onDelete: 'cascade' }),
     type: text("type").notNull(), // 'current', 'vision', 'progress'
     image_url: text("image_url").notNull(),
-    ai_generated_url: text("ai_generated_url"), // For AI-enhanced/modified versions
     ai_analysis: jsonb("ai_analysis"), // Store AI's image analysis results
     created_at: timestamp("created_at").defaultNow().notNull(),
     metadata: jsonb("metadata"), // For flexible additional data
   },
   (table) => [
-    index("image_project_idx").on(table.project_id),
-    index("image_suggestion_idx").on(table.suggestion_id)
+    index("image_project_idx").on(table.project_id)
   ]
 )
 

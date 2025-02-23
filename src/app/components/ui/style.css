@@ -1,3 +1,17 @@
+.StepFormDialog__content {
+  mask-image: linear-gradient(to bottom, transparent 0%, black 7%, black 93%, transparent 100%);
+  transition: mask-image 0.3s ease-in-out;
+}
+
+.StepFormDialog__content--at-top {
+  mask-image: linear-gradient(to bottom, black 0%, black 93%, transparent 100%);
+  transition: mask-image 0.3s ease-in-out;
+}
+
+.StepFormDialog__content--at-bottom {
+  mask-image: linear-gradient(to bottom, transparent 0%, black 7%, black 100%);
+  transition: mask-image 0.3s ease-in-out;
+}
 
 .logo-shadow {
     filter: url('data:image/svg+xml,\

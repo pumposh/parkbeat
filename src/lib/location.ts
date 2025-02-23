@@ -1,5 +1,5 @@
 import type { LocationInfo, MapTilerResponse, NominatimResponse } from "../types/types"
-export async function getLocationInfo(lat: number, lng: number): Promise<LocationInfo & Partial<NominatimResponse> & Partial<MapTilerResponse>> {
+export async function getLocationInfo(lat: number, lng: number, apiKey?: string): Promise<LocationInfo & Partial<NominatimResponse> & Partial<MapTilerResponse>> {
     let partialLocationInfo: LocationInfo = {
         coordinates: { lat, lng },
         timestamp: new Date().toISOString()
@@ -23,21 +23,34 @@ export async function getLocationInfo(lat: number, lng: number): Promise<Locatio
       partialLocationInfo.importance = nominatimData.importance
       partialLocationInfo.osmType = nominatimData.osm_type
       partialLocationInfo.osmId = nominatimData.osm_id
+      console.log('nominatimData', nominatimData)
   
       // MapTiler API for additional context like neighborhoods
-      const maptilerResponse = await fetch(
-        `https://api.maptiler.com/geocoding/${lng},${lat}.json?key=${process.env.NEXT_PUBLIC_MAPTILER_API_KEY}`
-      )
-      const maptilerData = await maptilerResponse.json() as MapTilerResponse
-  
-      // Combine and normalize the data
-      return {
-        ...partialLocationInfo,
-        ...maptilerData
+      try {
+        const key = apiKey || process.env.NEXT_PUBLIC_MAPTILER_API_KEY || process.env.MAPTILER_API_KEY
+        const maptilerResponse = await fetch(
+          `https://api.maptiler.com/geocoding/${lng},${lat}.json?key=${key}`
+        )
+        if (!maptilerResponse.ok) {
+          throw new Error(`MapTiler API error: ${maptilerResponse.status} ${maptilerResponse.statusText} ${maptilerResponse.url} ${maptilerResponse.body}`)
+        }
+        const maptilerData = await maptilerResponse.json() as MapTilerResponse
+        
+        // Only merge MapTiler data if it's valid
+          return {
+          ...partialLocationInfo,
+          ...maptilerData
+        }
+      } catch (error) {
+        console.warn('MapTiler API error:', error)
+        // Continue with just the Nominatim data
       }
+  
+      // Return what we have from Nominatim if MapTiler fails
+      return partialLocationInfo
     } catch (error) {
       console.error('Error fetching location info:', error)
-      // Return basic coordinates if APIs fail
+      // Return basic coordinates if all APIs fail
       return partialLocationInfo
     }
   }

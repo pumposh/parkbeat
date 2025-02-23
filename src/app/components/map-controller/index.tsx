@@ -14,6 +14,7 @@ import { Markers } from './markers'
 import { getMapStyle, getIpLocation } from './utils'
 import type { MapControllerProps, IpLocation } from '@/types/types'
 import { boundsToGeohash } from '@/lib/geo/geohash'
+import { useNavigationState } from '@/hooks/use-nav-state'
 
 export const MapController = ({
   initialCenter = {
@@ -25,6 +26,7 @@ export const MapController = ({
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
   const controlsRef = useRef<HTMLDivElement>(null)
+  const [isNavigating, startNavigating] = useNavigationState()
   const { resolvedTheme } = useTheme()
   const [location, setLocation] = useState<IpLocation | null>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
@@ -72,6 +74,7 @@ export const MapController = ({
   const openTreeDialog = () => {
     const id = generateId()
     const center = map.current?.getCenter()
+    startNavigating()
     router.push(`/projects/${id}?lat=${center?.lat}&lng=${center?.lng}`)
   }
 
@@ -594,7 +597,7 @@ export const MapController = ({
                 )}
                 style={{ 
                   filter: `drop-shadow(0 ${isUserInteracting || isMapMoving ? 8 : 4}px ${isUserInteracting || isMapMoving ? 4 : 2}px rgb(0 0 0 / ${isUserInteracting || isMapMoving ? 0.15 : 0.1}))`,
-                  transform: `translateY(${isUserInteracting || isMapMoving ? -24 : 6}px)`,
+                  transform: `translateY(${isUserInteracting || isMapMoving ? -24 : -6}px)`,
                   opacity: isUserInteracting || isMapMoving ? 0.6 : isMapLoaded ? 1 : 0,
                   willChange: 'transform, opacity'
                 }}
@@ -602,12 +605,13 @@ export const MapController = ({
               />
               <div 
                 className={cn(
-                  "pin-shadow",
+                  "pin-shadow  translate-y-[-12px]",
                   isUserInteracting || isMapMoving ? "opacity-100 scale-100" : "opacity-20 scale-90"
                 )}
               />
               {isButtonVisible && !isMarkerNearCenter && (
                 <button 
+                  data-loading={isNavigating ? "true" : "false"}
                   className={cn(
                     "projects-button frosted-glass",
                     "z-10",

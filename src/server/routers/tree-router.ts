@@ -1,14 +1,14 @@
 import { Env as JStackEnv } from "@/server/jstack";
 import { projects } from "@/server/db/schema"
-import { desc, eq, InferInsertModel, like } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { j, publicProcedure } from "../jstack"
 import { getTreeHelpers } from "./tree-helpers/context"
 import { logger } from "@/lib/logger"
-import { projectClientEvents, projectServerEvents, ProjectStatus, setupProjectHandlers } from "./socket/project-handlers"
+import { projectClientEvents, projectServerEvents, setupProjectHandlers } from "./socket/project-handlers"
 import { setupAIHandlers, aiClientEvents, aiServerEvents } from "./socket/ai-handlers"
 import { Procedure } from "jstack"
-import { Redis } from "@upstash/redis/cloudflare";
+import type { ProjectStatus } from "@/server/types/shared"
 
 const killActiveSocketsSchema = z.object({
   socketId: z.string(),
@@ -38,7 +38,7 @@ const serverEvents = z.object({
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
 export type ServerProcedure = Procedure<JStackEnv, ProcedureContext, void, typeof clientEvents, typeof serverEvents>
 
-export type ProjectData = z.infer<typeof serverEvents>['projectData']['data']
+// export type ProjectData = z.infer<typeof serverEvents>['projectData']['data']
 export type ClientEvents = z.infer<typeof clientEvents>
 export type ServerEvents = z.infer<typeof serverEvents>
 
@@ -145,17 +145,6 @@ export const treeRouter = j.router({
 
           // Return cleanup function
           socketId = getSocketId(socket)
-
-          // queueSocketForCleanup('asdf')
-          // logger.info('test fetch')
-          // fetch( + '/api/tree/killActiveSockets', {
-          //   method: 'POST',
-          //   body: JSON.stringify({ socketId: 'asdfasdf' })
-          // }).catch((error) => {
-          //   logger.error('test fetch error', error)
-          // }).finally(() => {
-          //   logger.info('test fetch')
-          // })
 
           return () => {
             if (!socketId) return

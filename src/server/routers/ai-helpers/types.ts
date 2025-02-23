@@ -1,4 +1,3 @@
-
 // Cloudflare R2 types
 interface R2Bucket {
   put(key: string, value: ArrayBuffer | ReadableStream, options?: {
@@ -21,7 +20,7 @@ interface R2Object {
 }
 
 // Environment type
-export type Env = Record<string, string> & {
+export interface Env extends Record<string, string> {
   GOOGLE_AI_API_KEY: string;
   GOOGLE_MAPS_API_KEY: string;
   GCP_PROJECT_ID: string;
@@ -29,4 +28,6 @@ export type Env = Record<string, string> & {
   GCP_PRIVATE_KEY: string;
   OPENAI_API_KEY: string;
   R2_BUCKET_NAME: string;
+  MAPTILER_API_KEY: string;
+  LEONARDO_API_KEY: string;
 }

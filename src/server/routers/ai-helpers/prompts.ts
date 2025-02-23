@@ -28,6 +28,7 @@ interface CostEstimateContext extends BasePromptContext {
 interface ProjectSuggestionsContext extends BasePromptContext {
   locationContext?: string
   userContext?: string
+  maxSuggestions: number
 }
 
 export class PromptManager {
@@ -40,9 +41,21 @@ export class PromptManager {
     Try to keep your language friendly, conversational, and heartfelt. Use
     smaller words and lots of emojis to make it more engaging.
 
-    Prioritize aesthetic appeal and frugality. Be down to earth and practical.
-    Try not to assume community members will volunteer their time to help but
-    the labor cost estimation should be low.
+    Focus on micro-improvements and small-scale beautification:
+    - Tree beds and small gardens ($500-2,000)
+    - Simple benches or planters ($1,000-3,000)
+    - Basic landscaping improvements ($1,000-4,000)
+    - Small art installations ($2,000-5,000)
+
+    Prioritize aesthetic appeal and extreme frugality. Be down to earth and practical.
+    Assume all labor will be contracted (no volunteer work) but keep the scope small
+    enough that labor costs stay minimal. Think in terms of 1-2 day projects.
+    Assume one skilled laborer billed between $20-40/hour. *Only if necessary*
+    should you consider more than one laborer. Any additional laborers must
+    be billed at no more than $15-20/hour.
+
+    IMPORTANT: Most projects should fall in the $1,000-$3,000 range. Any project
+    over $5,000 is likely too ambitious for community crowdfunding.
   `
 
   static getImageAnalysisPrompt(context: ImageAnalysisContext) {
@@ -133,6 +146,24 @@ export class PromptManager {
       You will be given project details and need to generate a detailed cost estimate.
       Be realistic but frugal in your estimates. Consider local market rates and
       project complexity.
+
+      The cost estimate must strictly adhere to the following format:
+      Everything with "i.e" is an example.
+
+      RESPONSE STRUCTURE:
+      1. MATERIALS BREAKDOWN
+         - Item 1: $cost (i.e $100)
+         - Item 2: $cost (i.e $100)
+         ...
+      2. LABOR COSTS
+         - Skill 1: $rate x hours (i.e $100 x 1 hour)
+         - Skill 2: $rate x hours (i.e $100 x 1 hour)
+         ...
+      3. OTHER COSTS
+         - Permits: $cost (i.e $100)
+         - Management: $cost (i.e $100)
+      4. ASSUMPTIONS LIST
+      5. CONFIDENCE SCORE (0-1)
     `
 
     const userPrompt = `
@@ -149,24 +180,7 @@ export class PromptManager {
       2. Labor costs (assume minimal volunteer work)
       3. Permits and fees
       4. Project management
-      5. Contingency (10-15%)
-      
-      RESPONSE STRUCTURE:
-      1. MATERIALS BREAKDOWN
-         - Item 1: $cost
-         - Item 2: $cost
-         ...
-      2. LABOR COSTS
-         - Skill 1: $rate x hours
-         - Skill 2: $rate x hours
-         ...
-      3. OTHER COSTS
-         - Permits: $cost
-         - Management: $cost
-         - Contingency: $cost
-      4. TOTAL ESTIMATE: $total
-      5. ASSUMPTIONS LIST
-      6. CONFIDENCE SCORE (0-1)
+      5. Contingency (5-10%)
     `
 
     return {
@@ -203,28 +217,43 @@ export class PromptManager {
 
   static getProjectSuggestionsPrompt(context: ProjectSuggestionsContext) {
     const systemPrompt = this.DEFAULT_SYSTEM_PROMPT + `
-      You will analyze a street view image and generate 2-3 unique project suggestions
+      You will analyze multiple street view images and generate ${context.maxSuggestions} unique project suggestions
       for improving this space. Each suggestion should be realistic, achievable, and
       consider the local context.
 
+      COST GUIDELINES:
+      - Aim for most projects to be $1,000-$3,000
+      - Simple projects (tree beds, basic planters) should be under $2,000
+      - Never exceed $5,000 total cost
+      - Remember to include labor but keep projects small enough for 1-2 days work
+      - Break down costs into materials (30-40%), labor (40-50%), permits (5-10%), management (5-10%)
+
       For each suggestion, provide:
       1. A catchy but descriptive title that references the location
-      2. A brief summary of the project (2-3 sentences)
+        - Use the location context to make the title specific to the location
+        - Keep the title short, sweet, and memorable
+      2. A brief summary of the project (12-18 words)
+        - Focus on simple, achievable improvements
+        - Emphasize visual impact over complexity
       3. The project type (urban_greening, park_improvement, community_garden, etc.)
-      4. A detailed image prompt for visualizing the completed project
-      5. An estimated cost range
+      4. A detailed image prompt for visualizing the completed project as a
+        realistic edit to the input image.
+      5. A rough cost estimate
+        - Most projects should be $1,000-$3,000
+        - Include basic materials and minimal labor
+        - Round to nearest hundred
+        - Consider only essential elements
 
       Format each suggestion with:
       TITLE: [Project Title]
       TYPE: [Project Type]
       SUMMARY: [Brief Description]
       IMAGE PROMPT: [Detailed prompt for visualization]
-      ESTIMATED COST: [Cost estimate]
+      ESTIMATED COST: [Simple cost estimate in dollars]
       ---
     `
 
-    const userPrompt = `
-      Analyze this location image and generate 2-3 unique project suggestions.
+    const userPrompt = `      Analyze these location images and generate exactly ${context.maxSuggestions} unique project suggestions.
       ${context.locationContext ? `Location Context: ${context.locationContext}` : ''}
       ${context.userContext ? `Additional Context: ${context.userContext}` : ''}
 

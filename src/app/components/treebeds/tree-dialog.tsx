@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { LocationInfo } from '@/types/types'
-import type { ProjectStatus } from '@/server/routers/socket/project-handlers'
+import type { ProjectData, ProjectStatus } from '@/server/types/shared'
 import { StepFormDialog } from '../ui/step-form-dialog'
 import { LocationInfoCard } from './components/location-info-card'
 import { useToast } from '@/app/components/toast'
@@ -12,6 +12,8 @@ import { useParams } from 'next/navigation'
 import { StreetViewCard } from './components/street-view-card'
 import { ProjectForm } from './components/project-form'
 import { ProjectSuggestions } from './components/project-suggestions'
+
+type ProjectSuggestion = NonNullable<ProjectData['suggestions']>[number]
 
 interface ProjectFormData {
   name: string
@@ -27,10 +29,7 @@ interface ProjectFormData {
     zoom: number
   }
   suggestion?: {
-    title: string
-    summary: string
-    imagePrompt: string
-    generatedImageUrl?: string
+    id: string
   }
 }
 
@@ -49,7 +48,10 @@ export function TreeDialog(props: {
   const [open, setOpen] = useState(true)
   const [currentStep, setCurrentStep] = useState(0)
   const [isLocationValid, setIsLocationValid] = useState(false)
-  const projectData = useProjectData(projectId)
+  const {
+    projectData,
+    disconnect
+  } = useProjectData(projectId)
 
   // Update form data when project data changes
   useEffect(() => {
@@ -86,10 +88,6 @@ export function TreeDialog(props: {
     }
   })
 
-  // Refs for debouncing
-  const debounceControl = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const dataToWrite = useRef<Partial<Project>>({})
-
   // Redirect if no userId
   useEffect(() => {
     if (!props.userId) {
@@ -104,6 +102,7 @@ export function TreeDialog(props: {
   const handleClose = () => {
     console.log('[TreeDialog] Closing dialog')
     setOpen(false)
+    disconnect()
     // Wait for the animation to complete
     setTimeout(() => {
       console.log('[TreeDialog] Navigating to /projects')
@@ -214,13 +213,22 @@ export function TreeDialog(props: {
     }
   }, [formData, projectId, setProject, showToast])
 
-  const handleSuggestionSelect = useCallback((suggestion: ProjectFormData['suggestion']) => {
+  const handleSuggestionSelect = useCallback((suggestion: ProjectSuggestion | null) => {
     console.log('[TreeDialog] Selected suggestion:', suggestion)
+    if (!suggestion) {
+      setFormData(prev => ({
+        ...prev,
+        suggestion: undefined
+      }))
+      return
+    }
     setFormData(prev => ({
       ...prev,
       name: suggestion?.title || '',
       description: suggestion?.summary || '',
-      suggestion: suggestion
+      suggestion: {
+        id: suggestion.id,
+      }
     }))
   }, [])
 
@@ -270,10 +278,6 @@ export function TreeDialog(props: {
 
   const handleStepChange = useCallback((newStep: number) => {
     console.log('[TreeDialog] Step changing to:', newStep)
-    // Save draft when moving to next step
-    if (newStep > currentStep) {
-      saveDraft()
-    }
     setCurrentStep(newStep)
   }, [currentStep, saveDraft])
 
@@ -329,11 +333,10 @@ export function TreeDialog(props: {
         || (projectData.data?.images?.length ?? 0) > 0
     },
     {
-      title: "Choose a Project Type",
+      title: "Imagine your project",
       content: (
         <ProjectSuggestions
           projectId={projectId}
-          currentImageUrl={`https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${formData.location?.lat},${formData.location?.lng}&heading=${formData.viewParams?.heading}&pitch=${formData.viewParams?.pitch}&fov=${90/(formData.viewParams?.zoom || 1)}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`}
           onSuggestionSelect={handleSuggestionSelect}
           isLoading={!formData.location || !formData.viewParams}
         />

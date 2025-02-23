@@ -73,10 +73,15 @@ export function StepFormDialog({
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [activeSteps, setActiveSteps] = useState<StepState[]>([])
   const [contentHeight, setContentHeight] = useState<number>(0)
+  const [isHeightTransitioning, setIsHeightTransitioning] = useState(false)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
+  const contentContainerRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+  const footerRef = useRef<HTMLDivElement>(null)
   const resizeObserver = useRef<ResizeObserver | null>(null)
   const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const [scrollPosition, setScrollPosition] = useState<'top' | 'middle' | 'bottom' | null>(null)
   
   if (!currentStepData) {
     return null
@@ -106,6 +111,10 @@ export function StepFormDialog({
     }
 
     const height = contentRef.current?.getBoundingClientRect().height
+    setIsHeightTransitioning(true)
+    setTimeout(() => {
+      setIsHeightTransitioning(false)
+    }, TRANSITION_DURATION)
     setContentHeight(height)
 
     // Create observer to watch content height changes
@@ -115,10 +124,26 @@ export function StepFormDialog({
         const contentElement = Array.from(entry.target.children).find(
           child => child instanceof HTMLElement && child.offsetHeight > 0
         )
-        console.log('[step-form-dialog] height', contentElement?.getBoundingClientRect().height)
         if (contentElement instanceof HTMLElement) {
-          const height = contentElement.getBoundingClientRect().height
+          let height = contentElement.getBoundingClientRect().height + 32
+
+          // Get header and footer heights, including padding
+          const headerHeight = Number(headerRef.current?.getBoundingClientRect().height || 0)
+          const footerHeight = Number(footerRef.current?.getBoundingClientRect().height || 0)
+          const paddingPx = 32
+          
+          const availableHeight = window.innerHeight - headerHeight - footerHeight - paddingPx
+          
+          // If content is taller than available space, constrain it
+          if (height > availableHeight) {
+            height = availableHeight
+          }
+
           setContentHeight(height)
+          setIsHeightTransitioning(true)
+          setTimeout(() => {
+            setIsHeightTransitioning(false)
+          }, TRANSITION_DURATION)
         }
       }
     })
@@ -132,6 +157,34 @@ export function StepFormDialog({
       }
     }
   }, [contentRef.current])
+
+  // Add scroll position detection
+  useEffect(() => {
+    const content = contentContainerRef.current
+    if (!content) return
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = content
+      const isAtTop = scrollTop === 0
+      const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 1
+
+      if (isAtTop) {
+        setScrollPosition('top')
+      } else if (isAtBottom) {
+        setScrollPosition('bottom')
+      } else {
+        setScrollPosition('middle')
+      }
+    }
+
+    content.addEventListener('scroll', handleScroll)
+    // Initial check
+    handleScroll()
+
+    return () => {
+      content.removeEventListener('scroll', handleScroll)
+    }
+  }, [contentContainerRef.current])
 
   // Handle dialog close with transition
   const handleDialogChange = (isOpen: boolean) => {
@@ -231,7 +284,7 @@ export function StepFormDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay fixed inset-0" />
         <Dialog.Content 
-          className="dialog-content fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl p-4 overflow-visible"
+          className="dialog-content fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl p-4 overflow-visible max-h-[100dvh] flex flex-col"
           aria-describedby="step-form-dialog-description"
         >
           <VisuallyHidden>
@@ -239,11 +292,13 @@ export function StepFormDialog({
               {currentStepData.title}
             </Dialog.Title>
           </VisuallyHidden>
-          <div className="pointer-events-auto">
+          <div className="pointer-events-auto flex flex-col flex-1 overflow-hidden">
             <div className="frosted-glass rounded-2xl relative grid grid-rows-[auto_1fr_auto] overflow-hidden">
               <div className={cn(
                 "p-8 pb-0 space-y-2 transition-opacity duration-300",
-              )}>
+              )}
+              ref={headerRef}
+              >
                 <div className="text-sm text-zinc-500 dark:text-zinc-400">
                   Step {currentStep + 1} of {steps.length}
                 </div>
@@ -256,13 +311,20 @@ export function StepFormDialog({
               </div>
 
               <div 
-                className="relative overflow-hidden transition-[height] duration-300 ease-in-out"
+                className={cn(
+                  "StepFormDialog__content relative overflow-y-scroll flex-0 transition-[height] duration-300 ease-in-out pb-8",
+                  isHeightTransitioning && 'overflow-hidden',
+                  scrollPosition === 'top' && 'StepFormDialog__content--at-top',
+                  scrollPosition === 'bottom' && 'StepFormDialog__content--at-bottom'
+                )}
+                ref={contentContainerRef}
                 style={{
                   height: `calc(${contentHeight}px + 2rem)` || 'auto',
+                  maxHeight: '100%',
                   minHeight: '200px',
                 }}
               >
-                <div ref={contentRef} className="StepFormDialog__content-wrapper h-auto w-auto px-8 py-4" style={{
+                <div ref={contentRef} className="StepFormDialog__content-wrapper overflow-hidden h-auto w-auto px-8 py-4" style={{
                   minHeight: 'fit-content',
                 }}>         
                   {activeSteps.map((step) => (
@@ -293,7 +355,7 @@ export function StepFormDialog({
                 </div>
               </div>
 
-              <div className="p-8 flex items-center justify-between gap-3">
+              <div ref={footerRef} className="pt-0 p-8 flex items-center justify-between gap-3">
                 {currentStep === 0 ? (
                   <button
                     type="button"

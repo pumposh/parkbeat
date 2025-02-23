@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { LocationInfo } from '@/types/types'
-import type { ProjectStatus } from '@/server/routers/socket/project-handlers'
+import type { ProjectStatus } from '@/server/types/shared'
 import { useLiveTrees } from '@/hooks/use-tree-sockets'
 
 type OnUpdateProject = Partial<Parameters<ReturnType<typeof useLiveTrees>['setProject']>[0]>

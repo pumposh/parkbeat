@@ -2,9 +2,9 @@ import { generateId } from "@/lib/id"
 import { publicProcedure } from "../../jstack"
 import { eq, desc, like } from "drizzle-orm"
 import { projectImages, projects, projectSuggestions } from "@/server/db/schema"
-import { ProjectData } from "../tree-router"
+import type { ProjectData } from "@/server/types/shared"
 import type { ServerProcedure } from "../tree-router"
-import { ProjectStatus } from "../socket/project-handlers"
+import type { ProjectStatus } from "@/server/types/shared"
 import { ContextWithSuperJSON } from "jstack"
 import { Env as JstackEnv } from "../../jstack"
 
@@ -282,6 +282,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
         id: project.id,
         name: project.name,
         description: project.description || undefined,
+        fundraiser_id: project.fundraiser_id,
         status: project.status,
         _loc_lat: parseFloat(project._loc_lat),
         _loc_lng: parseFloat(project._loc_lng),
@@ -321,8 +322,20 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
           id: suggestion.id,
           title: suggestion.title,
           summary: suggestion.description,
-          imagePrompt: suggestion.image_prompt,
-          generatedImageUrl: suggestion.generated_image_url || undefined
+          fundraiser_id: suggestion.fundraiser_id,
+          project_id: suggestion.project_id,
+          confidence: suggestion.confidence,
+          reasoning_context: suggestion.reasoning_context,
+          status: suggestion.status,
+          created_at: suggestion.created_at,
+          imagePrompt: suggestion.imagePrompt,
+          category: suggestion.category,
+          estimatedCost: suggestion.estimated_cost as { total: number },
+          images: suggestion.images as {
+            generated: Array<{ url: string; generatedAt: string; generationId: string }>,
+            source: { url: string; id: string },
+            upscaled: { url: string; id: string }
+          }
         }))
       }
     } catch (error) {

@@ -1,0 +1,2 @@
+ALTER TABLE "project_suggestions" ADD COLUMN "images" jsonb DEFAULT '{"generated":[],"source":{},"upscaled":{}}'::jsonb;--> statement-breakpoint
+ALTER TABLE "project_suggestions" DROP COLUMN "generated_image_url";
