@@ -42,9 +42,10 @@ interface ContributionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess?: () => void
+  targetMet?: boolean
 }
 
-export function ContributionDialog({ projectId, open, onOpenChange, onSuccess }: ContributionDialogProps) {
+export function ContributionDialog({ projectId, open, onOpenChange, onSuccess, targetMet = false }: ContributionDialogProps) {
   const { userId } = useAuth()
   const { addContribution } = useProjectContributions()
   
@@ -57,6 +58,26 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess }:
   const [id, setId] = useState<string>(generateId())
   const contentRef = useRef<HTMLDivElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
+  const messageInputRef = useRef<HTMLInputElement>(null)
+  const amountInputRef = useRef<HTMLInputElement>(null)
+
+  // Focus input after dialog opens with a delay
+  useEffect(() => {
+    if (open) {
+      amountInputRef.current?.blur()
+      messageInputRef.current?.blur()
+      // Set a timeout to focus the input after the dialog animation completes
+      const focusTimer = setTimeout(() => {
+        if (showAmountInput && amountInputRef.current) {
+          amountInputRef.current.focus();
+        } else if (messageInputRef.current) {
+          messageInputRef.current.focus();
+        }
+      }, 300); // 300ms delay to allow the dialog animation to complete
+      
+      return () => clearTimeout(focusTimer);
+    }
+  }, [open, showAmountInput]);
 
   useEffect(() => {
     if (isNullish(formRef.current)) return;
@@ -186,6 +207,7 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess }:
                         </VisuallyHidden>
                         <input 
                           id="message"
+                          ref={messageInputRef}
                           type="text"
                           value={message}
                           onChange={(e) => setMessage(e.target.value)}
@@ -195,7 +217,6 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess }:
                             "placeholder:text-muted-foreground",
                             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                           )}
-                          autoFocus
                         />
                       </div>
                     </div>
@@ -206,6 +227,7 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess }:
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
                           <input 
                             id="amount"
+                            ref={amountInputRef}
                             type="number"
                             min="1"
                             step="0.01"
@@ -213,7 +235,6 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess }:
                             onChange={(e) => setAmount(e.target.value)}
                             placeholder="[Will not charge]"
                             required
-                            autoFocus
                             className={cn(
                               "flex mx-1 my-1 h-12 w-full rounded-full border border-input bg-background pl-8 pr-3 py-2 text-base ring-offset-background",
                               "placeholder:text-muted-foreground",
@@ -234,19 +255,24 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess }:
                         type="button" 
                         onClick={handleSocialClick}
                         disabled={!message.trim()}
-                        className="inline-flex items-center justify-center rounded-full w-12 h-12 bg-primary text-white hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none"
+                        className="inline-flex items-center justify-center rounded-full w-12 h-12 bg-primary dark:text-white hover:bg-primary/90 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none"
                       >
                         <i className="fa-solid fa-paper-plane text-lg"></i>
                         <VisuallyHidden>Send Social Support</VisuallyHidden>
                       </button>
-                      <button 
+                      {!targetMet && <button 
                         type="button" 
                         onClick={handleFinancialClick}
-                        className="inline-flex items-center justify-center rounded-full w-12 h-12 bg-green-500 text-white hover:bg-green-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        className={cn(
+                          "inline-flex items-center justify-center rounded-full w-12 h-12 text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                          targetMet 
+                            ? "bg-gray-400 cursor-not-allowed" 
+                            : "bg-green-500 hover:bg-green-600"
+                        )}
                       >
                         <i className="fa-solid fa-dollar-sign text-lg"></i>
                         <VisuallyHidden>Financial Support</VisuallyHidden>
-                      </button>
+                      </button>}
                     </>
                   ) : (
                     <>
@@ -255,8 +281,8 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess }:
                         onClick={handleCancelFinancial}
                         className="inline-flex items-center justify-center rounded-full w-12 h-12 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
-                        <i className="fa-solid fa-times text-lg"></i>
-                        <VisuallyHidden>Cancel Financial Support</VisuallyHidden>
+                        <i className="fa-solid fa-xmark text-lg"></i>
+                        <VisuallyHidden>Cancel</VisuallyHidden>
                       </button>
                       <button 
                         type="button" 
@@ -264,8 +290,8 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess }:
                         disabled={!amount || parseFloat(amount) <= 0}
                         className="inline-flex items-center justify-center rounded-full w-12 h-12 bg-green-500 text-white hover:bg-green-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none"
                       >
-                        <i className="fa-solid fa-paper-plane text-lg"></i>
-                        <VisuallyHidden>Send Financial Support</VisuallyHidden>
+                        <i className="fa-solid fa-check text-lg"></i>
+                        <VisuallyHidden>Confirm</VisuallyHidden>
                       </button>
                     </>
                   )}

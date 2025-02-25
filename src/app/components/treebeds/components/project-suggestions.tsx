@@ -38,27 +38,53 @@ export function ProjectSuggestions({
   onSuggestionSelect,
   isLoading = false 
 }: ProjectSuggestionsProps) {
-  const [selectedIndex, setSelectedIndex] = useState<number>(-1)
-  const cardRefs = useRef<(HTMLDivElement | null)[]>([])
+  const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(null)
+  const [generatingImages, setGeneratingImages] = useState<Record<string, boolean>>({})
+  const [cardHeights, setCardHeights] = useState<Record<string, number>>({})
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const containerRef = useRef<HTMLDivElement>(null)
   const { projectData: { data: projectData } } = useProjectData(projectId)
-  const [generatingImages, setGeneratingImages] = useState<Record<string, boolean>>({})
+  const suggestions = projectData?.suggestions ?? []
 
-  // Use suggestions from project data if available
-  const suggestions: ProjectSuggestion[] = projectData?.suggestions?.map(s => ({
-      ...s,
-      convertedCosts: convertSuggestionToProjectCosts(s) ?? undefined,
-      spaceAssessment: {
-        size: null,
-        access: null,
-        complexity: null,
-        constraints: []
-      },
-      images: s.images as ProjectSuggestion['images']
-    })) ?? []
+  // Auto-generate images for suggestions that don't have images
+  useEffect(() => {
+    if (projectData?.suggestions && projectData.suggestions.length > 0) {
+      const suggestionsWithoutImages = projectData.suggestions
+        .filter(suggestion => 
+          !suggestion.images?.generated?.length && 
+          !suggestion.images?.status?.isGenerating &&
+          !generatingImages[suggestion.id]
+        )
+        .map(suggestion => suggestion.id);
+      
+      if (suggestionsWithoutImages.length > 0) {
+        // Mark these suggestions as generating
+        const newGeneratingState = suggestionsWithoutImages.reduce((acc, id) => {
+          acc[id] = true;
+          return acc;
+        }, {} as Record<string, boolean>);
+        
+        setGeneratingImages(prev => ({ ...prev, ...newGeneratingState }));
+        
+        // Emit the generate images event
+        emitGenerateImagesForSuggestions(projectId, suggestionsWithoutImages);
+        
+        // Reset generating state after a timeout
+        setTimeout(() => {
+          setGeneratingImages(prev => {
+            const newState = { ...prev };
+            suggestionsWithoutImages.forEach(id => {
+              newState[id] = false;
+            });
+            return newState;
+          });
+        }, 30000); // 30 seconds timeout
+      }
+    }
+  }, [projectData?.suggestions, projectId]);
 
   const cardFullHeights = useMemo(() => 
-    cardRefs.current.map((ref) => {
+    Object.values(cardRefs.current).map((ref) => {
       if (ref) { 
         const { height } = getElementAutoSize(ref)
         return height
@@ -70,7 +96,7 @@ export function ProjectSuggestions({
   useEffect(() => {
     const updateCardHeights = () => {
       requestAnimationFrame(() => {
-        cardRefs.current.forEach((ref, i) => {
+        Object.values(cardRefs.current).forEach((ref, i) => {
           if (ref) {
             const height = cardFullHeights[i]
             ref.style.setProperty('--card-height', `${height}px`)
@@ -96,7 +122,7 @@ export function ProjectSuggestions({
 
   // Handle clicks outside of suggestions
   useEffect(() => {
-    if (selectedIndex === -1) return
+    if (selectedSuggestionId === null) return
 
     const handleClickOutside = (event: MouseEvent) => {
       // Ignore clicks on dialog navigation buttons
@@ -105,21 +131,21 @@ export function ProjectSuggestions({
       if (isNavigationButton) return
 
       if (!containerRef.current?.contains(target)) {
-        setSelectedIndex(-1)
+        setSelectedSuggestionId(null)
         onSuggestionSelect(null)
       }
     }
 
     window.addEventListener('mousedown', handleClickOutside)
     return () => window.removeEventListener('mousedown', handleClickOutside)
-  }, [selectedIndex, onSuggestionSelect])
+  }, [selectedSuggestionId, onSuggestionSelect])
 
   const handleSelect = useCallback((index: number) => {
     if (suggestions[index]) {
       const suggestion = suggestions[index]
       const projectCosts = convertSuggestionToProjectCosts(suggestion)
       
-      setSelectedIndex(index)
+      setSelectedSuggestionId(suggestion.id)
       onSuggestionSelect({
         ...suggestion,
         convertedCosts: projectCosts ?? undefined,
@@ -143,7 +169,7 @@ export function ProjectSuggestions({
     
     setTimeout(() => {
       setGeneratingImages(prev => ({ ...prev, [suggestionId]: false }))
-    }, 10000)
+    }, 30000) // 30 seconds timeout
   }, [projectId, generatingImages])
 
   const SuggestionSkeleton = () => (
@@ -164,20 +190,20 @@ export function ProjectSuggestions({
     const { title, summary, category, estimatedCost } = suggestion
     const [isCostBreakdownExpanded, setIsCostBreakdownExpanded] = useState(false)
     const costs = useMemo(() => calculateProjectCosts(estimatedCost?.breakdown), [estimatedCost])
-    const isSelected = selectedIndex === index
+    const isSelected = selectedSuggestionId === suggestion.id
 
     return (
       <div 
         ref={(el) => {
-          cardRefs.current[index] = el
+          cardRefs.current[suggestion.id] = el
           return undefined
         }}
         className={cn(
           "frosted-glass",
           styles.card,
-          selectedIndex !== -1 && !isSelected && styles.cardUnselected,
+          selectedSuggestionId !== null && !isSelected && styles.cardUnselected,
           {
-            'hover:ring-2 hover:ring-accent/50 hover:shadow-md': selectedIndex === -1,
+            'hover:ring-2 hover:ring-accent/50 hover:shadow-md': selectedSuggestionId === null,
             'ring-2 ring-accent shadow-lg': isSelected
           }
         )}
@@ -324,7 +350,7 @@ export function ProjectSuggestions({
       ref={containerRef}
       className={cn(
         styles.container,
-        selectedIndex !== -1 && styles.hasSelection
+        selectedSuggestionId !== null && styles.hasSelection
       )}
     >
       {suggestions.length === 0 ? (
@@ -337,21 +363,21 @@ export function ProjectSuggestions({
         <>
           <div className={cn(
             "text-sm text-gray-500 dark:text-gray-400 mb-4",
-            selectedIndex !== -1 && "hidden"
+            selectedSuggestionId !== null && "hidden"
           )}>
             <i className="fa-solid fa-wand-magic-sparkles mr-2" />
             Select a suggestion to continue
           </div>
           <div className={cn(
             "space-y-4",
-            selectedIndex !== -1 && "space-y-0"
+            selectedSuggestionId !== null && "space-y-0"
           )}>
-            {suggestions.map((suggestion, index) => (
+            {suggestions.map((suggestion: ProjectSuggestion, index: number) => (
               <div key={index}>
-                {selectedIndex === index && (
+                {selectedSuggestionId === suggestion.id && (
                   <div className={cn(
                     styles.suggestionImage,
-                    selectedIndex === index && styles.visible
+                    selectedSuggestionId === suggestion.id && styles.visible
                   )}>
                     {getImages(suggestion).length > 0 ? (
                       <div className={cn(
@@ -407,15 +433,7 @@ export function ProjectSuggestions({
                           styles.imageSkeleton,
                           (suggestion.images?.status?.isGenerating || generatingImages[suggestion.id]) && 'cursor-wait'
                         )}
-                        onClick={(e) => handleGenerateImage(suggestion.id, e)}
-                        role="button"
-                        title={
-                          suggestion.images?.status?.isGenerating 
-                            ? "Generating image..." 
-                            : generatingImages[suggestion.id] 
-                              ? "Generating image..."
-                              : "Click to generate image"
-                        }
+                        title="Image will generate automatically"
                       >
                         {suggestion.images?.status?.isGenerating || generatingImages[suggestion.id] ? (
                           <div className="flex flex-col items-center gap-2">
@@ -425,7 +443,7 @@ export function ProjectSuggestions({
                         ) : (
                           <div className="flex flex-col items-center gap-2">
                             <i className="fa-regular fa-image text-2xl" />
-                            <span className="text-sm">Click to generate</span>
+                            <span className="text-sm">Image will generate automatically</span>
                           </div>
                         )}
                       </div>

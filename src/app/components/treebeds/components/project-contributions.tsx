@@ -11,6 +11,7 @@ import { calculateProjectCosts } from '@/lib/cost'
 
 interface ProjectContributionsProps {
   projectId: string
+  isLoading?: boolean
 }
 
 // Time window in milliseconds to group messages from the same user (5 minutes)
@@ -29,7 +30,7 @@ function isProjectTargetMet(currentAmount: number, targetAmount: number): boolea
   return currentAmount >= targetAmount;
 }
 
-export function ProjectContributions({ projectId }: ProjectContributionsProps) {
+export function ProjectContributions({ projectId, isLoading: externalIsLoading }: ProjectContributionsProps) {
   const { projectData } = useProjectData(projectId)
   const [dialogOpen, setDialogOpen] = useState(false)
   const contributionsEndRef = useRef<HTMLDivElement>(null)
@@ -93,14 +94,14 @@ export function ProjectContributions({ projectId }: ProjectContributionsProps) {
     // Dialog will close itself on success
   }
   
-  const isLoading = !projectData?.data
+  const isLoading = externalIsLoading !== undefined ? externalIsLoading : !projectData?.data
   
   if (isLoading) {
     return (
       <div className="space-y-4">
         <div className="flex justify-between items-center">
-          <div className="animate-pulse bg-gray-200 h-6 w-1/2 rounded"></div>
-          <div className="animate-pulse bg-gray-200 h-10 w-32 rounded"></div>
+          <div className="animate-pulse bg-gray-200/50 dark:bg-gray-700/50 h-6 w-1/2 rounded"></div>
+          <div className="animate-pulse bg-gray-200/50 dark:bg-gray-700/50 h-10 w-32 rounded"></div>
         </div>
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
@@ -120,12 +121,12 @@ export function ProjectContributions({ projectId }: ProjectContributionsProps) {
   
   return (
     <>
-      <div className="space-y-0 relative flex flex-col flex-grow overflow-y-auto pb-4">
+      <div className="space-y-0 relative flex flex-col flex-grow overflow-y-auto pb-10">
       
       {/* Contribution Feed - with fixed height and scrolling */}
       <div className="mt-4">
         {groupedContributions.length > 0 ? (
-          <div className="space-y-6 overflow-y-auto pr-2">
+          <div className="space-y-2 overflow-y-auto pr-2">
             {groupedContributions.map((group, index) => (
               <ContributionGroup 
                 key={`${group.userId}-${group.timestamp}`} 
@@ -140,7 +141,8 @@ export function ProjectContributions({ projectId }: ProjectContributionsProps) {
             <div className="text-4xl mb-2 text-gray-400">
               <i className="fa-solid fa-comments"></i>
             </div>
-            <p className="text-muted-foreground font-display tracking-wide">No contributions yet</p>
+            <p className="text-muted-foreground font-display tracking-wide">No contributions yet!</p>
+            <p className="text-muted-foreground font-display opacity-50 text-sm">Be the first to contribute <i className="fa-solid fa-rocket"></i></p>
           </div>
         )}
       </div>
@@ -150,15 +152,17 @@ export function ProjectContributions({ projectId }: ProjectContributionsProps) {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         onSuccess={handleContributionSuccess}
+        targetMet={targetMet}
       />
 
     </div>
       <button 
         className={cn(
-          "absolute bottom-3 left-3 right-3 inline-flex items-center justify-center rounded-lg text-sm font-medium transition-all h-12 px-6",
+          "absolute bottom-3 left-3 right-3 inline-flex items-center justify-center rounded-2xl text-sm font-medium transition-all h-12 px-6",
           targetMet 
             ? "frosted-glass text-gray-800 dark:text-white border border-white/20 shadow-sm" 
-            : "bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 text-white"
+            : "bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 text-white",
+            dialogOpen ? "opacity-0" : ""
         )}
         onClick={() => setDialogOpen(true)}
       >
@@ -201,7 +205,7 @@ function ContributionGroup({ group }: { group: GroupedContribution }) {
     .reduce((sum, c) => sum + (c.amount_cents || 0), 0);
   
   return (
-    <div className="flex items-start gap-4 p-4 rounded-lg bg-card border-border hover:bg-accent/5 transition-colors">
+    <div className="flex items-start gap-4 p-2 rounded-lg bg-card border-border hover:bg-accent/5 transition-colors">
       <UserAvatar userId={userId} size={30} />
       <div className="flex-1">
         <div className="flex justify-between items-start">
@@ -238,7 +242,7 @@ function ContributionGroup({ group }: { group: GroupedContribution }) {
           ))}
         </div>
         
-        <div className="text-xs text-muted-foreground mt-2">
+        <div className="text-xs text-muted-foreground mt-2 opacity-50">
           {formattedDate}
         </div>
       </div>

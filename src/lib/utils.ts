@@ -27,6 +27,7 @@ export function formatDistanceToNow(date: Date, options?: { addSuffix?: boolean 
   
   if (diffInSeconds < minute) {
     result = 'Just now'
+    return result
   } else if (diffInSeconds < hour) {
     const minutes = Math.floor(diffInSeconds / minute)
     result = minutes === 1 ? '1 minute' : `${minutes} minutes`

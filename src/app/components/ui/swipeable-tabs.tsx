@@ -32,10 +32,7 @@ export function SwipeableTabs({
   adaptiveHeight = true,
   tabPosition = 'top'
 }: SwipeableTabsProps) {
-  const [activeTabIndex, setActiveTabIndex] = useState(defaultTabIndex)
-  const [isDragging, setIsDragging] = useState(false)
-  const [startX, setStartX] = useState(0)
-  const [scrollLeft, setScrollLeft] = useState(0)
+  const [activeTabIndex, _setActiveTabIndex] = useState(defaultTabIndex)
   const [isScrolling, setIsScrolling] = useState(false)
   const [contentHeight, setContentHeight] = useState<number | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -43,6 +40,16 @@ export function SwipeableTabs({
   const tabContentRefs = useRef<(HTMLDivElement | null)[]>(tabs.map(() => null))
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
+
+  const [hasRendered, setHasRendered] = useState<boolean[]>(tabs.map((_, index) => index === defaultTabIndex))
+  const setActiveTabIndex = (index: number) => {
+    _setActiveTabIndex(index)
+    setHasRendered(prev => {
+      const newHasRendered = [...prev]
+      newHasRendered[index] = true
+      return newHasRendered
+    })
+  }
   
   // Update content height based on active tab
   const updateContentHeight = (targetIndex?: number) => {
@@ -78,7 +85,7 @@ export function SwipeableTabs({
   
   // Handle scroll events to update active tab based on scroll position
   const handleScroll = () => {
-    if (scrollContainerRef.current && !isDragging) {
+    if (scrollContainerRef.current) {
       // Set scrolling state to true
       setIsScrolling(true)
       
@@ -110,76 +117,10 @@ export function SwipeableTabs({
     }
   }
   
-  // Mouse/Touch event handlers for dragging
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true)
-    setStartX(e.pageX - (scrollContainerRef.current?.offsetLeft || 0))
-    setScrollLeft(scrollContainerRef.current?.scrollLeft || 0)
-  }
-  
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setIsDragging(true)
-    if (e.touches[0] && scrollContainerRef.current) {
-      setStartX(e.touches[0].pageX - (scrollContainerRef.current.offsetLeft || 0))
-      setScrollLeft(scrollContainerRef.current.scrollLeft || 0)
-    }
-  }
-  
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return
-    e.preventDefault()
-    
-    const x = e.pageX - (scrollContainerRef.current?.offsetLeft || 0)
-    const walk = (x - startX) * 2 // Scroll speed multiplier
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollLeft = scrollLeft - walk
-    }
-  }
-  
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return
-    
-    if (e.touches[0] && scrollContainerRef.current) {
-      const x = e.touches[0].pageX - (scrollContainerRef.current.offsetLeft || 0)
-      const walk = (x - startX) * 2
-      scrollContainerRef.current.scrollLeft = scrollLeft - walk
-    }
-  }
-  
-  const handleMouseUp = () => {
-    if (!isDragging) return
-    
-    setIsDragging(false)
-    if (scrollContainerRef.current) {
-      const { scrollLeft, clientWidth } = scrollContainerRef.current
-      const newIndex = Math.round(scrollLeft / clientWidth)
-      
-      // Ensure index is within bounds
-      if (newIndex >= 0 && newIndex < tabs.length) {
-        // Snap to the nearest tab with a slight delay to prevent jitter
-        setTimeout(() => {
-          if (scrollContainerRef.current) {
-            scrollContainerRef.current.scrollTo({
-              left: clientWidth * newIndex,
-              behavior: 'smooth'
-            })
-          }
-          
-          if (newIndex !== activeTabIndex) {
-            setActiveTabIndex(newIndex)
-            onChange?.(newIndex)
-          }
-        }, 50)
-      }
-    }
-  }
-  
-  const handleTouchEnd = handleMouseUp
-  
   // Scroll to active tab on mount or when active tab changes
   useEffect(() => {
     // Only scroll programmatically if we're not in the middle of a user-initiated scroll
-    if (scrollContainerRef.current && !isScrolling && !isDragging) {
+    if (scrollContainerRef.current && !isScrolling) {
       const containerWidth = scrollContainerRef.current.clientWidth
       scrollContainerRef.current.scrollTo({
         left: containerWidth * activeTabIndex,
@@ -189,7 +130,7 @@ export function SwipeableTabs({
     
     // Update content height when active tab changes
     updateContentHeight();
-  }, [activeTabIndex, isScrolling, isDragging, adaptiveHeight]);
+  }, [activeTabIndex, isScrolling, adaptiveHeight]);
   
   // Set up resize observer to update content height when content changes
   useEffect(() => {
@@ -278,7 +219,7 @@ export function SwipeableTabs({
           "flex overflow-x-auto snap-x snap-mandatory scrollbar-hide overflow-y-auto flex-grow",
           contentClassName,
           contentHeight && contentHeight > (scrollContainerRef.current?.clientHeight ?? 0) ? 'overflow-y-auto' : 'overflow-y-hidden',
-          !isDragging && !!tabs[activeTabIndex]?.className ? tabs[activeTabIndex]?.className : ''
+          !isScrolling && !!tabs[activeTabIndex]?.className ? tabs[activeTabIndex]?.className : ''
         )}
         style={{ 
           scrollbarWidth: 'none', 
@@ -288,13 +229,6 @@ export function SwipeableTabs({
           scrollBehavior: 'smooth',
         }}
         onScroll={handleScroll}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
       >
         {tabs.map((tab, index) => (
           <div 
@@ -302,9 +236,9 @@ export function SwipeableTabs({
             ref={(el) => {
               tabContentRefs.current[index] = el;
             }}
-            className="min-w-full w-full snap-center flex flex-col flex-grow"
+            className="min-w-full w-full snap-center flex flex-col flex-grow animate-fadeIn"
           >
-            {tab.content}
+            {index === activeTabIndex || hasRendered[index] ? tab.content : null}
           </div>
         ))}
       </div>
