@@ -2,20 +2,21 @@
 
 import { useRouter } from 'next/navigation'
 import { useState, useRef, useCallback, useEffect } from 'react'
-import type { LocationInfo } from '@/types/types'
-import type { ProjectData, ProjectStatus } from '@/server/types/shared'
-import { StepFormDialog } from '../ui/step-form-dialog'
+import type { LocationInfo, ProjectCategory } from '@/types/types'
+import type { ProjectData, ProjectStatus, ProjectCostBreakdown } from '@/server/types/shared'
+import { StepFormDialog, StepFormDialogStep } from '../ui/step-form-dialog'
 import { LocationInfoCard } from './components/location-info-card'
 import { useToast } from '@/app/components/toast'
 import { Project, useLiveTrees, useProjectData } from '@/hooks/use-tree-sockets'
 import { useParams } from 'next/navigation'
 import { StreetViewCard } from './components/street-view-card'
-import { ProjectForm } from './components/project-form'
+import { ProjectDetails } from './components/project-details'
 import { ProjectSuggestions } from './components/project-suggestions'
 
 type ProjectSuggestion = NonNullable<ProjectData['suggestions']>[number]
 
-interface ProjectFormData {
+export interface ProjectFormData {
+  id: string
   name: string
   description: string
   location: {
@@ -28,9 +29,9 @@ interface ProjectFormData {
     pitch: number
     zoom: number
   }
-  suggestion?: {
-    id: string
-  }
+  suggestion?: ProjectSuggestion
+  category?: string
+  cost_breakdown?: ProjectCostBreakdown
 }
 
 export function TreeDialog(props: {
@@ -77,6 +78,7 @@ export function TreeDialog(props: {
   }, [projectData])
 
   const [formData, setFormData] = useState<ProjectFormData>({
+    id: projectId,
     name: props.info?.address?.street || "",
     description: "",
     location: props.lat && props.lng ? { lat: props.lat, lng: props.lng } : null,
@@ -85,7 +87,9 @@ export function TreeDialog(props: {
       heading: props.project?._view_heading || 0,
       pitch: props.project?._view_pitch || 0,
       zoom: props.project?._view_zoom || 1
-    }
+    },
+    category: props.project?.category,
+    cost_breakdown: props.project?.cost_breakdown
   })
 
   // Redirect if no userId
@@ -142,16 +146,25 @@ export function TreeDialog(props: {
     }
 
     try {
-      const payload = {
+      const payload: ProjectData['project'] & {
+        lat: number
+        lng: number
+      } = {
+        ...projectData.data.project,
         id: projectId,
         name: formData.name,
         description: formData.description,
-        lat: formData.location.lat,
-        lng: formData.location.lng,
         status: 'active' as ProjectStatus,
         _view_heading: formData.viewParams?.heading,
         _view_pitch: formData.viewParams?.pitch,
-        _view_zoom: formData.viewParams?.zoom
+        _view_zoom: formData.viewParams?.zoom,
+        source_suggestion_id: formData.suggestion?.id,
+        category: formData.suggestion?.category || 'other',
+        cost_breakdown: formData.cost_breakdown,
+        lat: formData.location.lat,
+        lng: formData.location.lng,
+        _loc_lat: formData.location.lat,
+        _loc_lng: formData.location.lng,
       }
       console.log('[TreeDialog] Submitting with payload:', payload)
       
@@ -189,7 +202,11 @@ export function TreeDialog(props: {
     }
 
     try {
-      const payload = {
+      const payload: ProjectData['project'] & {
+        lat: number
+        lng: number
+      } = {
+        ...projectData.data.project,
         id: projectId,
         name: mergedData.name || 'Untitled Project',
         description: mergedData.description,
@@ -198,7 +215,9 @@ export function TreeDialog(props: {
         status: 'draft' as ProjectStatus,
         _view_heading: mergedData.viewParams?.heading,
         _view_pitch: mergedData.viewParams?.pitch,
-        _view_zoom: mergedData.viewParams?.zoom
+        _view_zoom: mergedData.viewParams?.zoom,
+        source_suggestion_id: mergedData.suggestion?.id,
+        cost_breakdown: mergedData.cost_breakdown
       }
       console.log('[TreeDialog] Saving update with payload:', payload)
       
@@ -213,24 +232,33 @@ export function TreeDialog(props: {
     }
   }, [formData, projectId, setProject, showToast])
 
-  const handleSuggestionSelect = useCallback((suggestion: ProjectSuggestion | null) => {
+  const handleSuggestionSelect = useCallback((suggestion: NonNullable<ProjectData['suggestions']>[number] | null) => {
     console.log('[TreeDialog] Selected suggestion:', suggestion)
     if (!suggestion) {
       setFormData(prev => ({
         ...prev,
-        suggestion: undefined
+        suggestion: undefined,
+        estimated_cost: undefined
       }))
       return
     }
     setFormData(prev => ({
       ...prev,
-      name: suggestion?.title || '',
-      description: suggestion?.summary || '',
-      suggestion: {
-        id: suggestion.id,
-      }
+      name: suggestion.title || '',
+      description: suggestion.summary || '',
+      suggestion: suggestion,
+      estimated_cost: suggestion.estimatedCost ? {
+        total: suggestion.estimatedCost.total,
+        breakdown: suggestion.estimatedCost.breakdown
+      } : undefined
     }))
   }, [])
+
+  const handleStepChange = useCallback((newStep: number) => {
+    console.log('[TreeDialog] Step changing to:', newStep)
+    
+    setCurrentStep(newStep)
+  }, [currentStep, formData.suggestion, handleProjectFormUpdate])
 
   const saveDraft = useCallback(async (silent?: boolean) => {
     console.log('[TreeDialog] Saving draft:', {
@@ -244,7 +272,11 @@ export function TreeDialog(props: {
     }
 
     try {
-      const payload = {
+      const payload: ProjectData['project'] & {
+        lat: number
+        lng: number
+      } = {
+        ...projectData.data.project,
         id: projectId,
         name: formData.name || 'Untitled Project',
         description: formData.description,
@@ -253,7 +285,9 @@ export function TreeDialog(props: {
         status: 'draft' as ProjectStatus,
         _view_heading: formData.viewParams?.heading,
         _view_pitch: formData.viewParams?.pitch,
-        _view_zoom: formData.viewParams?.zoom
+        _view_zoom: formData.viewParams?.zoom,
+        source_suggestion_id: formData.suggestion?.id,
+        cost_breakdown: formData.cost_breakdown,
       }
       console.log('[TreeDialog] Saving draft with payload:', payload)
       
@@ -276,12 +310,7 @@ export function TreeDialog(props: {
     }
   }, [formData, projectId, setProject, showToast])
 
-  const handleStepChange = useCallback((newStep: number) => {
-    console.log('[TreeDialog] Step changing to:', newStep)
-    setCurrentStep(newStep)
-  }, [currentStep, saveDraft])
-
-  const steps = [
+  const steps: StepFormDialogStep[] = [ 
     {
       title: "Let's start a project",
       style: {
@@ -334,6 +363,12 @@ export function TreeDialog(props: {
     },
     {
       title: "Imagine your project",
+      onSubmit: () => {
+        const suggestion = formData.suggestion;
+        return handleProjectFormUpdate({
+          cost_breakdown: suggestion?.estimatedCost?.breakdown,
+        })
+      },
       content: (
         <ProjectSuggestions
           projectId={projectId}
@@ -344,13 +379,17 @@ export function TreeDialog(props: {
       canProgress: Boolean(formData.suggestion)
     },
     {
-      title: "Add Details",
+      title: "Project details",
+      style: {
+        hideHeader: true
+      },
       content: (
-        <ProjectForm
+        <ProjectDetails
           initialData={formData}
           projectId={projectId}
           projectStatus={props.project?.status || 'draft'}
           onUpdateProject={handleProjectFormUpdate}
+          isReadOnly={false}
         />
       )
     }

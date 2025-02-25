@@ -2,7 +2,7 @@ import { generateId } from "@/lib/id"
 import { publicProcedure } from "../../jstack"
 import { eq, desc, like } from "drizzle-orm"
 import { projectImages, projects, projectSuggestions } from "@/server/db/schema"
-import type { ProjectData } from "@/server/types/shared"
+import type { BaseProject, ProjectData, ProjectSuggestion } from "@/server/types/shared"
 import type { ServerProcedure } from "../tree-router"
 import type { ProjectStatus } from "@/server/types/shared"
 import { ContextWithSuperJSON } from "jstack"
@@ -112,22 +112,34 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
   }
 
   // Helper function to remove socket subscription
-  const removeSocketSubscription = async (geohash: string, socketId: string) => {
-    const geohashKey = getGeohashKey(geohash)
+  const removeSocketSubscription = async (val: string, socketId: string) => {
+    const geohashKey = getGeohashKey(val)
+    const projectKey = getProjectKey(val)
     const socketKey = getSocketGeohashKey(socketId)
+    const socketProjectsKey = getSocketProjectsKey(socketId)
     
     // Remove socket from geohash's subscribers
     await ctx.redis.hdel(geohashKey, socketId)
     // Remove geohash from socket's subscriptions
-    await ctx.redis.srem(socketKey, geohash)
+    await ctx.redis.srem(socketKey, val)
+
+    // Remove socket from project's subscribers
+    await ctx.redis.hdel(projectKey, socketId)
+    // Remove project from socket's subscriptions
+    await ctx.redis.srem(socketProjectsKey, val)
     
-    const count = await ctx.redis.hlen(geohashKey)
-    if (count === 0) {
+    const geohashCount = await ctx.redis.hlen(geohashKey)
+    const projectCount = await ctx.redis.hlen(projectKey)
+    if (geohashCount === 0) {
       await ctx.redis.del(geohashKey)
-      logger.debug(`Removed empty geohash key ${geohash}`)
+      logger.debug(`Removed empty geohash key ${val}`)
     }
-    logger.debug(`Removed socket ${socketId} from geohash ${geohash} (total: ${count})`)
-    return count
+    if (projectCount === 0) {
+      await ctx.redis.del(projectKey)
+      logger.debug(`Removed empty project key ${val}`)
+    }
+    logger.debug(`Removed socket ${socketId} from ${val} (geohash: ${geohashCount}, project: ${projectCount})`)
+    return { geohashCount, projectCount }
   }
 
   // Helper function to get active subscribers and clean up inactive ones
@@ -277,22 +289,20 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
         return null;
       }
 
-      // Format project data
-      const projectData: ProjectData['project'] = {
-        id: project.id,
-        name: project.name,
+      const projectData: BaseProject = {
+        ...project,
+        cost_breakdown: project.cost_breakdown || undefined,
+        source_suggestion_id: project.source_suggestion_id || undefined,
         description: project.description || undefined,
-        status: project.status,
-        _loc_lat: parseFloat(project._loc_lat),
-        _loc_lng: parseFloat(project._loc_lng),
-        _loc_geohash: project._loc_geohash,
-        _meta_created_by: project._meta_created_by,
-        _meta_updated_by: project._meta_updated_by,
-        _meta_updated_at: project._meta_updated_at.toISOString(),
-        _meta_created_at: project._meta_created_at.toISOString(),
         _view_heading: project._view_heading ? parseFloat(project._view_heading) : undefined,
         _view_pitch: project._view_pitch ? parseFloat(project._view_pitch) : undefined,
-        _view_zoom: project._view_zoom ? parseFloat(project._view_zoom) : undefined
+        _view_zoom: project._view_zoom ? parseFloat(project._view_zoom) : undefined,
+        _loc_lat: parseFloat(project._loc_lat),
+        _loc_lng: parseFloat(project._loc_lng),
+        _meta_created_at: project._meta_created_at.toISOString(),
+        _meta_updated_at: project._meta_updated_at.toISOString(),
+        _meta_created_by: project._meta_created_by,
+        _meta_updated_by: project._meta_updated_by,
       }
 
       // Get project images
@@ -318,23 +328,29 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
           aiAnalysis: image.ai_analysis
         })),
         suggestions: suggestions.map(suggestion => ({
+          ...suggestion,
           id: suggestion.id,
           title: suggestion.title,
           summary: suggestion.description,
           fundraiser_id: suggestion.fundraiser_id,
-          project_id: suggestion.project_id,
-          confidence: suggestion.confidence,
-          reasoning_context: suggestion.reasoning_context,
+          project_id: suggestion.project_id || undefined,
+          reasoning_context: suggestion.reasoning_context || '',
           status: suggestion.status,
-          created_at: suggestion.created_at,
+          created_at: suggestion.created_at.toISOString(),
           imagePrompt: suggestion.imagePrompt,
           category: suggestion.category,
-          estimatedCost: suggestion.estimated_cost as { total: number },
-          images: suggestion.images as {
-            generated: Array<{ url: string; generatedAt: string; generationId: string }>,
-            source: { url: string; id: string },
-            upscaled: { url: string; id: string }
-          }
+          metadata: suggestion.metadata as Record<string, unknown>,
+          estimatedCost: suggestion.estimated_cost as ProjectSuggestion['estimatedCost'],
+          images: suggestion.images || {
+            upscaled: {},
+            source: {},
+            generated: [],
+            status: {
+              isUpscaling: false,
+              isGenerating: false,
+              lastError: null
+            }
+          },
         }))
       }
     } catch (error) {
@@ -402,7 +418,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
       let refKeys: string[]
       try {
         refKeys = await Promise.all(keys.map(key => ctx.redis.smembers(key))).then(keys => keys.flat());
-        logger.info(`Found ${refKeys.length} subscriptions for socket ${socketId}`)
+        logger.info(`Found ${refKeys.length} subscriptions for socket ${socketId}, ${refKeys}`)
       } catch (error) {
         logger.error('Error getting socket subscriptions:', error)
         return

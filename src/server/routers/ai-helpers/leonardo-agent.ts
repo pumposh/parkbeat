@@ -382,11 +382,6 @@ export class LeonardoAgent implements ImageGenerationAgent {
         
         Project Context: ${projectContext || 'A community improvement project'}
         
-        Required Changes:
-        1. Make SUBSTANTIAL and CLEARLY VISIBLE changes to implement the project
-        2. Add all new elements described in the prompt in a prominent way
-        3. Ensure changes are realistic and well-integrated
-        
         Technical Requirements:
         - Maintain the EXACT same camera angle and perspective as the original
         - Only modify the specific areas mentioned in the prompt
@@ -403,6 +398,21 @@ export class LeonardoAgent implements ImageGenerationAgent {
         Albedo: "2067ae52-33fd-4a82-bb92-c2c55e7d2786"
       }
 
+      const negativePrompt = [
+        'low quality',
+        'distorted',
+        'hallucination',
+        'disproportionate',
+        'messy environment',
+        'messy background',
+        'unrealistic changes',
+        'poor integration',
+        'text',
+        'watermark',
+        'dehydrated',
+        'blurry',
+      ]
+
       // Use image-to-image generation with the uploaded image
       return this.generateImage({
         prompt: enhancedPrompt,
@@ -412,8 +422,8 @@ export class LeonardoAgent implements ImageGenerationAgent {
         width: 960,
         height: 960,
         initImageId,
-        initStrength: 0.5, // Higher value = more influence from the prompt, lower = more from original image
-        negativePrompt: "low quality, distorted, messy environment, messy background, unrealistic changes, poor integration, text, watermark, signature, morbid, mutilated, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated"
+        initStrength: 0.6, // Higher value = more influence from the prompt, lower = more from original image
+        negativePrompt: negativePrompt.join(', ')
       })
     } catch (error) {
       logger.error('[LeonardoAgent] Error in reimagination process:', error)

@@ -1,44 +1,161 @@
-import { ProjectSuggestion } from "@/server/routers/ai-helpers/aigent"
-  import type { ProjectSuggestion as BaseProjectSuggestion } from "@/server/types/shared"
+import { generateId } from './id'
+import type { 
+  ProjectCostItem, 
+  CostBreakdown, 
+  ProjectSuggestion,
+  ProjectCostBreakdown,
+  CostRevision,
+  ProjectData
+} from '@/server/types/shared'
 
-export function calculateProjectCosts(breakdown: NonNullable<BaseProjectSuggestion['estimatedCost']>['breakdown'] | NonNullable<ProjectSuggestion['estimatedCost']>['breakdown']) {
+export function calculateProjectCosts(breakdown?: CostBreakdown) {
   if (!breakdown) return null
 
-  const materialCosts = breakdown.materials.reduce((sum, item) => sum + item.cost, 0)
-  const laborCosts = breakdown.labor.reduce((sum, item) => sum + (item.rate * item.hours), 0)
-  const otherCosts = (breakdown.permits || 0) + (breakdown.management || 0) + (breakdown.contingency || 0)
+  const maybeParseFloat = (value: string | number) => {
+    if (typeof value === 'string') {
+      return parseFloat(value.replace(/[^0-9.-]+/g, ''))
+    }
+    return value
+  }
 
-  const formattedMaterials = breakdown.materials
-    .map(m => [m.item, `$${m.cost.toLocaleString()}`])
-    // .join(', ')
+  const materials = {
+    items: breakdown.materials?.map(item => ({
+      ...item,
+      isIncluded: item.isIncluded ?? true
+    })) || [],
+    total: breakdown.materials?.reduce((sum: number, item: { item: string, cost: string, isIncluded?: boolean }) => 
+      sum + (item.isIncluded ?? true ? maybeParseFloat(item.cost) : 0), 0) || 0
+  }
 
-  const formattedLabor = breakdown.labor
-    .filter(l => l.hours > 0 && l.rate > 0)
-    .map(l => [l.task, `(${l.hours}h at $${l.rate}/h = $${(l.rate * l.hours).toLocaleString()})`])
-    // .join(', ')
+  const labor = {
+    items: breakdown.labor?.map(item => ({
+      ...item,
+      isIncluded: item.isIncluded ?? true
+    })) || [],
+    total: breakdown.labor?.reduce((sum: number, item: { description: string, hours: number, rate: number, isIncluded?: boolean }) => 
+      sum + ((item.isIncluded ?? true) ? item.hours * item.rate : 0), 0) || 0
+  }
 
-  const formattedOther = [
-    ['Permits', `$${breakdown.permits?.toLocaleString() || 0}`],
-    ['Management', `$${breakdown.management?.toLocaleString() || 0}`],
-    ['Contingency', `$${breakdown.contingency?.toLocaleString() || 0}`]
-  ]
+  const other = {
+    items: breakdown.other?.map(item => ({
+      ...item,
+      isIncluded: item.isIncluded ?? true
+    })) || [],
+    total: breakdown.other?.reduce((sum: number, item: { item: string, cost: string, isIncluded?: boolean }) => 
+      sum + (item.isIncluded ?? true ? maybeParseFloat(item.cost) : 0), 0) || 0
+  }
 
   return {
-    total: materialCosts + laborCosts + otherCosts,
-    materials: {
-      total: materialCosts,
-      items: formattedMaterials,
-      formatted: formattedMaterials.map(m => m.join(': ')).join(', ')
-    },
-    labor: {
-      total: laborCosts,
-      items: formattedLabor,
-      formatted: formattedLabor.map(l => l.join(': ')).join(', ')
-    },
-    other: {
-      total: otherCosts,
-      items: formattedOther,
-      formatted: formattedOther.map(o => o.join(': ')).join(', ')
+    materials,
+    labor,
+    other,
+    total: materials.total + labor.total + other.total
+  }
+}
+
+export function convertSuggestionToProjectCosts(suggestion: ProjectSuggestion): {
+  costItems: ProjectCostItem[]
+  totalCost: number
+  costBreakdown: ProjectCostBreakdown
+} | null {
+  const costs = calculateProjectCosts(suggestion.estimatedCost?.breakdown)
+  if (!costs) return null
+
+  const projectCosts: ProjectCostItem[] = []
+
+  // Convert materials
+  costs.materials.items?.forEach((item: { item: string, cost: string }) => {
+    const costValue = parseFloat(item.cost?.replace?.(/[^0-9.-]+/g, ''))
+    projectCosts.push({
+      id: generateId(),
+      type: 'material',
+      name: item.item?.replace('- ', '').trim(),
+      total_cost: costValue,
+      is_required: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+  })
+
+  // Convert labor
+  costs.labor.items?.forEach((item: { description: string, hours: number, rate: number, task?: string }) => {
+    const hourMatch = item.description?.match(/(\d+)\s*hours?/)
+    const rateMatch = item.description?.match(/\$(\d+)\/hour/)
+    
+    projectCosts.push({
+      id: generateId(),
+      type: 'labor',
+      name: item.description?.replace('- ', '').trim() || item.task?.replace('- ', '').trim() || '',
+      quantity: hourMatch ? parseInt(hourMatch[1] || '0') : undefined,
+      unit: 'hours',
+      unit_cost: rateMatch ? parseInt(rateMatch[1] || '0') : undefined,
+      total_cost: item.hours * item.rate,
+      is_required: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+  })
+
+  // Convert other costs
+  costs.other.items?.forEach((item: { item: string, cost: string }) => {
+    const costValue = parseFloat(item.cost?.replace?.(/[^0-9.-]+/g, ''))
+    projectCosts.push({
+      id: generateId(),
+      type: 'other',
+      name: item.item?.replace('- ', '').trim(),
+      total_cost: costValue,
+      is_required: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+  })
+
+  return {
+    costItems: projectCosts,
+    totalCost: costs.total,
+    costBreakdown: {
+      materials: costs.materials.items.map(item => ({
+        ...item,
+        isIncluded: true
+      })),
+      labor: costs.labor.items.map(item => ({
+        ...item,
+        isIncluded: true
+      })),
+      other: costs.other.items.map(item => ({
+        ...item,
+        isIncluded: true
+      }))
     }
   }
+}
+
+export function createCostRevision(
+  projectId: string, 
+  previousTotal: number | null,
+  newTotal: number,
+  changedItems: ProjectCostItem[],
+  reason: string,
+  userId: string
+): CostRevision {
+  return {
+    id: generateId(),
+    project_id: projectId,
+    revision_number:  1,
+    previous_total: previousTotal,
+    new_total: newTotal,
+    change_reason: reason,
+    changed_items: changedItems,
+    created_by: userId,
+    created_at: new Date().toISOString()
+  }
+}
+
+export function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount)
 } 

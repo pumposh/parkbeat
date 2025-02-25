@@ -259,6 +259,8 @@ export class OpenAIAgent implements AIAgent {
       throw new Error('Failed to get cost estimate from OpenAI')
     }
 
+    console.log('[generateEstimate] analysis', analysis)
+
     // Parse the response into structured sections
     const sections = analysis.split('\n\n')
     const estimate: AIEstimateResult = {
@@ -273,6 +275,8 @@ export class OpenAIAgent implements AIAgent {
       assumptions: [],
       confidenceScore: 0.8
     }
+
+    console.log('[generateEstimate] sections', sections)
 
     // Parse materials section
     const materialsSection = sections.find(s => s.includes('MATERIALS BREAKDOWN'))
@@ -290,31 +294,39 @@ export class OpenAIAgent implements AIAgent {
         })
     }
 
+    console.log('[generateEstimate] materialsSection', materialsSection, estimate.breakdown.materials)
+
     // Parse labor section
     const laborSection = sections.find(s => s.includes('LABOR COSTS'))
     if (laborSection) {
-      estimate.breakdown.labor = laborSection
-        .split('\n')
-        .filter(l => l.includes('$'))
-        .map(l => {
-          const [task, details] = l.split(':')
-          const match = details?.match(/\$(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/)
-          if (match) {
-            const rate = parseFloat(match[1] || '0')
-            const hours = parseFloat(match[2] || '0')
-            return {
-              task: task?.trim() || '',
-              rate,
-              hours
-            }
-          }
-          return {
-            task: task?.trim() || '',
-            rate: 0,
-            hours: 0
-          }
-        })
+      const lines = laborSection.split('\n')
+      let skillLevel = ''
+      let rate = 0
+      let hours = 0
+
+      // Extract skill level, rate, and hours from the section
+      for (const line of lines) {
+        if (line.includes('Skill level:')) {
+          skillLevel = line.split(':')[1]?.trim() || ''
+        } else if (line.includes('Rate: $')) {
+          rate = parseFloat(line.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
+        } else if (line.includes('Hours needed:')) {
+          hours = parseFloat(line.split(':')[1]?.replace(/[^0-9.]/g, '') || '0')
+        }
+      }
+
+      // Create a single labor entry with the extracted values
+      if (rate > 0 && hours > 0) {
+        estimate.breakdown.labor = [{
+          task: `${skillLevel} labor`,
+          description: `${skillLevel} labor`,
+          rate,
+          hours
+        }]
+      }
     }
+
+    console.log('[generateEstimate] laborSection', laborSection, estimate.breakdown.labor)
 
     // Parse other costs
     const otherSection = sections.find(s => s.includes('OTHER COSTS'))
@@ -324,6 +336,8 @@ export class OpenAIAgent implements AIAgent {
       estimate.breakdown.management = parseFloat(lines.find(l => l.includes('Management'))?.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
       estimate.breakdown.contingency = parseFloat(lines.find(l => l.includes('Contingency'))?.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
     }
+
+    console.log('[generateEstimate] otherSection', otherSection, estimate.breakdown)
 
     // Calculate total estimate by summing all components
     const materialTotal = estimate.breakdown.materials.reduce((sum, item) => sum + item.cost, 0)

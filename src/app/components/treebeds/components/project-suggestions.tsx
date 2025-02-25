@@ -5,8 +5,8 @@ import styles from './project-suggestions.module.css'
 import { getElementAutoSize } from '@/lib/dom'
 import { WebSocketManager } from '@/hooks/websocket-manager'
 import { Carousel } from '@/app/components/ui/carousel'
-import { ProjectData } from '@/server/types/shared'
-import { calculateProjectCosts } from '@/lib/cost'
+import { calculateProjectCosts, convertSuggestionToProjectCosts, formatCurrency } from '@/lib/cost'
+import { ProjectSuggestion } from '@/server/types/shared'
 
 const categoryEmojis: Record<string, string> = {
   urban_greening: '🌳',
@@ -18,8 +18,6 @@ const categoryEmojis: Record<string, string> = {
   accessibility: '♿️',
   other: '✨'
 }
-
-type ProjectSuggestion = NonNullable<ProjectData['suggestions']>[number]
 
 interface ProjectSuggestionsProps {
   projectId: string
@@ -47,7 +45,17 @@ export function ProjectSuggestions({
   const [generatingImages, setGeneratingImages] = useState<Record<string, boolean>>({})
 
   // Use suggestions from project data if available
-  const suggestions: ProjectSuggestion[] = projectData?.suggestions || []
+  const suggestions: ProjectSuggestion[] = projectData?.suggestions?.map(s => ({
+      ...s,
+      convertedCosts: convertSuggestionToProjectCosts(s) ?? undefined,
+      spaceAssessment: {
+        size: null,
+        access: null,
+        complexity: null,
+        constraints: []
+      },
+      images: s.images as ProjectSuggestion['images']
+    })) ?? []
 
   const cardFullHeights = useMemo(() => 
     cardRefs.current.map((ref) => {
@@ -57,6 +65,7 @@ export function ProjectSuggestions({
       }
       return 0
     }), [cardRefs])
+
   // Update card heights when they mount or resize
   useEffect(() => {
     const updateCardHeights = () => {
@@ -90,7 +99,12 @@ export function ProjectSuggestions({
     if (selectedIndex === -1) return
 
     const handleClickOutside = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      // Ignore clicks on dialog navigation buttons
+      const target = event.target as HTMLElement
+      const isNavigationButton = target.closest('button[aria-label="Next step"], button[aria-label="Previous step"]')
+      if (isNavigationButton) return
+
+      if (!containerRef.current?.contains(target)) {
         setSelectedIndex(-1)
         onSuggestionSelect(null)
       }
@@ -102,8 +116,20 @@ export function ProjectSuggestions({
 
   const handleSelect = useCallback((index: number) => {
     if (suggestions[index]) {
+      const suggestion = suggestions[index]
+      const projectCosts = convertSuggestionToProjectCosts(suggestion)
+      
       setSelectedIndex(index)
-      onSuggestionSelect(suggestions[index])
+      onSuggestionSelect({
+        ...suggestion,
+        convertedCosts: projectCosts ?? undefined,
+        spaceAssessment: {
+          size: null,
+          access: null,
+          complexity: null,
+          constraints: []
+        }
+      })
     }
   }, [suggestions, onSuggestionSelect])
 
@@ -138,6 +164,7 @@ export function ProjectSuggestions({
     const { title, summary, category, estimatedCost } = suggestion
     const [isCostBreakdownExpanded, setIsCostBreakdownExpanded] = useState(false)
     const costs = useMemo(() => calculateProjectCosts(estimatedCost?.breakdown), [estimatedCost])
+    const isSelected = selectedIndex === index
 
     return (
       <div 
@@ -148,10 +175,10 @@ export function ProjectSuggestions({
         className={cn(
           "frosted-glass",
           styles.card,
-          selectedIndex !== -1 && selectedIndex !== index && styles.cardUnselected,
+          selectedIndex !== -1 && !isSelected && styles.cardUnselected,
           {
             'hover:ring-2 hover:ring-accent/50 hover:shadow-md': selectedIndex === -1,
-            'ring-2 ring-accent shadow-lg': selectedIndex === index
+            'ring-2 ring-accent shadow-lg': isSelected
           }
         )}
         style={{
@@ -171,12 +198,12 @@ export function ProjectSuggestions({
             </div>
             <span className={cn(
               "text-sm font-medium transition-colors",
-              selectedIndex === index 
+              isSelected 
                 ? 'text-accent'
                 : 'text-gray-500 dark:text-gray-400 group-hover:text-accent'
             )}>
               {costs?.total 
-                ? `$${costs.total.toLocaleString()}`
+                ? formatCurrency(costs.total)
                 : <i className="fa-solid fa-spinner fa-spin" />}
             </span>
           </div>
@@ -186,7 +213,7 @@ export function ProjectSuggestions({
           <p className="text-gray-600 dark:text-gray-300 line-clamp-3 leading-relaxed text-sm">
             {summary}
           </p>
-          {selectedIndex === index && costs && (
+          {isSelected && costs && (
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <button
                 onClick={(e) => {
@@ -208,43 +235,43 @@ export function ProjectSuggestions({
                 {costs.materials.items.length > 0 && (
                   <>
                     <div className="text-gray-500 dark:text-gray-400 mb-1">Materials</div>
-                    {costs.materials.items.map(item => (
-                      <div>
+                    {costs.materials.items.map((item: { item: string, cost: string }, i: number) => (
+                      <div key={`material-${i}`}>
                         <div className="pl-4 text-gray-600 dark:text-gray-300 flex justify-between">
-                          <span className="font-medium">{item[0]?.replace('- ', '')}</span>
-                          <span className="tabular-nums text-right min-w-[100px]">{item[1]}</span>
+                          <span className="font-medium">{item.item?.replace('- ', '')}</span>
+                          <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(parseFloat(item.cost))}</span>
                         </div>
                       </div>
                     ))}
                   </>
                 )}
-                {costs.labor.items.length > 0 && (
+                {costs.labor.items.length > 0 && costs.labor.total > 0 && (
                   <>
                     <div className="text-gray-500 dark:text-gray-400 mb-1">Labor</div>
-                    {costs.labor.items.map(item => (
-                      <div>
+                    {costs.labor.items.map((item: { description: string, hours: number, rate: number }, i: number) => (
+                      <div key={`labor-${i}`}>
                         <div className="pl-4 text-gray-600 dark:text-gray-300 flex justify-between">
-                          <span className="font-medium">{item[0]?.replace('- ', '')}</span>
-                          <span className="tabular-nums text-right min-w-[100px]">{item[1]}</span>
+                          <span className="font-medium">{item.description?.replace('- ', '')}</span>
+                          <span className="tabular-nums text-right min-w-[100px]">{item.hours * item.rate}</span>
                         </div>
                       </div>
                     ))}
                   </>
                 )}
-                {costs.other.items.length > 0 && (
+                {costs.other.items.length > 0 && costs.other.total > 0 && (
                   <>
                     <div className="text-gray-500 dark:text-gray-400 mb-1">Other</div>
-                    {costs.other.items.map(item => (
-                      <div className="pl-4 text-gray-600 dark:text-gray-300 flex justify-between">
-                        <span className="font-medium">{item[0]?.replace('- ', '')}</span>
-                        <span className="tabular-nums text-right min-w-[100px]">{item[1]}</span>
+                    {costs.other.items.map((item: { item: string, cost: string }, i: number) => (
+                      <div key={`other-${i}`} className="pl-4 text-gray-600 dark:text-gray-300 flex justify-between">
+                        <span className="font-medium">{item.item?.replace('- ', '')}</span>
+                        <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(parseFloat(item.cost))}</span>
                       </div>
                     ))}
                   </>
                 )}
                 <div className="flex justify-between font-medium text-gray-900 dark:text-gray-100 pt-2 border-t border-gray-200 dark:border-gray-700">
                   <span>Total Estimated Cost</span>
-                  <span className="tabular-nums text-right min-w-[100px]">${costs.total.toLocaleString()}</span>
+                  <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(costs.total)}</span>
                 </div>
               </div>
             </div>
@@ -268,8 +295,8 @@ export function ProjectSuggestions({
 
   const stageLabels: Record<ImageStage, string> = {
     generated: 'Imagined',
-    upscaled: 'Original',
-    source: 'Original'
+    upscaled: 'Current',
+    source: 'Current'
   }
   
   const getImages = (suggestion: ProjectSuggestion): {
@@ -286,7 +313,7 @@ export function ProjectSuggestions({
     if (suggestion.images.upscaled?.url) {
       images.push({ src: suggestion.images.upscaled.url, stage: 'upscaled' })
     }
-    if (!images.length &&suggestion.images.source?.url) {
+    if (!images.length && suggestion.images.source?.url) {
       images.push({ src: suggestion.images.source.url, stage: 'source' })
     }
     return images
@@ -327,7 +354,10 @@ export function ProjectSuggestions({
                     selectedIndex === index && styles.visible
                   )}>
                     {getImages(suggestion).length > 0 ? (
-                      <div className="w-full h-full">
+                      <div className={cn(
+                        "w-full h-full relative",
+                        suggestion.images?.status?.isGenerating && "animate-pulse"
+                      )}>
                         <Carousel 
                           images={getImages(suggestion).map(img => ({
                             src: img.src,
@@ -338,21 +368,65 @@ export function ProjectSuggestions({
                           showIndicators={true}
                           autoPlay={false}
                         />
+                        {/* Loading Overlay */}
+                        {(suggestion.images?.status?.isGenerating || suggestion.images?.status?.isUpscaling) && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
+                            <div className="frosted-glass rounded-xl px-4 py-2 flex items-center gap-2">
+                              <i className={cn(
+                                "fa-solid",
+                                suggestion.images.status.isGenerating ? "fa-wand-magic-sparkles" : "fa-expand",
+                                "text-zinc-700 dark:text-zinc-300"
+                              )} />
+                              <span className="text-sm text-zinc-700 dark:text-zinc-300">
+                                {suggestion.images.status.isGenerating ? "Generating image..." : "Upscaling image..."}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        {/* Error Overlay */}
+                        {suggestion.images?.status?.lastError && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
+                            <div className="frosted-glass rounded-xl px-4 py-2 flex items-center gap-2 text-red-500">
+                              <i className="fa-solid fa-triangle-exclamation" />
+                              <span className="text-sm">
+                                Failed to generate image
+                              </span>
+                              <button
+                                onClick={(e) => handleGenerateImage(suggestion.id, e)}
+                                className="ml-2 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                              >
+                                <i className="fa-solid fa-rotate-right" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div 
                         className={cn(
                           styles.imageSkeleton,
-                          generatingImages[suggestion.id] && 'cursor-wait'
+                          (suggestion.images?.status?.isGenerating || generatingImages[suggestion.id]) && 'cursor-wait'
                         )}
                         onClick={(e) => handleGenerateImage(suggestion.id, e)}
                         role="button"
-                        title={generatingImages[suggestion.id] ? "Generating image..." : "Click to generate image"}
+                        title={
+                          suggestion.images?.status?.isGenerating 
+                            ? "Generating image..." 
+                            : generatingImages[suggestion.id] 
+                              ? "Generating image..."
+                              : "Click to generate image"
+                        }
                       >
-                        {generatingImages[suggestion.id] ? (
-                          <i className="fa-solid fa-spinner fa-spin" />
+                        {suggestion.images?.status?.isGenerating || generatingImages[suggestion.id] ? (
+                          <div className="flex flex-col items-center gap-2">
+                            <i className="fa-solid fa-wand-magic-sparkles fa-spin text-2xl" />
+                            <span className="text-sm">Generating image...</span>
+                          </div>
                         ) : (
-                          <i className="fa-regular fa-image" />
+                          <div className="flex flex-col items-center gap-2">
+                            <i className="fa-regular fa-image text-2xl" />
+                            <span className="text-sm">Click to generate</span>
+                          </div>
                         )}
                       </div>
                     )}

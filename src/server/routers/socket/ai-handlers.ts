@@ -11,7 +11,7 @@ import type { publicProcedure } from "@/server/jstack";
 import { ContextWithSuperJSON, Procedure } from "jstack";
 import { eq, desc } from "drizzle-orm";
 import { getTreeHelpers } from "../tree-helpers/context";
-import type { ProjectSuggestion } from "../../types/shared";
+import type { ProjectCategory, ProjectSuggestion } from "../../types/shared";
 import { Logger } from "./types";
 import { ImageGenerationAgent } from "../ai-helpers/leonardo-agent";
 import { calculateProjectCosts } from "@/lib/cost";
@@ -190,6 +190,7 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
         try {
           // Initialize or update status
           await updateSuggestionImages({
+            upscaled: {},
             ...suggestion.images,
             source: {
               url: sourceImage.image_url,
@@ -197,7 +198,8 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
             },
             status: {
               isUpscaling: true,
-              isGenerating: false
+              isGenerating: false,
+              lastError: null
             }
           })
     
@@ -223,7 +225,8 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
             },
             status: {
               isUpscaling: false,
-              isGenerating: false
+              isGenerating: false,
+              lastError: null
             }
           })
 
@@ -269,19 +272,20 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
           url: sourceImage.image_url,
           id: sourceImage.id
         },
-        upscaled: suggestion.images?.upscaled,
+        upscaled: suggestion.images?.upscaled || {},
         status: {
           isUpscaling: false,
-          isGenerating: true
+          isGenerating: true,
+          lastError: null
         }
       })
 
       const costs = calculateProjectCosts(suggestion.estimatedCost?.breakdown)
       const projectDetails = costs ? `
         Project Budget Breakdown:
-        - Materials (${costs.materials.formatted})
-        - Labor Requirements: ${costs.labor.formatted}
-        - Additional Costs: ${costs.other.formatted}
+        - Materials (${costs.materials.total.toLocaleString()})
+        - Labor Requirements: ${costs.labor.total.toLocaleString()}
+        - Additional Costs: ${costs.other.total.toLocaleString()}
         Total Budget: $${costs.total.toLocaleString()}
       ` : ''
 
@@ -319,13 +323,16 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
           generated: [...(suggestion.images?.generated || []), newGeneratedImage],
           status: {
             isUpscaling: false,
-            isGenerating: false
+            isGenerating: false,
+            lastError: null
           }
         })
 
         return imageResult
       } else {
         await updateSuggestionImages({
+          source: {},
+          upscaled: {},
           ...suggestion.images,
           status: {
             isUpscaling: false,
@@ -347,6 +354,8 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
       })
 
       await updateSuggestionImages({
+        source: {},
+        upscaled: {},
         ...suggestion.images,
         status: {
           isUpscaling: false,
@@ -479,14 +488,27 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
             project_id: projectId,
             fundraiser_id: metadata?.fundraiserId || projectId,
             title: suggestion.title,
-            description: suggestion.summary || undefined,
+            description: suggestion.summary || '',
             summary: suggestion.summary,
             imagePrompt: suggestion.imagePrompt,
-            category: suggestion.category,
+            category: suggestion.category as ProjectCategory,
+            images: {
+              generated: [],
+              upscaled: {},
+              source: {
+                url: '',
+                id: ''
+              },
+              status: {
+                isUpscaling: false,
+                isGenerating: false,
+                lastError: null
+              }
+            },
             confidence: '0.8',
             reasoning_context: 'Generated from consolidated image analysis',
             status: 'pending',
-            created_at: new Date(),
+            created_at: new Date().toISOString(),
             metadata: {
               generatedAt: new Date().toISOString(),
               sourceImageCount: images.length
@@ -495,7 +517,10 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
           
           await db.insert(projectSuggestions).values({
             ...newSuggestion,
-            description: newSuggestion.description || ''
+            description: newSuggestion.description || '',
+            confidence: newSuggestion.confidence.toString(),
+            status: newSuggestion.status,
+            created_at: new Date()
           })
           return newSuggestion
         }))
@@ -748,6 +773,10 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
         ? suggestions.filter(s => suggestionIds.includes(s.id))
         : suggestions).map(s => ({
           ...s,
+          reasoning_context: s.reasoning_context || '',
+          project_id: s.project_id || undefined,
+          confidence: s.confidence,
+          created_at: s.created_at.toISOString(),
           description: s.description || '',
           summary: s.summary || '',
           images: s.images as ProjectSuggestion['images'],

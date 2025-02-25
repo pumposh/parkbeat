@@ -5,28 +5,12 @@ import { getTreeHelpers } from "../tree-helpers/context";
 import { desc, eq, InferInsertModel, like } from "drizzle-orm";
 import { projects } from "@/server/db/schema";
 import geohash from 'ngeohash'
-import type { ProjectStatus, BaseProject, ProjectData } from "../../types/shared";
+import { type ProjectStatus, type BaseProject, type ProjectData, projectSuggestionSchema, projectSchema, baseProjectSchema } from "../../types/shared";
 import { Procedure } from "jstack";
 import { ContextWithSuperJSON } from "jstack";
-import { Project } from "@/hooks/use-tree-sockets";
 
 export const projectClientEvents = {
-  setProject: z.object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string().optional(),
-    status: z.enum(['draft', 'active', 'funded', 'completed', 'archived']),
-    _loc_lat: z.number(),
-    _loc_lng: z.number(),
-    _loc_geohash: z.string().optional(),
-    _meta_created_by: z.string(),
-    _meta_updated_at: z.string(),
-    _meta_updated_by: z.string(),
-    _meta_created_at: z.string(),
-    _view_heading: z.number().optional(),
-    _view_pitch: z.number().optional(),
-    _view_zoom: z.number().optional(),
-  }),
+  setProject: baseProjectSchema,
   deleteProject: z.object({
     id: z.string(),
   }),
@@ -76,68 +60,14 @@ export const projectServerEvents = {
   projectData: z.object({
     projectId: z.string(),
     data: z.object({
-      project: z.object({
-        id: z.string(),
-        name: z.string(),
-        description: z.string().optional(),
-        status: z.enum(['draft', 'active', 'funded', 'completed', 'archived']),
-        _loc_lat: z.number(),
-        _loc_lng: z.number(),
-        _loc_geohash: z.string().optional(),
-        _meta_created_by: z.string(),
-        _meta_updated_at: z.string(),
-        _meta_updated_by: z.string(),
-        _meta_created_at: z.string(),
-        _view_heading: z.number().optional(),
-        _view_pitch: z.number().optional(),
-        _view_zoom: z.number().optional(),
-      }),
+      project: baseProjectSchema,
       images: z.array(z.object({
         id: z.string(),
         type: z.string(),
         imageUrl: z.string(),
         aiAnalysis: z.any().optional()
       })).optional(),
-      suggestions: z.array(z.object({
-        id: z.string(),
-        title: z.string(),
-        summary: z.string().nullable(),
-        imagePrompt: z.string(),
-        category: z.string(),
-        estimatedCost: z.object({
-          total: z.number(),
-          breakdown: z.object({
-            materials: z.array(z.object({
-              item: z.string(),
-              cost: z.number()
-            })),
-            labor: z.array(z.object({
-              task: z.string(),
-              rate: z.number(),
-              hours: z.number()
-            })),
-            permits: z.number(),
-            management: z.number(),
-            contingency: z.number()
-          }).optional(),
-        }).optional(),
-        images: z.object({
-          generated: z.array(z.object({
-            url: z.string(),
-            generatedAt: z.string(),
-            generationId: z.string()
-          })).optional(),
-          source: z.object({
-            url: z.string().optional(),
-            id: z.string().optional()
-          }).optional(),
-          upscaled: z.object({
-            url: z.string().optional(),
-            id: z.string().optional(),
-            upscaledAt: z.string().optional()
-          }).optional()
-        }).optional()
-      })).optional()
+      suggestions: z.array(projectSuggestionSchema).optional()
     })
   }),
   subscribe: z.object({
@@ -181,7 +111,8 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     setProjectSubscription,
     getProjectData,
     processCleanupQueue,
-    cleanup
+    cleanup,
+    enqueueSubscriptionCleanup
   } = getTreeHelpers({ ctx, logger })
 
   let socketId: string | null = null
@@ -228,6 +159,8 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
       try {
         // Get socket ID
         socketId = getSocketId(socket)
+
+        if (socketId) enqueueSubscriptionCleanup(c, socketId, ['project'])
 
         // Leave the Redis room for this project
         socket.leave(`project:${projectId}`)
@@ -338,21 +271,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     }
   })
 
-  socket.on('setProject', async (data: {
-    id: string
-    name: string
-    description?: string
-    status: ProjectStatus
-    _loc_lat: number
-    _loc_lng: number
-    _meta_created_by: string
-    _meta_updated_by: string
-    _meta_updated_at: string
-    _meta_created_at: string
-    _view_heading?: number
-    _view_pitch?: number
-    _view_zoom?: number
-  }) => {
+  socket.on('setProject', async (data) => {
     logger.info(`Processing project update: ${data.name} (${data.id})`)
     const { db } = ctx
 
@@ -375,7 +294,18 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
         _meta_created_at: new Date(data._meta_created_at),
         _view_heading: data._view_heading?.toString() || null,
         _view_pitch: data._view_pitch?.toString() || null,
-        _view_zoom: data._view_zoom?.toString() || null
+        _view_zoom: data._view_zoom?.toString() || null,
+        source_suggestion_id: data.source_suggestion_id,
+        cost_breakdown: data.cost_breakdown,
+        category: 'other',
+        summary: '',
+        skill_requirements: '',
+        space_assessment: {
+          size: null,
+          access: null,
+          complexity: null,
+          constraints: []
+        }
       } as const;
 
       const existingProject = await db
@@ -413,6 +343,8 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
         description: result?.description || undefined,
         status: result.status as ProjectStatus,
         fundraiser_id: result.fundraiser_id,
+        source_suggestion_id: result.source_suggestion_id || undefined,
+        cost_breakdown: result.cost_breakdown || undefined,
         _loc_lat: parseFloat(result._loc_lat),
         _loc_lng: parseFloat(result._loc_lng),
         _loc_geohash: result._loc_geohash,

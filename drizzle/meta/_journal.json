@@ -120,6 +120,13 @@
       "when": 1740174990848,
       "tag": "0016_naive_sugar_man",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1740443559000,
+      "tag": "0017_lively_rictor",
+      "breakpoints": true
     }
   ]
 }

@@ -92,7 +92,7 @@ export interface AIEstimateResult {
   totalEstimate: number
   breakdown: {
     materials: Array<{ item: string; cost: number }>
-    labor: Array<{ task: string; rate: number; hours: number }>
+    labor: Array<{ task: string; description: string; rate: number; hours: number }>
     permits: number
     management: number
     contingency: number
@@ -300,7 +300,7 @@ export class GeminiAgent implements AIAgent {
       totalEstimate: number
       breakdown: {
         materials: Array<{ item: string; cost: number }>
-        labor: Array<{ task: string; rate: number; hours: number }>
+        labor: Array<{ task: string; description: string; rate: number; hours: number }>
         permits: number
         management: number
         contingency: number

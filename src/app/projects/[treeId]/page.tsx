@@ -3,6 +3,7 @@
 import { client } from '@/lib/client'
 import { getLocationInfo } from "@/lib/location"
 import { TreeDialog } from "@/app/components/treebeds/tree-dialog"
+import { ProjectDetailsDialog } from "@/app/components/treebeds/components/project-details-dialog"
 import { auth } from '@clerk/nextjs/server'
 import { Project } from '@/hooks/use-tree-sockets'
 
@@ -36,6 +37,14 @@ export default async function TreePage({
     _meta_updated_at: new Date(_project._meta_updated_at),
     _meta_created_at: new Date(_project._meta_created_at)
   } : undefined
+
+  if (project && project.status !== 'draft') {
+    return (
+      <ProjectDetailsDialog
+        projectId={projectId}
+      />
+    )
+  }
 
   return (
     <TreeDialog 

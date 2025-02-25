@@ -42,20 +42,21 @@ export class PromptManager {
     smaller words and lots of emojis to make it more engaging.
 
     Focus on micro-improvements and small-scale beautification:
-    - Tree beds and small gardens ($500-2,000)
-    - Simple benches or planters ($1,000-3,000)
-    - Basic landscaping improvements ($1,000-4,000)
-    - Small art installations ($2,000-5,000)
+    - Tree beds and small gardens ($300-1,200)
+    - Simple benches or planters ($500-1,500)
+    - Basic landscaping improvements ($600-2,000)
+    - Small art installations ($1,000-3,000)
 
     Prioritize aesthetic appeal and extreme frugality. Be down to earth and practical.
-    Assume all labor will be contracted (no volunteer work) but keep the scope small
-    enough that labor costs stay minimal. Think in terms of 1-2 day projects.
-    Assume one skilled laborer billed between $20-40/hour. *Only if necessary*
-    should you consider more than one laborer. Any additional laborers must
-    be billed at no more than $15-20/hour.
+    LABOR REQUIREMENTS:
+    - ONE skilled laborer only, no exceptions
+    - Rate: $15-30/hour based on skill required
+    - Maximum 16 hours (2 days) total labor
+    - Projects MUST be completable by one person
+    - Choose projects that don't require heavy lifting or two-person tasks
 
-    IMPORTANT: Most projects should fall in the $1,000-$3,000 range. Any project
-    over $5,000 is likely too ambitious for community crowdfunding.
+    IMPORTANT: Most projects should fall in the $500-$1,500 range. Any project
+    over $3,000 is likely too ambitious for community crowdfunding.
   `
 
   static getImageAnalysisPrompt(context: ImageAnalysisContext) {
@@ -66,6 +67,18 @@ export class PromptManager {
 
       These are the categories of projects you can recommend:
       ${context.categories.join(', ').replaceAll('_', ' ')}
+
+      SPACE ASSESSMENT GUIDELINES:
+      - Measure available space in approximate square meters
+      - Consider space constraints that might affect cost:
+        * Limited access for materials/equipment
+        * Narrow spaces requiring specialized equipment
+        * Proximity to structures/utilities
+        * Available staging area for materials
+      - Classify space complexity:
+        * Easy: Open access, flat terrain, no obstacles
+        * Moderate: Some access challenges or terrain issues
+        * Difficult: Limited access, complex terrain, many obstacles
     `
 
     const userPrompt = `
@@ -86,16 +99,17 @@ export class PromptManager {
       1: MATCHING PROJECT TYPE(S)
       2: FRIENDLY TITLE (using location context from above)
       3: DESCRIPTION
-      4: IMAGE GENERATION PROMPT FOR THE OUTCOME OF THE PROJECT. BE VERY SPECIFIC
-        ABOUT WHAT YOU SEE IN THE INPUT IMAGE AND HOW YOU THINK THE PROJECT
-        WOULD INTEGRATE WITH THE LOCATION. AGAIN, DO NOT GO OVERBOARD.
-      5: SKILL CLASSIFICATION RECOMMENDATION
-      6: ESTIMATED COST
-          - Material 1  $approx_cost
-              ...
-          - Material 2  $approx_cost
-          - Labor       $approx_cost
-          - Total       $approx_cost
+      4: SPACE ASSESSMENT
+         - Approximate square meters available
+         - Access considerations
+         - Terrain/obstacles
+         - Space complexity classification
+      5: IMAGE GENERATION PROMPT FOR THE OUTCOME OF THE PROJECT
+      6: SKILL CLASSIFICATION RECOMMENDATION
+      7: ESTIMATED COST RANGE
+         - Base cost range considering space factors
+         - Additional costs due to space constraints
+         - Recommended project scale to stay within budget
 
       Remember to keep the title local and specific to where this project would be.
     `
@@ -144,26 +158,73 @@ export class PromptManager {
   static getCostEstimatePrompt(context: CostEstimateContext) {
     const systemPrompt = this.DEFAULT_SYSTEM_PROMPT + `
       You will be given project details and need to generate a detailed cost estimate.
-      Be realistic but frugal in your estimates. Consider local market rates and
-      project complexity.
+      Be realistic but extremely frugal in your estimates. Consider local market rates,
+      project complexity, and space constraints.
+
+      COST GUIDELINES:
+      - Projects should target $500-$1,500 total cost
+      - Never exceed $3,000 total for any project
+      - Labor structure (STRICT):
+        * ONE skilled worker only
+        * Rate: $15-30/hr based on skill level
+        * Maximum 16 hours total
+        * No helper/additional labor allowed
+      - Typical project breakdowns:
+        * Materials: 35-45% of total cost
+        * Labor: 35-45% (max 16 hours)
+        * Permits/Fees: 5-15%
+        * Management: 5-15%
+      - Project type ranges:
+        * Tree beds/gardens: $300-1,200
+        * Benches/planters: $500-1,500
+        * Basic landscaping: $600-2,000
+        * Small art: $1,000-3,000
+
+      SPACE COMPLEXITY ADJUSTMENTS:
+      - Easy access (open, flat): Base labor rate
+      - Moderate access: Add 10-15% to labor rate
+      - Difficult access: Add 15-25% to labor rate
+      - Space size impacts:
+        * Very small (<5 sq m): May increase time needed
+        * Medium (5-20 sq m): Optimal for one person
+        * Large (>20 sq m): Must be broken into phases
+
+      IMPORTANT: If a project cannot be completed by one person
+      within 16 hours, it MUST be rejected or modified.
+
+      RESPONSE FORMAT RULES:
+      1. List ONLY individual line items - NO totals or subtotals
+      2. Each line item must be a specific material or service
+      3. DO NOT include any lines containing the word "total"
+      4. DO NOT sum up categories (materials, labor, etc.)
+      5. Let the system calculate all totals from individual items
 
       The cost estimate must strictly adhere to the following format:
       Everything with "i.e" is an example.
 
       RESPONSE STRUCTURE:
-      1. MATERIALS BREAKDOWN
-         - Item 1: $cost (i.e $100)
-         - Item 2: $cost (i.e $100)
+      1. SPACE ASSESSMENT IMPACT
+         - Access classification
+         - Size category
+         - Cost multipliers applied
+      2. MATERIALS BREAKDOWN
+         - Soil mix: $75
+         - Plants (5 perennials): $150
+         - Garden edging: $45
          ...
-      2. LABOR COSTS
-         - Skill 1: $rate x hours (i.e $100 x 1 hour)
-         - Skill 2: $rate x hours (i.e $100 x 1 hour)
-         ...
-      3. OTHER COSTS
-         - Permits: $cost (i.e $100)
-         - Management: $cost (i.e $100)
-      4. ASSUMPTIONS LIST
-      5. CONFIDENCE SCORE (0-1)
+      3. LABOR COSTS
+         - Skill level: [basic/intermediate/advanced]
+         - Rate: $[15-30]/hour
+         - Hours needed: [1-8]
+      4. OTHER COSTS
+         - Equipment rental: $50
+         - Permit fee: $75
+         - Project coordination: $100
+      5. FEASIBILITY CHECK
+         - Can one person complete this? [Yes/No]
+         - If No, suggested modifications
+      6. ASSUMPTIONS LIST
+      7. CONFIDENCE SCORE (0-1)
     `
 
     const userPrompt = `
@@ -176,11 +237,18 @@ export class PromptManager {
       - Timeline: ${context.scope.timeline} months
       
       Consider:
-      1. Materials and equipment
-      2. Labor costs (assume minimal volunteer work)
-      3. Permits and fees
-      4. Project management
-      5. Contingency (5-10%)
+      1. Single-person labor constraints
+      2. Space constraints and access requirements
+      3. Materials and equipment needs
+      4. Special equipment for one-person work
+      5. Permits and fees
+      6. Project management
+      7. Contingency (5-10%)
+
+      IMPORTANT: 
+      - Reject or modify any project that cannot be safely completed by one person within 16 hours
+      - List only individual items, never include totals
+      - Each line item must be specific (e.g. "2x4 lumber (8ft)" not just "lumber")
     `
 
     return {
@@ -221,10 +289,28 @@ export class PromptManager {
       for improving this space. Each suggestion should be realistic, achievable, and
       consider the local context.
 
+      STRICT PROJECT CATEGORIES:
+      You MUST classify each suggestion into EXACTLY ONE of these categories:
+      1. urban_greening: Tree planting, green walls, native plant gardens
+      2. park_improvement: Basic park infrastructure upgrades, path repairs
+      3. community_garden: Small-scale food or flower growing spaces
+      4. playground: Simple play elements, individual pieces
+      5. public_art: Murals, sculptures, decorative elements
+      6. sustainability: Water management, solar lighting, recycling
+      7. accessibility: ADA improvements, ramps, signage
+      8. other: ONLY if it doesn't fit any other category
+
+      CATEGORY SELECTION RULES:
+      - Each suggestion MUST be assigned exactly one category
+      - If a project could fit multiple categories, choose the MOST specific one
+      - Use 'other' ONLY as a last resort when no other category fits
+      - DO NOT create new categories or modify existing ones
+      - DO NOT combine categories
+
       COST GUIDELINES:
-      - Aim for most projects to be $1,000-$3,000
-      - Simple projects (tree beds, basic planters) should be under $2,000
-      - Never exceed $5,000 total cost
+      - Aim for most projects to be $500-$1,500
+      - Simple projects (tree beds, basic planters) should be under $1,000
+      - Never exceed $3,000 total cost
       - Remember to include labor but keep projects small enough for 1-2 days work
       - Break down costs into materials (30-40%), labor (40-50%), permits (5-10%), management (5-10%)
 
@@ -235,11 +321,11 @@ export class PromptManager {
       2. A brief summary of the project (12-18 words)
         - Focus on simple, achievable improvements
         - Emphasize visual impact over complexity
-      3. The project type (urban_greening, park_improvement, community_garden, etc.)
+      3. The project type (MUST be one of the categories listed above)
       4. A detailed image prompt for visualizing the completed project as a
         realistic edit to the input image.
       5. A rough cost estimate
-        - Most projects should be $1,000-$3,000
+        - Most projects should be $500-$1,500
         - Include basic materials and minimal labor
         - Round to nearest hundred
         - Consider only essential elements
@@ -271,6 +357,7 @@ export class PromptManager {
       - Ensure image prompts maintain the same perspective as the input image
       - Provide realistic cost estimates
       - Focus on achievable improvements
+      - STRICTLY use only the allowed project categories
 
       Separate each suggestion with "---"
     `

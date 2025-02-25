@@ -23,17 +23,21 @@ interface CancelAction {
   isDeleting?: boolean
 }
 
+export interface StepFormDialogStep {
+  title: string
+  onSubmit?: () => void | Promise<void>
+  content: ReactNode
+  canProgress?: boolean
+  style?: {
+    fullHeight?: boolean
+    hideHeader?: boolean
+  }
+}
+
 interface StepFormDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  steps: {
-    title: string
-    content: ReactNode
-    canProgress?: boolean
-    style?: {
-      fullHeight?: boolean
-    }
-  }[]
+  steps: StepFormDialogStep[]
   currentStep: number
   onStepChange?: (step: number) => void
   onClose?: () => void
@@ -46,7 +50,7 @@ interface StepFormDialogProps {
   isDeleting?: boolean
 }
 
-interface StepState {
+export interface StepFormDialogStepState {
   id: string
   content: ReactNode
   title: string
@@ -71,7 +75,7 @@ export function StepFormDialog({
   const currentStepData = steps[currentStep]
   const [_direction, setDirection] = useState<'forward' | 'backward'>('forward')
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [activeSteps, setActiveSteps] = useState<StepState[]>([])
+  const [activeSteps, setActiveSteps] = useState<StepFormDialogStepState[]>([])
   const [contentHeight, setContentHeight] = useState<number>(0)
   const [isHeightTransitioning, setIsHeightTransitioning] = useState(false)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
@@ -90,7 +94,7 @@ export function StepFormDialog({
   // Initialize active steps
   useLayoutEffect(() => {
     if (activeSteps.length === 0 && open) {
-      const initialStep: StepState = {
+      const initialStep: StepFormDialogStepState = {
         id: generateStepId(currentStep),
         content: currentStepData.content,
         title: currentStepData.title,
@@ -247,11 +251,15 @@ export function StepFormDialog({
   const handleStepChange = (nextStep: number) => {
     if (isTransitioning) return
     
-    // // Check if current step allows progression
-    // const currentStepData = steps[currentStep]
-    // if (nextStep > currentStep && currentStepData?.canProgress === false) {
-    //   return
-    // }
+    // Check if current step allows progression
+    const currentStepData = steps[currentStep]
+    if (nextStep > currentStep && !currentStepData?.canProgress) {
+      return
+    }
+
+    if (nextStep > currentStep && currentStepData?.onSubmit) {
+      currentStepData.onSubmit()
+    }
     
     onStepChange?.(nextStep)
   }
@@ -296,6 +304,7 @@ export function StepFormDialog({
             <div className="frosted-glass rounded-2xl relative grid grid-rows-[auto_1fr_auto] overflow-hidden">
               <div className={cn(
                 "p-8 pb-0 space-y-2 transition-opacity duration-300",
+                currentStepData.style?.hideHeader && "hidden"
               )}
               ref={headerRef}
               >
@@ -391,7 +400,7 @@ export function StepFormDialog({
                     <button
                       type="button"
                       onClick={() => handleStepChange(currentStep + 1)}
-                      disabled={steps[currentStep]?.canProgress === false}
+                      disabled={!steps[currentStep]?.canProgress}
                       className={cn(
                         "rounded-lg h-12 flex items-center justify-center text-xl px-6 transition-all",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",

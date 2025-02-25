@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, useMemo } from "react"
 import { boundsToGeohash } from "@/lib/geo/geohash"
 import { useAuth } from "@clerk/nextjs"
 import { WebSocketLogger } from "./client-log"
-import type { BaseProject, ProjectStatus } from "@/server/types/shared"
+import type { BaseProject, ProjectData, ProjectStatus } from "@/server/types/shared"
 import { useServerEvent, WebSocketManager, type ConnectionState } from "./websocket-manager"
 
 // WebSocket payload type with string dates
@@ -189,37 +189,37 @@ export function useLiveTrees() {
 
   // Tree mutation handler
   const { mutate: setProject, isPending } = useMutation({
-    mutationFn: async ({
-      id,
-      name,
-      description,
-      lat,
-      lng,
-      status
-    }: {
-      id?: string
-      name: string
-      description?: string
+    mutationFn: async (project: Partial<ProjectData['project']> & {
       lat: number
       lng: number
-      status: ProjectStatus
     }) => {
+      const {
+        id,
+        name,
+        description,
+        lat,
+        lng,
+        status
+      } = project;
+
       const projectId = id || generateId();
       const now = new Date();
       logger.log('info', `Creating/updating project: ${name} at ${lat},${lng}`);
       
       const newProject: ProjectPayload = {
+        ...project,
         id: projectId,
-        name,
-        description,
-        status,
+        name: name || "",
+        description: description || "",
+        status: status || "active",
+        category: "other",
         fundraiser_id: "",
         _loc_lat: lat,
         _loc_lng: lng,
         _meta_created_by: userId || "unknown",
         _meta_updated_by: userId || "unknown",
         _meta_created_at: now.toISOString(),
-        _meta_updated_at: now.toISOString()
+        _meta_updated_at: now.toISOString(),
       };
 
       // Wait for connection if not connected
@@ -286,7 +286,7 @@ export function useProjectData(projectId: string) {
   const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
   const currentProjectId = useRef<string | null>(null);
 
-  const [projectData] = useServerEvent.projectData({
+  const [projectData, setProjectData] = useServerEvent.projectData({
     projectId,
     data: {
       project: {} as ProjectPayload,
@@ -317,6 +317,14 @@ export function useProjectData(projectId: string) {
     disconnect: () => {
       if (!currentProjectId.current) return;
       wsManager.unsubscribeFromProject(currentProjectId.current);
+      setProjectData({
+        projectId,
+        data: {
+          project: {} as ProjectPayload,
+          images: [],
+          suggestions: []
+        }
+      });
       currentProjectId.current = null;
     }
   };

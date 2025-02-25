@@ -28,7 +28,6 @@ export const PlaceTreeForm = (props: {
   project?: Project
   onClose?: () => void
 }) => {
-  const router = useRouter()
   const params = useParams()
   const projectId = params.treeId as string
   const { map, isLoaded, error } = useMap()
