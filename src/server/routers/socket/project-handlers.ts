@@ -37,6 +37,14 @@ export const projectClientEvents = {
   subscribeProject: z.object({
     projectId: z.string(),
     shouldSubscribe: z.boolean()  
+  }),
+  addContribution: z.object({
+    project_id: z.string(),
+    user_id: z.string(),
+    contribution_type: z.enum(['funding', 'social']),
+    amount_cents: z.number().optional(),
+    message: z.string().optional(),
+    id: z.string()
   })
 };
 
@@ -67,7 +75,26 @@ export const projectServerEvents = {
         imageUrl: z.string(),
         aiAnalysis: z.any().optional()
       })).optional(),
-      suggestions: z.array(projectSuggestionSchema).optional()
+      suggestions: z.array(projectSuggestionSchema).optional(),
+      contribution_summary: z.object({
+        total_amount_cents: z.number(),
+        contributor_count: z.number(),
+        contributors: z.array(z.object({
+          user_id: z.string(),
+          total_amount_cents: z.number(),
+          contribution_count: z.number()
+        })),
+        recent_contributions: z.array(z.object({
+          id: z.string(),
+          project_id: z.string(),
+          user_id: z.string(),
+          contribution_type: z.enum(['funding', 'social']),
+          amount_cents: z.number().optional(),
+          message: z.string().optional(),
+          created_at: z.string(),
+          metadata: z.record(z.unknown()).optional()
+        }))
+      }).optional()
     })
   }),
   subscribe: z.object({
@@ -112,7 +139,9 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     getProjectData,
     processCleanupQueue,
     cleanup,
-    enqueueSubscriptionCleanup
+    enqueueSubscriptionCleanup,
+    addProjectContribution,
+    notifyProjectSubscribers
   } = getTreeHelpers({ ctx, logger })
 
   let socketId: string | null = null
@@ -398,6 +427,33 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
       return projectToEmit
     } catch (error) {
       logger.error('Error processing project update:', error)
+      throw error
+    }
+  })
+
+  // Handler for adding a contribution to a project
+  socket.on('addContribution', async (contribution) => {
+    logger.info(`Processing contribution for project: ${contribution.project_id}`)
+    
+    try {
+      // Add the contribution to the database
+      const newContribution = await addProjectContribution({
+        project_id: contribution.project_id,
+        user_id: contribution.user_id,
+        contribution_type: contribution.contribution_type,
+        amount_cents: contribution.amount_cents,
+        message: contribution.message,
+        id: contribution.id // Pass the ID from the client
+      })
+      
+      // Notify all subscribers about the updated project data
+      await notifyProjectSubscribers(contribution.project_id, getSocketId(socket), io)
+      
+      logger.info(`Successfully added contribution to project ${contribution.project_id}`)
+      
+      return newContribution
+    } catch (error) {
+      logger.error('Error processing contribution:', error)
       throw error
     }
   })

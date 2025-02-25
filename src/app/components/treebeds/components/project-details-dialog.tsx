@@ -4,9 +4,14 @@ import { useState, useEffect } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useRouter } from 'next/navigation'
 import { ProjectDetails } from './project-details'
+import { ProjectContributions } from './project-contributions'
 import { useProjectData } from '@/hooks/use-tree-sockets'
 import type { ProjectFormData } from '../tree-dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
+import { SwipeableTabs } from '@/app/components/ui/swipeable-tabs'
+import { cn } from '@/lib/utils'
+import { ProjectTargetTracker } from './project-target-tracker'
+import { calculateProjectCosts } from '@/lib/cost'
 
 interface ProjectDetailsDialogProps {
   projectId: string
@@ -56,6 +61,88 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
     }, 150)
   }
 
+  // Render project title section
+  const renderProjectTitle = () => {
+    if (!initialData) return null;
+    
+    const categoryEmojis: Record<string, string> = {
+      urban_greening: '🌳',
+      park_improvement: '🏞️',
+      community_garden: '🌱',
+      playground: '🎪',
+      public_art: '🎨',
+      sustainability: '♻️',
+      accessibility: '♿️',
+      other: '✨'
+    };
+    
+    // Calculate project costs and current funding
+    const costs = calculateProjectCosts(initialData.cost_breakdown);
+    const totalCost = costs?.total || 0;
+    const currentFunding = projectData?.data?.contribution_summary?.total_amount_cents || 0;
+    
+    return (
+      <div className="p-6 pb-0">
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+          {initialData.name}
+        </h1>
+        {initialData.category && (
+          <div className="mt-2">
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-gray-100/50 dark:bg-black/10 text-gray-800 dark:text-gray-300">
+              <span>{categoryEmojis[initialData.category] || '✨'}</span>
+              <span className="uppercase tracking-wide font-display opacity-80">
+                {initialData.category.replace(/_/g, ' ')}
+              </span>
+            </span>
+          </div>
+        )}
+        
+        {/* Project Target Tracker */}
+        {totalCost > 0 && (
+          <div className="mt-4 mb-2">
+            <ProjectTargetTracker 
+              currentAmount={currentFunding / 100} 
+              targetAmount={totalCost} 
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Define tab content
+  const tabs = [
+    {
+      id: 'project',
+      label: 'Project',
+      icon: <i className="fa-solid fa-lightbulb" />,
+      content: (
+        <div className="p-6 pt-0 overflow-y-auto">
+          {initialData && (
+            <ProjectDetails
+              initialData={initialData}
+              projectId={projectId}
+              projectStatus={projectData?.data.project.status}
+              isReadOnly={true}
+              isLoading={!initialData || initialData.id !== projectId}
+            />
+          )}
+        </div>
+      )
+    },
+    {
+      id: 'community',
+      className: 'overflow-y-hidden relative',
+      label: 'Community',
+      icon: <i className="fa-solid fa-handshake-angle" />,
+      content: (
+        <div className="p-6 pt-0 overflow-hidden relative flex flex-col flex-grow">
+          <ProjectContributions projectId={projectId} />
+        </div>
+      )
+    }
+  ];
+
   return (
     <Dialog.Root open={open} onOpenChange={handleClose}>
       <Dialog.Portal>
@@ -72,24 +159,23 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
                 </Dialog.Description>
               </VisuallyHidden>
 
-              <div className="overflow-y-auto flex-1 p-8 pt-4">
-                <ProjectDetails
-                  initialData={initialData || {
-                    id: projectId,
-                    name: '',
-                    description: '',
-                    location: null,
-                    viewParams: {
-                      heading: 0,
-                      pitch: 0,
-                      zoom: 1
-                    }
-                  }}
-                  projectId={projectId}
-                  projectStatus={projectData?.data.project.status}
-                  isReadOnly={true}
-                  isLoading={!initialData || initialData.id !== projectId}
-                />
+              <div className="overflow-y-hidden flex-1 flex flex-col">
+                {renderProjectTitle()}
+                
+                <div className={cn(
+                  "flex-1 overflow-hidden flex flex-col",
+                  !initialData && "animate-pulse bg-gray-200 h-[400px] rounded-lg m-6"
+                )}>
+                  {initialData && (
+                    <SwipeableTabs 
+                      tabs={tabs}
+                      adaptiveHeight={true}
+                      contentClassName="h-auto"
+                      tabPosition="bottom"
+                      className="mt-auto mb-2 relative"
+                    />
+                  )}
+                </div>
               </div>
             </div>
           </div>

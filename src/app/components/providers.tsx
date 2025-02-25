@@ -5,6 +5,7 @@ import { ThemeProvider } from "next-themes"
 import { useState } from "react"
 import { ToastProvider } from "./toast"
 import { StrictMode } from "react"
+import { UserAvatarCacheProvider } from "./ui/user-avatar-context"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
@@ -22,9 +23,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
           themes={['light', 'dark']}
           forcedTheme={undefined}
         >
-          <ToastProvider>
-            {children}
-          </ToastProvider>
+          <UserAvatarCacheProvider>
+            <ToastProvider>
+              {children}
+            </ToastProvider>
+          </UserAvatarCacheProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </StrictMode>

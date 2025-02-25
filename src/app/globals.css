@@ -405,12 +405,12 @@
 
   @keyframes contentShowDesktop {
     from {
-      transform: translate(-50%, -48%) scale(0.36);
+      scale: 0.36;
       filter: blur(16px);
       opacity: 0;
     }
     to {
-      transform: translate(-50%, -50%) scale(1);
+      scale: 1;
       filter: blur(0px);
       opacity: 1;
     }
@@ -418,12 +418,12 @@
 
   @keyframes contentHideDesktop {
     from {
-      transform: translate(-50%, -50%) scale(1);
+      scale: 1;
       filter: blur(0px);
       opacity: 1;
     }
     to {
-      transform: translate(-50%, -48%) scale(0.36);
+      scale: 0.36;
       filter: blur(16px);
       opacity: 0;
     }
@@ -615,5 +615,40 @@
   .StreetViewCard > div:nth-child(2) > div:nth-child(16) {
     /* scale: 1 !important; */
     opacity: 0.1 !important;
+  }
+
+  /* Add these styles to adjust the existing animations for our tree-info-panel */
+  .tree-info-panel[data-animation="entering"] {
+    animation: tree-panel-show 300ms ease forwards;
+  }
+
+  .tree-info-panel[data-animation="exiting"] {
+    animation: tree-panel-hide 300ms ease forwards;
+  }
+
+  @keyframes tree-panel-show {
+    from {
+      transform: translate(-50%, calc(-100% - 48px)) scale(0.8);
+      filter: blur(8px);
+      opacity: 0;
+    }
+    to {
+      transform: translate(-50%, calc(-100% - 48px)) scale(1);
+      filter: blur(0px);
+      opacity: 1;
+    }
+  }
+
+  @keyframes tree-panel-hide {
+    from {
+      transform: translate(-50%, calc(-100% - 48px)) scale(1);
+      filter: blur(0px);
+      opacity: 1;
+    }
+    to {
+      transform: translate(-50%, calc(-100% - 48px)) scale(0.8);
+      filter: blur(8px);
+      opacity: 0;
+    }
   }
 }

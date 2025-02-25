@@ -3,6 +3,7 @@ import {
   projectStatusSchema,
   projectCategorySchema,
   userRoleSchema,
+  contributionTypeSchema,
   spaceAssessmentSchema,
   projectCostBreakdownSchema,
   timelineEstimateSchema,
@@ -13,6 +14,7 @@ import {
 export const projectStatusEnum = pgEnum('project_status', projectStatusSchema.options)
 export const projectCategoryEnum = pgEnum('project_category', projectCategorySchema.options)
 export const userRoleEnum = pgEnum('user_role', userRoleSchema.options)
+export const contributionTypeEnum = pgEnum('contribution_type', contributionTypeSchema.options)
 
 export const posts = pgTable(
   "posts",
@@ -73,6 +75,26 @@ export const projects = pgTable(
     index("project_fundraiser_idx").on(table.fundraiser_id),
     index("project_category_idx").on(table.category)
   ])
+
+// Project Contributions table for tracking both financial and social contributions
+export const projectContributions = pgTable(
+  "project_contributions",
+  {
+    id: text("id").primaryKey(),
+    project_id: text("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+    user_id: text("user_id").notNull(), // Clerk user ID
+    contribution_type: contributionTypeEnum("contribution_type").notNull(), // 'funding' or 'social'
+    amount_cents: numeric("amount_cents"), // Optional for social contributions
+    message: text("message"), // Optional message with the contribution
+    created_at: timestamp("created_at").defaultNow().notNull(),
+    metadata: jsonb("metadata"), // For flexible additional data
+  },
+  (table) => [
+    index("contribution_project_idx").on(table.project_id),
+    index("contribution_user_idx").on(table.user_id),
+    index("contribution_type_idx").on(table.contribution_type)
+  ]
+)
 
 // AI Project Recommendations table
 export const projectSuggestions = pgTable(

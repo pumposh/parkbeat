@@ -1,8 +1,8 @@
 import { generateId } from "@/lib/id"
 import { publicProcedure } from "../../jstack"
-import { eq, desc, like } from "drizzle-orm"
-import { projectImages, projects, projectSuggestions } from "@/server/db/schema"
-import type { BaseProject, ProjectData, ProjectSuggestion } from "@/server/types/shared"
+import { eq, desc, like, asc, sql, sum, count, and } from "drizzle-orm"
+import { projectImages, projects, projectSuggestions, projectContributions } from "@/server/db/schema"
+import type { BaseProject, ProjectData, ProjectSuggestion, ContributionSummary, ProjectContribution, ContributorSummary } from "@/server/types/shared"
 import type { ServerProcedure } from "../tree-router"
 import type { ProjectStatus } from "@/server/types/shared"
 import { ContextWithSuperJSON } from "jstack"
@@ -271,6 +271,175 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     }
   }
 
+  // Helper function to get contribution summary for a project
+  const getContributionSummary = async (projectId: string): Promise<ContributionSummary> => {
+    logger.debug(`Getting contribution summary for project: ${projectId}`)
+    const { db } = ctx
+
+    try {
+      // Get total amount and count
+      const totalResult = await db
+        .select({
+          total_amount_cents: sql<number>`COALESCE(SUM(${projectContributions.amount_cents}), 0)`.as('total_amount_cents'),
+          contributor_count: sql<number>`COUNT(DISTINCT ${projectContributions.user_id})`.as('contributor_count')
+        })
+        .from(projectContributions)
+        .where(and(
+          eq(projectContributions.project_id, projectId),
+          eq(projectContributions.contribution_type, 'funding')
+        ))
+
+      const total = totalResult[0] || { total_amount_cents: 0, contributor_count: 0 }
+
+      // Get contributors with their total contributions, sorted by total amount
+      const contributors = await db
+        .select({
+          user_id: projectContributions.user_id,
+          total_amount_cents: sql<number>`COALESCE(SUM(${projectContributions.amount_cents}), 0)`.as('total_amount_cents'),
+          contribution_count: sql<number>`COUNT(*)`.as('contribution_count')
+        })
+        .from(projectContributions)
+        .where(and(
+          eq(projectContributions.project_id, projectId),
+          eq(projectContributions.contribution_type, 'funding')
+        ))
+        .groupBy(projectContributions.user_id)
+        .orderBy(desc(sql<number>`COALESCE(SUM(${projectContributions.amount_cents}), 0)`))
+
+      // Get recent contributions (last 10)
+      const recentContributions = await db
+        .select()
+        .from(projectContributions)
+        .where(eq(projectContributions.project_id, projectId))
+        .orderBy(desc(projectContributions.created_at))
+        .limit(10)
+
+      return {
+        total_amount_cents: total.total_amount_cents,
+        contributor_count: total.contributor_count,
+        contributors: contributors.map((contributor: ContributorSummary) => ({
+          user_id: contributor.user_id,
+          total_amount_cents: contributor.total_amount_cents,
+          contribution_count: contributor.contribution_count
+        })),
+        recent_contributions: recentContributions.map(contribution => ({
+          id: contribution.id,
+          project_id: contribution.project_id,
+          user_id: contribution.user_id,
+          contribution_type: contribution.contribution_type,
+          amount_cents: contribution.amount_cents ? Number(contribution.amount_cents) : undefined,
+          message: contribution.message || undefined,
+          created_at: contribution.created_at.toISOString(),
+          metadata: contribution.metadata as Record<string, unknown> || undefined
+        }))
+      }
+    } catch (error) {
+      logger.error(`Error getting contribution summary for project ${projectId}:`, error)
+      // Return empty summary on error
+      return {
+        total_amount_cents: 0,
+        contributor_count: 0,
+        contributors: [],
+        recent_contributions: []
+      }
+    }
+  }
+
+  /**
+   * Adds a contribution to a project
+   * @param contribution The contribution details (excluding id, metadata, and created_at which are handled automatically)
+   * @returns The newly created contribution
+   */
+  const addProjectContribution = async (contribution: {
+    project_id: string;
+    user_id: string;
+    contribution_type: 'funding' | 'social';
+    amount_cents?: number;
+    message?: string;
+    id?: string; // Make ID optional in the parameter
+  }): Promise<ProjectContribution> => {
+    logger.debug(`Adding contribution to project: ${contribution.project_id}`)
+    const { db } = ctx
+    
+    try {
+      // Use provided ID or generate a new one
+      const id = contribution.id || generateId()
+      
+      // Check if a contribution with this ID already exists
+      if (contribution.id) {
+        const existingContribution = await db
+          .select({ id: projectContributions.id })
+          .from(projectContributions)
+          .where(eq(projectContributions.id, contribution.id))
+          .limit(1)
+        
+        // If contribution already exists, return it without creating a duplicate
+        if (existingContribution.length > 0) {
+          logger.info(`Contribution with ID ${contribution.id} already exists, skipping creation`)
+          
+          // Fetch the existing contribution to return
+          const [existing] = await db
+            .select()
+            .from(projectContributions)
+            .where(eq(projectContributions.id, contribution.id))
+            .limit(1)
+
+          if (!existing) {
+            logger.error(`Contribution with ID ${contribution.id} not found`)
+            throw new Error(`Contribution with ID ${contribution.id} not found`)
+          }
+          
+          // Return the existing contribution formatted according to ProjectContribution type
+          return {
+            id: existing.id,
+            project_id: existing.project_id,
+            user_id: existing.user_id,
+            contribution_type: existing.contribution_type as 'funding' | 'social',
+            amount_cents: existing.amount_cents ? Number(existing.amount_cents) : undefined,
+            message: existing.message || undefined,
+            created_at: existing.created_at.toISOString(),
+            metadata: existing.metadata as Record<string, unknown> || {}
+          }
+        }
+      }
+      
+      // Create the contribution record
+      const newContribution = {
+        id,
+        ...contribution,
+        created_at: new Date(),
+        metadata: {} // Initialize with empty metadata
+      }
+      
+      // Insert into the database
+      await db.insert(projectContributions).values({
+        id: newContribution.id,
+        project_id: newContribution.project_id,
+        user_id: newContribution.user_id,
+        contribution_type: newContribution.contribution_type,
+        amount_cents: newContribution.amount_cents?.toString(), // Convert to string for DB
+        message: newContribution.message,
+        created_at: newContribution.created_at,
+        metadata: newContribution.metadata
+      })
+      
+      // Return the created contribution formatted according to ProjectContribution type
+      return {
+        id,
+        project_id: contribution.project_id,
+        user_id: contribution.user_id,
+        contribution_type: contribution.contribution_type,
+        amount_cents: contribution.amount_cents,
+        message: contribution.message,
+        created_at: newContribution.created_at.toISOString(),
+        metadata: {}
+      }
+    } catch (error) {
+      logger.error(`Error adding contribution to project ${contribution.project_id}:`, error)
+      throw error
+    }
+  }
+
   // Helper function to get all project data
   const getProjectData = async (projectId: string): Promise<ProjectData | null> => {
     logger.debug(`Getting project data for: ${projectId}`)
@@ -319,6 +488,9 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
         .where(eq(projectSuggestions.project_id, projectId))
         .orderBy(desc(projectSuggestions.created_at))
 
+      // Get contribution summary
+      const contributionSummary = await getContributionSummary(projectId)
+
       return {
         project: projectData,
         images: images.map(image => ({
@@ -351,7 +523,8 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
               lastError: null
             }
           },
-        }))
+        })),
+        contribution_summary: contributionSummary
       }
     } catch (error) {
       logger.error(`Error getting project data for ${projectId}:`, error)
@@ -526,6 +699,8 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     removeProjectSubscription,
     getActiveProjectSubscribers,
     getProjectData,
+    getContributionSummary,
+    addProjectContribution,
     notifyProjectSubscribers,
     enqueueSubscriptionCleanup,
     processCleanupQueue

@@ -4,6 +4,8 @@ import type { Project, ProjectGroup } from '@/hooks/use-tree-sockets'
 import { useUser } from '@clerk/nextjs'
 import { useRouter, usePathname } from 'next/navigation'
 import { useNavigationState } from '@/hooks/use-nav-state'
+import { UserAvatar } from '@/app/components/ui/user-avatar'
+import { Suspense } from 'react'
 
 interface ProjectInfoPanelProps {
   project?: Project
@@ -11,6 +13,16 @@ interface ProjectInfoPanelProps {
   position: { x: number; y: number }
   isVisible: boolean
   className?: string
+}
+
+// Simple avatar placeholder component
+function AvatarPlaceholder({ size = 24 }: { size?: number }) {
+  return (
+    <div 
+      className="rounded-full bg-gray-200 animate-pulse ring-3 ring-white dark:ring-zinc-800"
+      style={{ width: size, height: size }}
+    />
+  );
 }
 
 export const ProjectInfoPanel = ({ project, group, position, isVisible, className }: ProjectInfoPanelProps) => {
@@ -21,10 +33,9 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
   const isAdmin = user?.organizationMemberships?.some(
     (membership) => membership.role === "org:admin"
   )
-  const isProjectsRoute = pathname === '/projects'
+  const isProjectsRoute = pathname.includes('/projects')
   
   // Don't render the panel if not on the projects route
-  if (!isProjectsRoute) return null
 
   const formattedDate = project?._meta_created_at ? new Intl.DateTimeFormat('en-US', {
     month: 'short',
@@ -44,7 +55,7 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
       className={cn(
         "tree-info-panel frosted-glass",
         className,
-        isVisible && "visible",
+        isProjectsRoute && isVisible && "visible",
         "text-zinc-800 dark:text-zinc-50",
         (isAdmin || (project?.status === 'active')) && "cursor-pointer hover:scale-[1.02] active:scale-[0.98]",
         isNavigating && ["navigating"]
@@ -54,6 +65,7 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
         left: position.x,
         top: position.y - 8,
         transform: `translate(-50%, calc(-100% - 48px))`,
+        width: '280px', // Widening the panel
       }}
       onClick={() => {
         if (isAdmin || project?.status === 'active') {
@@ -85,36 +97,58 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
               )} />
               {capitalize(project.status)}
             </div>
-            {isAdmin && (
-              <div
-                className={cn(
-                  "text-zinc-500 dark:text-zinc-400",
-                  "w-6 h-6 flex items-center justify-center"
-                )}
-                aria-hidden="true"
-              >
-                {isNavigating ? (
-                  <i className="fa-solid fa-circle-notch fa-spin text-sm" />
-                ) : project.status === 'active' ? (
-                  <i className="fa-solid fa-chevron-right text-sm" />
-                ) : (
-                  <i className="fa-solid fa-pencil text-sm" />
-                )}
+            
+            {/* Profile picture placed inline with status pill */}
+            {project._meta_created_by && (
+              <div className="flex items-center">
+                <div className="opacity-100 bg-transparent isolate">
+                  <Suspense fallback={<AvatarPlaceholder size={24} />}>
+                    <UserAvatar 
+                      userId={project._meta_created_by} 
+                      size={24}
+                    />
+                  </Suspense>
+                </div>
               </div>
             )}
           </>
         )}
       </div>
-      <div className="tree-name">
-        {group ? (
-          [group.city, group.state].filter(Boolean).join(', ') || 'Unknown Location'
-        ) : (
-          project?.name || 'New project'
+      
+      <div className="flex items-center justify-between">
+        <div className="tree-name">
+          {group ? (
+            [group.city, group.state].filter(Boolean).join(', ') || 'Unknown Location'
+          ) : (
+            project?.name || 'New project'
+          )}
+        </div>
+        
+        {/* Chevron moved inline with title */}
+        {isAdmin && project && (
+          <div
+            className={cn(
+              "text-zinc-500 dark:text-zinc-400",
+              "w-6 h-6 flex items-center justify-center"
+            )}
+            aria-hidden="true"
+          >
+            {isNavigating ? (
+              <i className="fa-solid fa-circle-notch fa-spin text-sm" />
+            ) : project.status === 'active' ? (
+              <i className="fa-solid fa-chevron-right text-sm" />
+            ) : (
+              <i className="fa-solid fa-pencil text-sm" />
+            )}
+          </div>
         )}
       </div>
+      
       {project && (
-        <div className="project-meta">Started {formattedDate}</div>
+        <div className="project-meta mt-1">
+          Started {formattedDate}
+        </div>
       )}
     </div>
   )
-} 
+}

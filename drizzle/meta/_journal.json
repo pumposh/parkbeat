@@ -127,6 +127,13 @@
       "when": 1740443559000,
       "tag": "0017_lively_rictor",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1740475421428,
+      "tag": "0018_empty_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

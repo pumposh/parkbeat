@@ -22,6 +22,9 @@ export type ProjectCategory = z.infer<typeof projectCategorySchema>
 export const userRoleSchema = z.enum(['donor', 'fundraiser', 'both'])
 export type UserRole = z.infer<typeof userRoleSchema>
 
+export const contributionTypeSchema = z.enum(['funding', 'social'])
+export type ContributionType = z.infer<typeof contributionTypeSchema>
+
 export const costItemTypeSchema = z.enum(['material', 'labor', 'other'])
 export type CostItemType = z.infer<typeof costItemTypeSchema>
 
@@ -292,4 +295,31 @@ export const projectGroupSchema = z.object({
   city: z.string(),
   state: z.string()
 })
-export type ProjectGroup = z.infer<typeof projectGroupSchema> 
+export type ProjectGroup = z.infer<typeof projectGroupSchema>
+
+export const projectContributionSchema = z.object({
+  id: z.string(),
+  project_id: z.string(),
+  user_id: z.string(),
+  contribution_type: contributionTypeSchema,
+  amount_cents: z.number().optional(),
+  message: z.string().optional(),
+  created_at: z.string(),
+  metadata: z.record(z.unknown()).optional()
+})
+export type ProjectContribution = z.infer<typeof projectContributionSchema>
+
+export const contributorSummarySchema = z.object({
+  user_id: z.string(),
+  total_amount_cents: z.number(),
+  contribution_count: z.number()
+})
+export type ContributorSummary = z.infer<typeof contributorSummarySchema>
+
+export const contributionSummarySchema = z.object({
+  total_amount_cents: z.number(),
+  contributor_count: z.number(),
+  contributors: z.array(contributorSummarySchema),
+  recent_contributions: z.array(projectContributionSchema)
+})
+export type ContributionSummary = z.infer<typeof contributionSummarySchema> 

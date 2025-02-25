@@ -242,7 +242,7 @@ export function ProjectDetails({
       )}
 
       {/* Project Category */}
-      {(initialData.category || initialData.suggestion?.category) && (
+      {(!isReadOnly && (initialData.category || initialData.suggestion?.category)) && (
         <div className="w-full mb-6">
           <div className="w-full rounded-xl bg-gray-100/50 dark:bg-black/10 py-2 px-4 flex items-center justify-center gap-2">
             <span className="text-lg">
