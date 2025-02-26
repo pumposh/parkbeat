@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { generateId } from '@/lib/id'
 import { isNullish } from '@/lib/nullable'
+import { asyncTimeout } from '@/lib/async'
 
 // Toast notification implementation
 const toast = {
@@ -34,6 +35,16 @@ const contributionDialogStyles = `
   
   .content-transition {
     transition: height 150ms ease-in-out;
+  }
+  
+  /* Mobile positioning fixes */
+  @media (max-width: 768px) {
+    .contribution-dialog-content {
+      position: fixed;
+      top: 40% !important; /* Position higher on mobile to avoid keyboard issues */
+      max-height: 80vh;
+      transform: translate(-50%, -40%) !important;
+    }
   }
 `;
 
@@ -61,13 +72,20 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess, t
   const messageInputRef = useRef<HTMLInputElement>(null)
   const amountInputRef = useRef<HTMLInputElement>(null)
 
+  const [isDisabled, setIsDisabled] = useState(true)
+
   // Focus input after dialog opens with a delay
   useEffect(() => {
     if (open) {
+      setIsDisabled(true)
+      // Explicitly blur any focused inputs first
       amountInputRef.current?.blur()
       messageInputRef.current?.blur()
+      
       // Set a timeout to focus the input after the dialog animation completes
-      const focusTimer = setTimeout(() => {
+      const focusTimer = setTimeout(async () => {
+        setIsDisabled(false)
+        await asyncTimeout(300)
         if (showAmountInput && amountInputRef.current) {
           amountInputRef.current.focus();
         } else if (messageInputRef.current) {
@@ -208,6 +226,7 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess, t
                         <input 
                           id="message"
                           ref={messageInputRef}
+                          disabled={isDisabled}
                           type="text"
                           value={message}
                           onChange={(e) => setMessage(e.target.value)}
@@ -228,6 +247,7 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess, t
                           <input 
                             id="amount"
                             ref={amountInputRef}
+                            disabled={isDisabled}
                             type="number"
                             min="1"
                             step="0.01"

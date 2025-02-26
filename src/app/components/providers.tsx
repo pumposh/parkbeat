@@ -6,6 +6,7 @@ import { useState } from "react"
 import { ToastProvider } from "./toast"
 import { StrictMode } from "react"
 import { UserAvatarCacheProvider } from "./ui/user-avatar-context"
+import { RemoteLoggerProvider } from "@/providers/remote-logger-provider"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
@@ -25,7 +26,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         >
           <UserAvatarCacheProvider>
             <ToastProvider>
-              {children}
+              <RemoteLoggerProvider>
+                {children}
+              </RemoteLoggerProvider>
             </ToastProvider>
           </UserAvatarCacheProvider>
         </ThemeProvider>

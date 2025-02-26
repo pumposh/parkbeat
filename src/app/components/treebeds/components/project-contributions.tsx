@@ -4,10 +4,12 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useProjectData } from '@/hooks/use-tree-sockets'
 import { cn, formatDistanceToNow } from '@/lib/utils'
 import { ContributionDialog } from './contribution-dialog'
-import { ContributionType, ProjectContribution } from '@/server/types/shared'
+import { ProjectContribution } from '@/server/types/shared'
 import { UserAvatar } from '@/app/components/ui/user-avatar'
 import { UserName } from '@/app/components/ui/user-name'
 import { calculateProjectCosts } from '@/lib/cost'
+import { useAuth } from '@clerk/nextjs'
+import { useRouter } from 'next/navigation'
 
 interface ProjectContributionsProps {
   projectId: string
@@ -34,11 +36,12 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
   const { projectData } = useProjectData(projectId)
   const [dialogOpen, setDialogOpen] = useState(false)
   const contributionsEndRef = useRef<HTMLDivElement>(null)
+  const { isSignedIn } = useAuth()
+  const router = useRouter()
   
   const contributionSummary = projectData?.data?.contribution_summary
   const rawContributions = contributionSummary?.recent_contributions || []
   const totalAmount = contributionSummary?.total_amount_cents || 0
-  const contributorCount = parseInt(`${contributionSummary?.contributor_count || '0'}`)
   
   // Get project cost breakdown and calculate target amount
   const costBreakdown = projectData?.data?.project?.cost_breakdown
@@ -85,16 +88,28 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
   
   // Scroll to bottom when contributions change
   useEffect(() => {
-    if (contributionsEndRef.current) {
-      contributionsEndRef.current.scrollIntoView({ behavior: 'smooth' })
-    }
+    // Only scroll if not already in view
+    if (!contributionsEndRef.current) return;
+    // const isInView = contributionsEndRef.current.getBoundingClientRect().bottom <= window.innerHeight;
+    // if (isInView) {
+    //   contributionsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    // }
   }, [groupedContributions])
   
   const handleContributionSuccess = () => {
     // Dialog will close itself on success
   }
   
-  const isLoading = externalIsLoading !== undefined ? externalIsLoading : !projectData?.data
+  // Handle button click based on auth status
+  const handleButtonClick = () => {
+    if (isSignedIn) {
+      setDialogOpen(true)
+    } else {
+      router.push('/sign-in')
+    }
+  }
+  
+  const isLoading = true || externalIsLoading !== undefined ? externalIsLoading : !projectData?.data
   
   if (isLoading) {
     return (
@@ -121,7 +136,7 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
   
   return (
     <>
-      <div className="space-y-0 relative flex flex-col flex-grow overflow-y-auto pb-10">
+      <div className="space-y-0 relative flex flex-col flex-grow overflow-y-auto overflow-x-hidden pb-10 pl-6 pr-2">
       
       {/* Contribution Feed - with fixed height and scrolling */}
       <div className="mt-4">
@@ -164,9 +179,13 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
             : "bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 text-white",
             dialogOpen ? "opacity-0" : ""
         )}
-        onClick={() => setDialogOpen(true)}
+        onClick={handleButtonClick}
       >
-        {targetMet ? (
+        {!isSignedIn ? (
+          <>
+            <i className="fa-solid fa-user mr-2"></i> Sign up or sign in
+          </>
+        ) : targetMet ? (
           <>
             <i className="fa-solid fa-comment-dots mr-2"></i> Send a message
           </>

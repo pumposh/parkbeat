@@ -136,11 +136,11 @@ export class WebSocketManager {
   }
 
   handleEvent<T extends keyof ServerEvents>(eventName: T, _arg: ExpectedArgument<T>) {
-    console.log(`[WebSocketManager] Received ${eventName} event from server`);
-    if (eventName === 'pong') {
+    if (eventName === 'pong' || eventName === 'ping') {
       noop();
       return;
     }
+    console.log(`[WebSocketManager] Received ${eventName} event from server`);
 
     // For non-system events, process through hook system if hooks exist
     if (this.hooks?.has(eventName)) {

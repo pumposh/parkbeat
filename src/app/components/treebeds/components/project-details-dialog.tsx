@@ -5,6 +5,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { useRouter } from 'next/navigation'
 import { ProjectDetails } from './project-details'
 import { ProjectContributions } from './project-contributions'
+import { ProjectShare } from './project-share'
 import { useProjectData } from '@/hooks/use-tree-sockets'
 import type { ProjectFormData } from '../tree-dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
@@ -145,13 +146,28 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
     },
     {
       id: 'community',
-      className: 'overflow-y-hidden relative',
+      className: '',
       label: 'Community',
       icon: <i className="fa-solid fa-handshake-angle" />,
       content: (
-        <div className="p-6 pt-0 pb-6 overflow-hidden relative flex flex-col flex-grow">
+        <div className="pb-6 pt-0 relative overflow-y-hidden flex-grow flex flex-col">
+
+        {/* <div className="p-6 pt-0 pb-6 overflow-hidden relative flex flex-col flex-grow"> */}
           <ProjectContributions 
             projectId={projectId} 
+            isLoading={isLoading}
+          />
+        </div>
+      )
+    },
+    {
+      id: 'share',
+      label: 'Share',
+      icon: <i className="fa-solid fa-arrow-up-from-bracket" />,
+      content: (
+        <div className="p-6 pt-0 overflow-y-auto">
+          <ProjectShare 
+            projectId={projectId}
             isLoading={isLoading}
           />
         </div>

@@ -29,6 +29,7 @@ const clientEvents = z.object({
 
 /** Server sends to client */
 const serverEvents = z.object({
+  ping: z.undefined(),
   pong: z.function().args(z.void()).returns(z.void()),
   provideSocketId: z.string().optional(),
   ...projectServerEvents,

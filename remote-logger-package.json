@@ -1,0 +1,14 @@
+{
+  "name": "parkbeat-remote-logger",
+  "version": "1.0.0",
+  "description": "Remote logger server for Parkbeat app",
+  "main": "remote-logger-server.js",
+  "scripts": {
+    "start": "node remote-logger-server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "ws": "^8.14.2"
+  }
+} 

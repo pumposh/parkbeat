@@ -240,10 +240,15 @@
     .cl-cardBox {
         max-width: unset;
         width: unset;
+        max-height: 70dvh;
+        overflow: scroll;
     }
     .cl-cardBox, .cl-card, 
     .cl-formFieldInput, .cl-scrollBox,
     .cl-pageScrollBox {
+      @media (max-width: 768px) {
+        font-size: 16px !important; 
+      }
       color: var(--foreground);
       backdrop-filter: blur(16px) !important;
     }
