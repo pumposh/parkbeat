@@ -66,7 +66,14 @@ export const SettingsDialog = () => {
               "frosted-glass p-8 relative",
               "rounded-t-2xl md:rounded-2xl" // Only rounded at top on mobile, fully rounded on desktop
             )}>
-              <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-6">{/* Close button */}
+                <button
+                  onClick={() => setOpen(false)}
+                  className="absolute top-7 right-4 z-10 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                  aria-label="Close dialog"
+                >
+                  <i className="fa-solid fa-chevron-down text-lg"></i>
+                </button>
                 <div className="flex items-center gap-3">
                   <i className="fa-solid fa-gear text-xl text-zinc-800 dark:text-zinc-200" aria-hidden="true" />
                   <Dialog.Title className={cn(

@@ -656,4 +656,20 @@
       opacity: 0;
     }
   }
+
+  /* Scrollable content mask styles */
+  .scrollable-content-mask {
+    mask-image: linear-gradient(to bottom, transparent 0%, black 7%, black 93%, transparent 100%);
+    transition: mask-image 0.3s ease-in-out;
+  }
+
+  .scrollable-content-mask--at-top {
+    mask-image: linear-gradient(to bottom, black 0%, black 93%, transparent 100%);
+    transition: mask-image 0.3s ease-in-out;
+  }
+
+  .scrollable-content-mask--at-bottom {
+    mask-image: linear-gradient(to bottom, transparent 0%, black 7%, black 100%);
+    transition: mask-image 0.3s ease-in-out;
+  }
 }

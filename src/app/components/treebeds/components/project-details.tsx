@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils'
 import { calculateProjectCosts } from '@/lib/cost'
 import { CostEstimate } from './cost-estimate'
 import { Carousel } from '@/app/components/ui/carousel'
+import { UserAvatar } from '@/app/components/ui/user-avatar'
+import { UserName } from '@/app/components/ui/user-name'
 
 const categoryEmojis: Record<string, string> = {
   urban_greening: '🌳',
@@ -169,38 +171,38 @@ export function ProjectDetails({
         {/* Image Carousel Skeleton */}
         <div className="relative w-full mb-4">
           <div className="relative w-full pb-[100%] rounded-lg overflow-hidden">
-            <div className="absolute inset-0 bg-black/10 dark:bg-white/10 animate-pulse" />
+            <div className="absolute inset-0 bg-black/10 dark:bg-black/20 animate-pulse" />
           </div>
         </div>
 
         {/* Category Skeleton */}
         <div className="w-full pb-6">
-          <div className="w-full rounded-xl bg-black/10 dark:bg-white/10 animate-pulse h-10" />
+          <div className="w-full rounded-xl bg-black/10 dark:bg-black/20 animate-pulse h-10" />
         </div>
 
         {/* Title Skeleton */}
         <div className="pb-2">
-          <div className="h-8 w-3/4 bg-black/10 dark:bg-white/10 rounded animate-pulse" />
+          <div className="h-8 w-3/4 bg-black/10 dark:bg-black/20 rounded animate-pulse" />
         </div>
 
         {/* Description Skeleton */}
         <div className="space-y-2 pb-6">
-          <div className="h-4 w-full bg-black/10 dark:bg-white/10 rounded animate-pulse" />
-          <div className="h-4 w-5/6 bg-black/10 dark:bg-white/10 rounded animate-pulse" />
-          <div className="h-4 w-4/6 bg-black/10 dark:bg-white/10 rounded animate-pulse" />
+          <div className="h-4 w-full bg-black/10 dark:bg-black/20 rounded animate-pulse" />
+          <div className="h-4 w-5/6 bg-black/10 dark:bg-black/20 rounded animate-pulse" />
+          <div className="h-4 w-4/6 bg-black/10 dark:bg-black/20 rounded animate-pulse" />
         </div>
 
         {/* Cost Estimate Skeleton */}
         <div className="space-y-4">
           <div className="flex items-center justify-between mb-2">
-            <div className="h-5 w-24 bg-black/10 dark:bg-white/10 rounded animate-pulse" />
-            <div className="h-5 w-20 bg-black/10 dark:bg-white/10 rounded animate-pulse" />
+            <div className="h-5 w-24 bg-black/10 dark:bg-black/20 rounded animate-pulse" />
+            <div className="h-5 w-20 bg-black/10 dark:bg-black/20 rounded animate-pulse" />
           </div>
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
               <div key={i} className="flex items-center justify-between">
-                <div className="h-4 w-1/2 bg-black/10 dark:bg-white/10 rounded animate-pulse" />
-                <div className="h-4 w-16 bg-black/10 dark:bg-white/10 rounded animate-pulse" />
+                <div className="h-4 w-1/2 bg-black/10 dark:bg-black/20 rounded animate-pulse" />
+                <div className="h-4 w-16 bg-black/10 dark:bg-black/20 rounded animate-pulse" />
               </div>
             ))}
           </div>
@@ -210,7 +212,7 @@ export function ProjectDetails({
   }
 
   return (
-    <div className="space-y-0 pt-5">
+    <div className="space-y-2 pt-5">
       {/* Project Images */}
       {images.length > 0 && (
         <div className="relative w-full mb-4">
@@ -255,11 +257,25 @@ export function ProjectDetails({
         </div>
       )}
 
+      {/* Started by - only shown in read-only mode */}
+      {isReadOnly && initialData._meta_created_by && (
+        <div className="mb-4">
+          <div className="w-full flex items-center justify-between pl-4 py-2 rounded-full bg-gray-100/80 dark:bg-black/20">
+            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Started by</span>
+            <div className="flex items-center gap-2">
+              <UserName userId={initialData._meta_created_by} className="text-sm font-medium" />
+              <UserAvatar userId={initialData._meta_created_by} size={24} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Project Title */}
-      <div className={cn(
-        !isReadOnly && "mb-0"
-      )}>
-        {editingField === 'name' ? (
+      {!isReadOnly ? (
+        <div className={cn(
+          !isReadOnly && "mb-0"
+        )}>
+          {editingField === 'name' ? (
           <div className="relative">
             <input
               type="text"
@@ -289,6 +305,7 @@ export function ProjectDetails({
           </div>
         )}
       </div>
+    ) : null}
 
       {/* Project Description */}
       <div className={cn(

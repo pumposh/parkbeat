@@ -63,7 +63,7 @@ export function UserName({ userId, className, fallback = 'Contributor' }: UserNa
   // Show placeholder during loading or error
   if (loading) {
     return (
-      <span className={cn("inline-block bg-gray-200 animate-pulse rounded h-4 w-24", className)} />
+      <span className={cn("inline-block bg-gray-200 dark:bg-black/20 animate-pulse rounded h-4 w-24", className)} />
     );
   }
 

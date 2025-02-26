@@ -604,23 +604,23 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
 
   return (
     <div className="flex flex-col items-center">
-      <div 
-        ref={containerRef}
-        className={cn(
-          "relative flex items-center justify-center rounded-lg shadow-md transition-opacity duration-300",
-          !isLoaded && "opacity-0",
-          isLoaded && "opacity-100",
-          className
-        )}
-        style={{ width: size, height: size, backgroundColor }}
-      >
-        <svg 
-          ref={svgRef}
-          width={size} 
-          height={size}
-          viewBox={`0 0 ${size} ${size}`}
-          xmlns="http://www.w3.org/2000/svg"
-        />
+    <div 
+      ref={containerRef}
+      className={cn(
+        "relative flex items-center justify-center rounded-lg shadow-md transition-opacity duration-300",
+        !isLoaded && "opacity-0",
+        isLoaded && "opacity-100",
+        className
+      )}
+      style={{ width: size, height: size, backgroundColor }}
+    >
+      <svg 
+        ref={svgRef}
+        width={size} 
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        xmlns="http://www.w3.org/2000/svg"
+      />
       </div>
       
       {showButtons && isLoaded && (

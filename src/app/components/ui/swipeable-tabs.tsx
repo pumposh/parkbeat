@@ -9,6 +9,8 @@ interface Tab {
   content: ReactNode
   icon?: string | ReactNode
   className?: string
+  footerExtension?: ReactNode
+  footerExtensionClassName?: string
 }
 
 interface SwipeableTabsProps {
@@ -34,12 +36,15 @@ export function SwipeableTabs({
 }: SwipeableTabsProps) {
   const [activeTabIndex, _setActiveTabIndex] = useState(defaultTabIndex)
   const [isScrolling, setIsScrolling] = useState(false)
-  const [contentHeight, setContentHeight] = useState<number | null>(null)
+  const [contentHeightByTab, setContentHeightByTab] = useState<Record<number, number | null>>({})
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const tabsContainerRef = useRef<HTMLDivElement>(null)
   const tabContentRefs = useRef<(HTMLDivElement | null)[]>(tabs.map(() => null))
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
+  const [scrollPositionByTab, setScrollPositionByTab] = useState<Record<number, 'middle' | 'top' | 'bottom'>>({})
+  const [hasScrollableContentByTab, setHasScrollableContentByTab] = useState<Record<number, boolean>>({})
+  const [displayFooter, setDisplayFooter] = useState(false)
 
   const [hasRendered, setHasRendered] = useState<boolean[]>(tabs.map((_, index) => index === defaultTabIndex))
   const setActiveTabIndex = (index: number) => {
@@ -62,8 +67,34 @@ export function SwipeableTabs({
       if (contentElement) {
         // Use scrollHeight to get the full height including overflow
         const height = contentElement.scrollHeight;
-        setContentHeight(height);
+        setContentHeightByTab(prev => ({ ...prev, [targetIndex ?? activeTabIndex]: height }))
+        
+        // Check if content is scrollable
+        const isScrollable = contentElement.scrollHeight > contentElement.clientHeight;
+        setHasScrollableContentByTab(prev => ({ ...prev, [targetIndex ?? activeTabIndex]: isScrollable }))
+        
+        // If content just became scrollable, check initial scroll position
+        if (isScrollable && !hasScrollableContentByTab[targetIndex ?? activeTabIndex]) {
+          checkScrollPosition(contentElement);
+        }
       }
+    }
+  };
+
+  // Check scroll position to apply appropriate mask
+  const checkScrollPosition = (element: HTMLElement) => {
+    if (!element) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = element;
+    const isAtTop = scrollTop <= 10;
+    const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10;
+    
+    if (isAtTop) {
+      setScrollPositionByTab(prev => ({ ...prev, [activeTabIndex]: 'top' }))
+    } else if (isAtBottom) {
+      setScrollPositionByTab(prev => ({ ...prev, [activeTabIndex]: 'bottom' }))
+    } else {
+      setScrollPositionByTab(prev => ({ ...prev, [activeTabIndex]: 'middle' }))
     }
   };
 
@@ -80,7 +111,7 @@ export function SwipeableTabs({
     setTimeout(() => {
       setActiveTabIndex(index)
       onChange?.(index)
-    }, 300)
+    }, 1000)
   }
   
   // Handle scroll events to update active tab based on scroll position
@@ -117,6 +148,12 @@ export function SwipeableTabs({
     }
   }
   
+  // Handle vertical scroll in tab content
+  const handleContentScroll = (e: React.UIEvent<HTMLElement>) => {
+    const target = e.currentTarget;
+    checkScrollPosition(target);
+  };
+  
   // Scroll to active tab on mount or when active tab changes
   useEffect(() => {
     // Only scroll programmatically if we're not in the middle of a user-initiated scroll
@@ -130,7 +167,26 @@ export function SwipeableTabs({
     
     // Update content height when active tab changes
     updateContentHeight();
+    
+    // Reset scroll position state when tab changes
+    setScrollPositionByTab(prev => ({ ...prev, [activeTabIndex]: 'middle' }))
   }, [activeTabIndex, isScrolling, adaptiveHeight]);
+
+  const [footerExtension, setFooterExtension] = useState<ReactNode | null>(null)
+
+  useEffect(() => {
+    if (tabs[activeTabIndex]?.footerExtension) {
+      setFooterExtension(tabs[activeTabIndex].footerExtension)
+      setTimeout(() => {
+        setDisplayFooter(true)
+      }, 300)
+    } else {
+      setDisplayFooter(false)
+      setTimeout(() => {
+        setFooterExtension(null)
+      }, 300)
+    }
+  }, [activeTabIndex])
   
   // Set up resize observer to update content height when content changes
   useEffect(() => {
@@ -152,6 +208,16 @@ export function SwipeableTabs({
       const contentElement = activeTabContent.firstElementChild as HTMLElement;
       if (contentElement) {
         resizeObserverRef.current.observe(contentElement);
+        
+        // Check initial scroll position
+        checkScrollPosition(contentElement);
+        
+        // Add scroll event listener to content element
+        contentElement.addEventListener('scroll', (e) => handleContentScroll(e as unknown as React.UIEvent<HTMLElement>));
+        
+        return () => {
+          contentElement.removeEventListener('scroll', (e) => handleContentScroll(e as unknown as React.UIEvent<HTMLElement>));
+        };
       }
     }
     
@@ -199,7 +265,7 @@ export function SwipeableTabs({
   };
   
   return (
-    <div className={cn("flex flex-col overflow-hidden", className)}>
+    <div className={cn("flex flex-col overflow-hidden relative", className)}>
       {/* Tab headers - conditionally rendered at top */}
       {tabPosition === 'top' && (
         <div className="relative">
@@ -216,15 +282,15 @@ export function SwipeableTabs({
       <div 
         ref={scrollContainerRef}
         className={cn(
-          "flex overflow-x-auto snap-x snap-mandatory scrollbar-hide overflow-y-auto flex-grow",
+          "flex overflow-x-auto snap-x snap-mandatory scrollbar-hide overflow-y-hidden flex-grow",
           contentClassName,
-          contentHeight && contentHeight > (scrollContainerRef.current?.clientHeight ?? 0) ? 'overflow-y-auto' : 'overflow-y-hidden',
+          contentHeightByTab[activeTabIndex] && contentHeightByTab[activeTabIndex] > (scrollContainerRef.current?.clientHeight ?? 0) ? 'overflow-y-auto' : 'overflow-y-hidden',
           !isScrolling && !!tabs[activeTabIndex]?.className ? tabs[activeTabIndex]?.className : ''
         )}
         style={{ 
           scrollbarWidth: 'none', 
           msOverflowStyle: 'none',
-          height: adaptiveHeight && contentHeight ? `${contentHeight}px` : undefined,
+          height: adaptiveHeight && contentHeightByTab[activeTabIndex] ? `${contentHeightByTab[activeTabIndex]}px` : undefined,
           transition: 'height 0.3s ease',
           scrollBehavior: 'smooth',
         }}
@@ -236,16 +302,37 @@ export function SwipeableTabs({
             ref={(el) => {
               tabContentRefs.current[index] = el;
             }}
-            className="min-w-full w-full snap-center flex flex-col flex-grow animate-fadeIn"
+            className="min-w-full w-full snap-center flex flex-col flex-grow animate-fadeIn overflow-hidden"
           >
-            {index === activeTabIndex || hasRendered[index] ? tab.content : null}
+            <div 
+              className={cn(
+                'overflow-y-auto scrollbar-hide',
+                hasScrollableContentByTab[index] && 'scrollable-content-mask',
+                hasScrollableContentByTab[index] && scrollPositionByTab[index] === 'top' && 'scrollable-content-mask--at-top',
+                hasScrollableContentByTab[index] && scrollPositionByTab[index] === 'bottom' && 'scrollable-content-mask--at-bottom'
+              )}
+              onScroll={handleContentScroll}
+            >
+              {index === activeTabIndex || hasRendered[index] ? tab.content : null}
+            </div>
           </div>
         ))}
       </div>
       
       {/* Tab headers - conditionally rendered at bottom */}
       {tabPosition === 'bottom' && (
-        <div className="relative mt-auto">
+        <div className="relative mt-auto max-w-full">
+          {footerExtension && (
+            <div className={cn(
+              "absolute transition-all w-[calc(100%-1.5rem)] duration-300 rounded-2xl mx-3 mb-2 py-1 flex items-center justify-around shadow-sm",
+              displayFooter
+                ? 'bottom-[calc(100%)] blur-none opacity-100'
+                : 'bottom-0 blur-md opacity-0',
+              tabs[activeTabIndex]?.footerExtensionClassName
+            )}>
+              {footerExtension}
+            </div>
+          )}
           <div 
             ref={tabsContainerRef}
             className="frosted-glass rounded-2xl mx-3 mb-1 px-3 py-1 flex items-center justify-around shadow-sm"

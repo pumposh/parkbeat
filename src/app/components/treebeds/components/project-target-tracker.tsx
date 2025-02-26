@@ -15,7 +15,7 @@ export function ProjectTargetTracker({
   className 
 }: ProjectTargetTrackerProps) {
   // Calculate percentage with a maximum of 100%
-  const percentage = Math.min(100, Math.round((currentAmount / targetAmount) * 100)) || 0
+  const percentage = Math.round((currentAmount / targetAmount) * 100) || 0
   
   // Determine color based on percentage
   const getColorClass = () => {

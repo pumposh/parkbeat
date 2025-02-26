@@ -306,13 +306,13 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
         .groupBy(projectContributions.user_id)
         .orderBy(desc(sql<number>`COALESCE(SUM(${projectContributions.amount_cents}), 0)`))
 
-      // Get recent contributions (last 10)
+      // Get recent contributions (last 50)
       const recentContributions = await db
         .select()
         .from(projectContributions)
         .where(eq(projectContributions.project_id, projectId))
         .orderBy(desc(projectContributions.created_at))
-        .limit(10)
+        .limit(50)
 
       return {
         total_amount_cents: total.total_amount_cents,

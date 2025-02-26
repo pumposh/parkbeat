@@ -86,15 +86,30 @@ export function ProjectShare({ projectId, isLoading = false }: ProjectShareProps
             </button>
             <button 
               onClick={() => {
-                const shareUrl = projectUrl;
-                const quote = 'Check out this community project!';
-                const url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(quote)}`;
-                window.open(url, '_blank');
+                // Instagram doesn't support direct URL parameters for sharing
+                // Copy the text and URL to clipboard first, then redirect to Instagram
+                const shareText = 'Check out this community project!';
+                const fullText = `${shareText} ${projectUrl}`;
+                
+                // Copy to clipboard
+                navigator.clipboard.writeText(fullText)
+                  .then(() => {
+                    // Show a brief notification that content was copied (could use a toast here)
+                    console.log('Content copied to clipboard');
+                    
+                    // Open Instagram - this will open the app on mobile or the website on desktop
+                    window.open('https://www.instagram.com/', '_blank');
+                  })
+                  .catch(err => {
+                    console.error('Failed to copy: ', err);
+                    // Fallback - just open Instagram
+                    window.open('https://www.instagram.com/', '_blank');
+                  });
               }}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1877F2]/10 text-[#1877F2] hover:bg-[#1877F2]/20 transition-colors"
-              aria-label="Share on Facebook"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#E1306C]/10 text-[#E1306C] hover:bg-[#E1306C]/20 transition-colors"
+              aria-label="Share on Instagram"
             >
-              <i className="fa-brands fa-facebook text-lg"></i>
+              <i className="fa-brands fa-instagram text-lg"></i>
             </button>
             <button 
               onClick={() => {

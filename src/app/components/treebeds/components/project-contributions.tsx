@@ -34,28 +34,20 @@ function isProjectTargetMet(currentAmount: number, targetAmount: number): boolea
 
 export function ProjectContributions({ projectId, isLoading: externalIsLoading }: ProjectContributionsProps) {
   const { projectData } = useProjectData(projectId)
-  const [dialogOpen, setDialogOpen] = useState(false)
   const contributionsEndRef = useRef<HTMLDivElement>(null)
-  const { isSignedIn } = useAuth()
-  const router = useRouter()
-  
   const contributionSummary = projectData?.data?.contribution_summary
   const rawContributions = contributionSummary?.recent_contributions || []
-  const totalAmount = contributionSummary?.total_amount_cents || 0
   
   // Get project cost breakdown and calculate target amount
   const costBreakdown = projectData?.data?.project?.cost_breakdown
   const costs = costBreakdown ? calculateProjectCosts(costBreakdown) : null
   const targetAmount = costs?.total || 0
   
-  // Check if target has been met
-  const targetMet = isProjectTargetMet(totalAmount / 100, targetAmount)
-  
   // Group contributions by sender and recency
   const groupedContributions = useMemo(() => {
-    // Sort contributions by date (oldest first)
+    // Sort contributions by date (newest first instead of oldest first)
     const sortedContributions = [...rawContributions].sort((a, b) => 
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
     
     const groups: GroupedContribution[] = [];
@@ -86,46 +78,28 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
     return groups;
   }, [rawContributions]);
   
-  // Scroll to bottom when contributions change
+  // Scroll to top when new contributions arrive
   useEffect(() => {
-    // Only scroll if not already in view
+    // Only scroll if the ref exists
     if (!contributionsEndRef.current) return;
-    // const isInView = contributionsEndRef.current.getBoundingClientRect().bottom <= window.innerHeight;
-    // if (isInView) {
-    //   contributionsEndRef.current.scrollIntoView({ behavior: 'smooth' })
-    // }
-  }, [groupedContributions])
+    
+    // Scroll to the top since we're displaying newest messages at the bottom
+    contributionsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [groupedContributions]);
   
-  const handleContributionSuccess = () => {
-    // Dialog will close itself on success
-  }
-  
-  // Handle button click based on auth status
-  const handleButtonClick = () => {
-    if (isSignedIn) {
-      setDialogOpen(true)
-    } else {
-      router.push('/sign-in')
-    }
-  }
-  
-  const isLoading = true || externalIsLoading !== undefined ? externalIsLoading : !projectData?.data
+  const isLoading = externalIsLoading !== undefined ? externalIsLoading : !projectData?.data
   
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <div className="animate-pulse bg-gray-200/50 dark:bg-gray-700/50 h-6 w-1/2 rounded"></div>
-          <div className="animate-pulse bg-gray-200/50 dark:bg-gray-700/50 h-10 w-32 rounded"></div>
-        </div>
-        <div className="space-y-4">
+      <div className="space-y-4 px-6 pt-6">
+        <div className="space-y-8">
           {[1, 2, 3].map((i) => (
             <div key={i} className="animate-pulse flex items-start gap-4">
-              <div className="bg-gray-200 h-10 w-10 rounded-full"></div>
+              <div className="bg-gray-200 dark:bg-black/20 h-10 w-10 rounded-full"></div>
               <div className="flex-1 space-y-2">
-                <div className="bg-gray-200 h-4 w-1/4 rounded"></div>
-                <div className="bg-gray-200 h-3 w-3/4 rounded"></div>
-                <div className="bg-gray-200 h-3 w-1/2 rounded"></div>
+                <div className="bg-gray-200 dark:bg-black/20 h-4 w-1/4 rounded"></div>
+                <div className="bg-gray-200 dark:bg-black/20 h-3 w-3/4 rounded"></div>
+                <div className="bg-gray-200 dark:bg-black/20 h-3 w-1/2 rounded"></div>
               </div>
             </div>
           ))}
@@ -134,22 +108,18 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
     )
   }
   
-  return (
-    <>
-      <div className="space-y-0 relative flex flex-col flex-grow overflow-y-auto overflow-x-hidden pb-10 pl-6 pr-2">
-      
-      {/* Contribution Feed - with fixed height and scrolling */}
+    return (
       <div className="mt-4">
         {groupedContributions.length > 0 ? (
-          <div className="space-y-2 overflow-y-auto pr-2">
+          <div className="space-y-2 flex flex-col-reverse pt-2 pl-6 pr-4 pb-16">
+            {/* Invisible element to scroll to (now at the top since we reversed the order) */}
+            <div ref={contributionsEndRef} />
             {groupedContributions.map((group, index) => (
               <ContributionGroup 
                 key={`${group.userId}-${group.timestamp}`} 
                 group={group} 
               />
             ))}
-            {/* Invisible element to scroll to */}
-            <div ref={contributionsEndRef} />
           </div>
         ) : (
           <div className="text-center py-8 border border-dashed dark:border-gray-500 rounded-lg">
@@ -161,7 +131,43 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
           </div>
         )}
       </div>
-      {/* Contribution Dialog */}
+  )
+}
+
+export function ProjectContributionsDialog({ projectId }: { projectId: string }) {
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const { isSignedIn } = useAuth()
+  const router = useRouter()
+  const { projectData } = useProjectData(projectId)
+
+  const handleContributionSuccess = () => {
+    // Dialog will close itself on success
+  } 
+  const contributionSummary = projectData?.data?.contribution_summary
+
+  const totalAmount = contributionSummary?.total_amount_cents || 0
+  
+  // Get project cost breakdown and calculate target amount
+  const costBreakdown = projectData?.data?.project?.cost_breakdown
+  
+  const costs = costBreakdown ? calculateProjectCosts(costBreakdown) : null
+
+  const targetAmount = costs?.total || 0
+
+  // Check if target has been met
+  const targetMet = isProjectTargetMet(totalAmount / 100, targetAmount)
+  
+  // Handle button click based on auth status
+  const handleButtonClick = () => {
+    if (isSignedIn) {
+      setDialogOpen(true)
+    } else {
+      router.push('/sign-in')
+    }
+  }
+
+  return (
+    <>
       <ContributionDialog 
         projectId={projectId}
         open={dialogOpen}
@@ -169,11 +175,9 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
         onSuccess={handleContributionSuccess}
         targetMet={targetMet}
       />
-
-    </div>
       <button 
         className={cn(
-          "absolute bottom-3 left-3 right-3 inline-flex items-center justify-center rounded-2xl text-sm font-medium transition-all h-12 px-6",
+          "bottom-3 w-full inline-flex items-center justify-center rounded-2xl text-sm font-medium transition-all h-12 px-6",
           targetMet 
             ? "frosted-glass text-gray-800 dark:text-white border border-white/20 shadow-sm" 
             : "bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 text-white",
@@ -201,7 +205,13 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
 
 function ContributionGroup({ group }: { group: GroupedContribution }) {
   const { userId, contributions } = group;
-  const latestDate = new Date(contributions[contributions.length - 1]?.created_at || '');
+  
+  // Sort contributions within the group by date (newest first)
+  const sortedContributions = [...contributions].sort((a, b) => 
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  
+  const latestDate = new Date(sortedContributions[0]?.created_at || '');
   const [formattedDate, setFormattedDate] = useState(formatDistanceToNow(latestDate, { addSuffix: true }));
   
   // Update the time display every minute
@@ -232,7 +242,7 @@ function ContributionGroup({ group }: { group: GroupedContribution }) {
             <UserName userId={userId} className="mr-2" />
             {totalFinancial > 0 && (
               <span className="ml-0 text-xs px-0 py-0.5 rounded-full bg-primary/10 text-primary">
-                <i className="fa-solid fa-hand-holding-dollar mr-1 opacity-50"></i>
+                <i className="fa-solid fa-money-bill-trend-up mr-1 opacity-50"></i>
               </span>
             )}
             {contributions.some(c => c.contribution_type === 'social') && (
@@ -247,7 +257,7 @@ function ContributionGroup({ group }: { group: GroupedContribution }) {
         </div>
         
         <div className="space-y-2 mt-2">
-          {contributions.map((contribution) => (
+          {sortedContributions.map((contribution) => (
             <div key={contribution.id} className="text-sm text-foreground">
               {contribution.message && (
                 <p className="text-foreground">{contribution.message}</p>

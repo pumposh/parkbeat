@@ -32,6 +32,7 @@ export interface ProjectFormData {
   suggestion?: ProjectSuggestion
   category?: string
   cost_breakdown?: ProjectCostBreakdown
+  _meta_created_by?: string
 }
 
 export function TreeDialog(props: {

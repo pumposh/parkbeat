@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useRouter } from 'next/navigation'
 import { ProjectDetails } from './project-details'
-import { ProjectContributions } from './project-contributions'
+import { ProjectContributions, ProjectContributionsDialog } from './project-contributions'
 import { ProjectShare } from './project-share'
 import { useProjectData } from '@/hooks/use-tree-sockets'
 import type { ProjectFormData } from '../tree-dialog'
@@ -51,7 +51,8 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
         },
         category: category,
         cost_breakdown: projectData.data.project.cost_breakdown,
-        suggestion: suggestion
+        suggestion: suggestion,
+        _meta_created_by: projectData.data.project._meta_created_by
       })
     }
   }, [projectData])
@@ -146,13 +147,12 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
     },
     {
       id: 'community',
-      className: '',
+      className: 'reverse-order',
       label: 'Community',
       icon: <i className="fa-solid fa-handshake-angle" />,
+      footerExtension: <ProjectContributionsDialog projectId={projectId} />,
       content: (
-        <div className="pb-6 pt-0 relative overflow-y-hidden flex-grow flex flex-col">
-
-        {/* <div className="p-6 pt-0 pb-6 overflow-hidden relative flex flex-col flex-grow"> */}
+        <div className="pb-6 pt-0 relative overflow-y-auto flex-grow flex flex-col">
           <ProjectContributions 
             projectId={projectId} 
             isLoading={isLoading}
