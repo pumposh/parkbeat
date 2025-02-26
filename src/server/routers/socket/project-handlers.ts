@@ -2,8 +2,8 @@ import { logger } from "@/lib/logger";
 import { z } from "zod";
 import { Env, publicProcedure } from "@/server/jstack";
 import { getTreeHelpers } from "../tree-helpers/context";
-import { desc, eq, InferInsertModel, like } from "drizzle-orm";
-import { projects } from "@/server/db/schema";
+import { desc, eq, InferInsertModel, like, sql, and } from "drizzle-orm";
+import { projects, projectContributions } from "@/server/db/schema";
 import geohash from 'ngeohash'
 import { type ProjectStatus, type BaseProject, type ProjectData, projectSuggestionSchema, projectSchema, baseProjectSchema } from "../../types/shared";
 import { Procedure } from "jstack";
@@ -223,8 +223,8 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
           .where(like(projects._loc_geohash, `${geohash}%`))
           .orderBy(desc(projects._loc_geohash))
 
-        const individualProjects = nearbyProjects
-          .map(project => ({
+        const individualProjects = await Promise.all(nearbyProjects
+          .map(async project => ({
             id: project.id,
             name: project.name,
             status: project.status as ProjectStatus,
@@ -233,8 +233,12 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
             _meta_created_by: project._meta_created_by,
             _meta_updated_by: project._meta_updated_by,
             _meta_updated_at: project._meta_updated_at.toISOString(),
-            _meta_created_at: project._meta_created_at.toISOString()
-          }))
+            _meta_created_at: project._meta_created_at.toISOString(),
+            // Include cost breakdown for funding progress display
+            cost_breakdown: project.cost_breakdown,
+            // Include a simplified contribution summary for map markers
+            contribution_summary: project.id ? await getContributionSummary(project.id, db) : undefined
+          })))
 
         if (individualProjects.length > 0) {
           // Convert dates to proper format for emission
@@ -437,7 +441,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     
     try {
       // Add the contribution to the database
-      const newContribution = await addProjectContribution({
+      const result = await addProjectContribution({
         project_id: contribution.project_id,
         user_id: contribution.user_id,
         contribution_type: contribution.contribution_type,
@@ -447,14 +451,75 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
       })
       
       // Notify all subscribers about the updated project data
-      await notifyProjectSubscribers(contribution.project_id, getSocketId(socket), io)
+      // If the status changed, pass null as socketId to ensure all subscribers are notified
+      // Otherwise, just pass the current socket ID
+      const notifySocketId = result.statusChanged ? null : getSocketId(socket)
+      await notifyProjectSubscribers(contribution.project_id, notifySocketId, io)
       
-      logger.info(`Successfully added contribution to project ${contribution.project_id}`)
+      if (result.statusChanged) {
+        logger.info(`Project ${contribution.project_id} status changed to 'funded'. All subscribers notified.`)
+      } else {
+        logger.info(`Successfully added contribution to project ${contribution.project_id}`)
+      }
       
-      return newContribution
+      return result.contribution
     } catch (error) {
       logger.error('Error processing contribution:', error)
       throw error
     }
   })
+}
+
+async function getContributionSummary(projectId: string, db: any) {
+  try {
+    // Use Drizzle to get the total contributions for this project
+    const contributionResult = await db
+      .select({
+        total_amount_cents: sql`COALESCE(SUM(${projectContributions.amount_cents}), 0)`.as('total_amount_cents'),
+        contributor_count: sql`COUNT(DISTINCT ${projectContributions.user_id})`.as('contributor_count')
+      })
+      .from(projectContributions)
+      .where(
+        and(
+          eq(projectContributions.project_id, projectId),
+          eq(projectContributions.contribution_type, 'funding')
+        )
+      );
+    
+    // Get the top two contributors by total contribution amount
+    const topContributors = await db
+      .select({
+        user_id: projectContributions.user_id,
+        total_contribution: sql`SUM(${projectContributions.amount_cents})`.as('total_contribution')
+      })
+      .from(projectContributions)
+      .where(
+        and(
+          eq(projectContributions.project_id, projectId),
+          eq(projectContributions.contribution_type, 'funding')
+        )
+      )
+      .groupBy(projectContributions.user_id)
+      .orderBy(sql`total_contribution DESC`)
+      .limit(2);
+    
+    // Extract the result (should be a single row)
+    const summary = contributionResult[0] || { total_amount_cents: 0, contributor_count: 0 };
+    
+    return {
+      total_amount_cents: Number(summary.total_amount_cents) || 0,
+      contributor_count: Number(summary.contributor_count) || 0,
+      top_contributors: topContributors.map((contributor: { user_id: string; total_contribution: string }) => ({
+        user_id: contributor.user_id,
+        amount_cents: Number(contributor.total_contribution) || 0
+      }))
+    };
+  } catch (error) {
+    logger.error('Error getting contribution summary:', error);
+    return {
+      total_amount_cents: 0,
+      contributor_count: 0,
+      top_contributors: []
+    };
+  }
 }

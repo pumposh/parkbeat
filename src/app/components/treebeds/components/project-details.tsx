@@ -260,7 +260,7 @@ export function ProjectDetails({
       {/* Started by - only shown in read-only mode */}
       {isReadOnly && initialData._meta_created_by && (
         <div className="mb-4">
-          <div className="w-full flex items-center justify-between pl-4 py-2 rounded-full bg-gray-100/80 dark:bg-black/20">
+          <div className="w-full flex items-center justify-between pl-4 pr-[0.4rem] py-2 rounded-full bg-gray-100/80 dark:bg-black/20">
             <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Started by</span>
             <div className="flex items-center gap-2">
               <UserName userId={initialData._meta_created_by} className="text-sm font-medium" />

@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { useNavigationState } from '@/hooks/use-nav-state'
 import { UserAvatar } from '@/app/components/ui/user-avatar'
 import { Suspense } from 'react'
+import { calculateProjectCosts, formatCurrency } from '@/lib/cost'
 
 interface ProjectInfoPanelProps {
   project?: Project
@@ -25,6 +26,29 @@ function AvatarPlaceholder({ size = 24 }: { size?: number }) {
   );
 }
 
+// Mini progress bar component for the info panel
+function MiniProgressBar({ percentage }: { percentage: number }) {
+  // Determine color based on percentage
+  const getColorClass = () => {
+    if (percentage < 25) return 'bg-gray-500'
+    if (percentage < 50) return 'bg-orange-800'
+    if (percentage < 75) return 'bg-orange-500'
+    if (percentage < 100) return 'bg-yellow-500'
+    return 'bg-green-500'
+  }
+  
+  return (
+    <div className="w-full mt-1">
+      <div className="h-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        <div 
+          className={cn("h-full transition-all duration-500 ease-in-out", getColorClass())}
+          style={{ width: `${Math.min(percentage, 100)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export const ProjectInfoPanel = ({ project, group, position, isVisible, className }: ProjectInfoPanelProps) => {
   const router = useRouter()
   const pathname = usePathname()
@@ -35,7 +59,19 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
   )
   const isProjectsRoute = pathname.includes('/projects')
   
-  // Don't render the panel if not on the projects route
+  // Calculate funding progress if project has cost breakdown and contributions
+  const fundingData = project?.cost_breakdown && project?.contribution_summary ? (() => {
+    const costs = calculateProjectCosts(project.cost_breakdown);
+    const totalAmount = project.contribution_summary.total_amount_cents / 100;
+    const percentage = (costs?.total ?? 0) > 0 ? Math.round((totalAmount / (costs?.total ?? 0)) * 100) : 0;
+    return {
+      currentAmount: totalAmount,
+      targetAmount: costs?.total ?? 0,
+      percentage,
+      contributorCount: project.contribution_summary.contributor_count,
+      topContributors: project.contribution_summary.top_contributors || []
+    };
+  })() : null;
 
   const formattedDate = project?._meta_created_at ? new Intl.DateTimeFormat('en-US', {
     month: 'short',
@@ -81,21 +117,30 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
           </div>
         ) : project && (
           <>
-            <div className={cn(
-              "tree-status",
-              project.status
-            )}>
-              <i className={cn(
-                "fa-solid",
-                {
-                  'fa-seedling': project.status === 'draft',
-                  'fa-tree': project.status === 'active',
-                  'fa-archive': project.status === 'archived',
-                  'fa-coins': project.status === 'funded',
-                  'fa-check-circle': project.status === 'completed'
-                }
-              )} />
-              {capitalize(project.status)}
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                "tree-status",
+                project.status
+              )}>
+                <i className={cn(
+                  "fa-solid",
+                  {
+                    'fa-seedling': project.status === 'draft',
+                    'fa-money-bills': project.status === 'active',
+                    'fa-tree': project.status === 'funded',
+                    'fa-archive': project.status === 'archived',
+                    'fa-check-circle': project.status === 'completed'
+                  }
+                )} />
+                {capitalize(project.status)}
+              </div>
+              
+              {formattedDate && (
+                <div className="tree-status bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 text-xs">
+                  <i className="fa-solid fa-calendar-days" />
+                  {formattedDate}
+                </div>
+              )}
             </div>
             
             {/* Profile picture placed inline with status pill */}
@@ -144,9 +189,71 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
         )}
       </div>
       
-      {project && (
-        <div className="project-meta mt-1">
-          Started {formattedDate}
+      {/* Funding progress for active projects */}
+      {project?.status !== 'draft' && fundingData && (
+        <div className="mt-2 text-xs">
+          <div className="flex justify-between items-center">
+            <span className="font-medium text-foreground">
+              {fundingData.percentage >= 100 
+                ? (fundingData.percentage <= 105 
+                  ? <span className="text-green-600 dark:text-green-400">Funded<i className="fa-solid ml-1 fa-check-circle"></i></span>
+                  : <span className="text-amber-600 dark:text-amber-400">{formatCurrency(fundingData.currentAmount - fundingData.targetAmount)} extra <i className="fa-solid fa-fire"></i></span>
+                )
+                : <>{formatCurrency(fundingData.targetAmount - fundingData.currentAmount)} to go!</>
+              }
+            </span>
+            <span className="text-muted-foreground">
+              {fundingData.percentage}% of {formatCurrency(fundingData.targetAmount)}
+            </span>
+          </div>
+          <MiniProgressBar percentage={fundingData.percentage} />
+          <div className="mt-3 text-muted-foreground flex items-center justify-between">
+            <div className="flex items-center justify-center h-full">
+              <i className="fa-solid fa-users text-xs mr-1 opacity-70"></i>
+              <span>{fundingData.contributorCount} supporter{fundingData.contributorCount !== 1 ? 's' : ''}</span>
+            </div>
+            
+            {/* Top contributors */}
+            {fundingData.topContributors.length > 0 && (
+              <div className="flex items-center space-x-[-3px]">
+                {fundingData.topContributors.map((contributor, index) => (
+                  <div 
+                    key={contributor.user_id} 
+                    className="relative group" 
+                    style={{ zIndex: 10 - index }}
+                    title={`${formatCurrency(contributor.amount_cents / 100)} contributed`}
+                  >
+                    <Suspense fallback={<AvatarPlaceholder size={18} />}>
+                      <UserAvatar 
+                        userId={contributor.user_id} 
+                        size={18}
+                        className="ring-1 ring-white dark:ring-gray-800"
+                      />
+                    </Suspense>
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 px-2 py-1 bg-black/80 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                      {formatCurrency(contributor.amount_cents / 100)}
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Show additional contributors count if there are more than shown */}
+                {fundingData.contributorCount > fundingData.topContributors.length && (
+                  <div 
+                    className="relative group"
+                    style={{ zIndex: 10 - fundingData.topContributors.length }}
+                    title={`${fundingData.contributorCount - fundingData.topContributors.length} more contributors`}
+                  >
+                    <div className="flex items-center justify-center w-[22px] h-[22px] rounded-full bg-gray-200 dark:bg-gray-700 text-[10px] font-medium text-gray-700 dark:text-gray-300 ring-1 ring-white dark:ring-gray-800 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">
+                      +{fundingData.contributorCount - fundingData.topContributors.length}
+                    </div>
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 px-2 py-1 bg-black/80 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
+                      {fundingData.contributorCount - fundingData.topContributors.length} more contributor{fundingData.contributorCount - fundingData.topContributors.length !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -16,6 +16,14 @@ export type ProjectPayload = BaseProject
 export type Project = Omit<BaseProject, '_meta_updated_at' | '_meta_created_at'> & {
   _meta_updated_at: Date
   _meta_created_at: Date
+  contribution_summary?: {
+    total_amount_cents: number
+    contributor_count: number
+    top_contributors?: Array<{
+      user_id: string
+      amount_cents: number
+    }>
+  }
 }
 
 export type ProjectGroup = {

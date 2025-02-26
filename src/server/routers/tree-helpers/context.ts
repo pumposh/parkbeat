@@ -357,9 +357,10 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     amount_cents?: number;
     message?: string;
     id?: string; // Make ID optional in the parameter
-  }): Promise<ProjectContribution> => {
+  }): Promise<{ contribution: ProjectContribution; statusChanged: boolean }> => {
     logger.debug(`Adding contribution to project: ${contribution.project_id}`)
     const { db } = ctx
+    let statusChanged = false
     
     try {
       // Use provided ID or generate a new one
@@ -391,14 +392,17 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
           
           // Return the existing contribution formatted according to ProjectContribution type
           return {
-            id: existing.id,
-            project_id: existing.project_id,
-            user_id: existing.user_id,
-            contribution_type: existing.contribution_type as 'funding' | 'social',
-            amount_cents: existing.amount_cents ? Number(existing.amount_cents) : undefined,
-            message: existing.message || undefined,
-            created_at: existing.created_at.toISOString(),
-            metadata: existing.metadata as Record<string, unknown> || {}
+            contribution: {
+              id: existing.id,
+              project_id: existing.project_id,
+              user_id: existing.user_id,
+              contribution_type: existing.contribution_type as 'funding' | 'social',
+              amount_cents: existing.amount_cents ? Number(existing.amount_cents) : undefined,
+              message: existing.message || undefined,
+              created_at: existing.created_at.toISOString(),
+              metadata: existing.metadata as Record<string, unknown> || {}
+            },
+            statusChanged: false
           }
         }
       }
@@ -423,16 +427,75 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
         metadata: newContribution.metadata
       })
       
+      // If this is a funding contribution, check if the project's funding goal has been met
+      if (contribution.contribution_type === 'funding' && contribution.amount_cents) {
+        // Get the project to check its cost breakdown and status
+        const [project] = await db
+          .select()
+          .from(projects)
+          .where(eq(projects.id, contribution.project_id))
+          .limit(1)
+        
+        if (project && project.status === 'active' && project.cost_breakdown) {
+          // Calculate the total funding received
+          const totalResult = await db
+            .select({
+              total_amount_cents: sql<number>`COALESCE(SUM(${projectContributions.amount_cents}), 0)`.as('total_amount_cents')
+            })
+            .from(projectContributions)
+            .where(and(
+              eq(projectContributions.project_id, contribution.project_id),
+              eq(projectContributions.contribution_type, 'funding')
+            ))
+          
+          const totalAmountCents = totalResult[0]?.total_amount_cents || 0
+          
+          // Calculate the project's target amount
+          try {
+            // Import the cost calculation function
+            const { calculateProjectCosts } = await import('@/lib/cost')
+            const costs = calculateProjectCosts(project.cost_breakdown)
+            
+            if (costs) {
+              const targetAmountCents = costs.total * 100 // Convert dollars to cents
+              
+              // If the total amount meets or exceeds the target, update the project status to 'funded'
+              if (totalAmountCents >= targetAmountCents) {
+                logger.info(`Project ${contribution.project_id} has met its funding goal. Updating status to 'funded'`)
+                
+                await db
+                  .update(projects)
+                  .set({ 
+                    status: 'funded',
+                    _meta_updated_at: new Date(),
+                    _meta_updated_by: contribution.user_id // The contributor who pushed it over the threshold
+                  })
+                  .where(eq(projects.id, contribution.project_id))
+                
+                // Set the flag to indicate that the status was changed
+                statusChanged = true
+              }
+            }
+          } catch (error) {
+            logger.error(`Error calculating project costs for ${contribution.project_id}:`, error)
+            // Continue without updating status if there's an error in cost calculation
+          }
+        }
+      }
+      
       // Return the created contribution formatted according to ProjectContribution type
       return {
-        id,
-        project_id: contribution.project_id,
-        user_id: contribution.user_id,
-        contribution_type: contribution.contribution_type,
-        amount_cents: contribution.amount_cents,
-        message: contribution.message,
-        created_at: newContribution.created_at.toISOString(),
-        metadata: {}
+        contribution: {
+          id,
+          project_id: contribution.project_id,
+          user_id: contribution.user_id,
+          contribution_type: contribution.contribution_type,
+          amount_cents: contribution.amount_cents,
+          message: contribution.message,
+          created_at: newContribution.created_at.toISOString(),
+          metadata: {}
+        },
+        statusChanged
       }
     } catch (error) {
       logger.error(`Error adding contribution to project ${contribution.project_id}:`, error)
