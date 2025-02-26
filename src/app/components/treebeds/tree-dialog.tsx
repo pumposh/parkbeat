@@ -100,7 +100,7 @@ export function TreeDialog(props: {
         message: 'Please sign in to create a project',
         type: 'error'
       })
-      router.push('/projects')
+      router.push('/sign-in')
     }
   }, [props.userId, router, showToast])
 

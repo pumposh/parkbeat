@@ -303,11 +303,9 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Set background color
-    if (backgroundColor !== 'transparent') {
-      ctx.fillStyle = backgroundColor;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+    // Always set background color to white for export
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Scale the context to increase resolution
     ctx.scale(scaleFactor, scaleFactor);
@@ -315,16 +313,29 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
     // Create a temporary clone of the SVG with black dots for export
     const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
     
+    // Set the SVG background to white
+    const backgroundRect = svgClone.querySelector('rect');
+    if (backgroundRect) {
+      backgroundRect.setAttribute('fill', '#FFFFFF');
+    } else {
+      // Create a background rect if it doesn't exist
+      const newBackground = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      newBackground.setAttribute('width', '100%');
+      newBackground.setAttribute('height', '100%');
+      newBackground.setAttribute('fill', '#FFFFFF');
+      svgClone.insertBefore(newBackground, svgClone.firstChild);
+    }
+    
     // Set all finder patterns and dots to black
     svgClone.querySelectorAll('path, circle, rect').forEach(element => {
       // Skip background elements
-      if (
-          element.getAttribute('fill') === '#000000' || 
-          element.getAttribute('fill') === '#ffffff') {
+      if (element.getAttribute('fill') === 'transparent' || element === backgroundRect) {
         return;
       }
       // Set all QR elements to black
       element.setAttribute('fill', '#000000');
+      // Ensure full opacity
+      element.setAttribute('opacity', '1');
     });
     
     // Fix SVG masks for export
@@ -412,7 +423,7 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
       middleD += 'Z'; // Close path
       
       middleSquare.setAttribute('d', middleD);
-      middleSquare.setAttribute('fill', 'black');
+      middleSquare.setAttribute('fill', 'white');
       
       // Add the middle square after the outer square
       element.parentNode?.insertBefore(middleSquare, element.nextSibling);
@@ -457,11 +468,9 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
       const ctx = canvas.getContext('2d');
       if (!ctx) return false;
       
-      // Set background color
-      if (backgroundColor !== 'transparent') {
-        ctx.fillStyle = backgroundColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
+      // Always set background color to white for export
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       
       // Scale the context to increase resolution
       ctx.scale(scaleFactor, scaleFactor);
@@ -471,16 +480,29 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
       // Create a temporary clone of the SVG with black dots for export
       const svgClone = svgRef.current.cloneNode(true) as SVGSVGElement;
       
+      // Set the SVG background to white
+      const backgroundRect = svgClone.querySelector('rect');
+      if (backgroundRect) {
+        backgroundRect.setAttribute('fill', '#FFFFFF');
+      } else {
+        // Create a background rect if it doesn't exist
+        const newBackground = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        newBackground.setAttribute('width', '100%');
+        newBackground.setAttribute('height', '100%');
+        newBackground.setAttribute('fill', '#FFFFFF');
+        svgClone.insertBefore(newBackground, svgClone.firstChild);
+      }
+      
       // Set all finder patterns and dots to black
       svgClone.querySelectorAll('path, circle, rect').forEach(element => {
         // Skip background elements
-        if (element.getAttribute('fill') === 'transparent' || 
-            element.getAttribute('fill') === '#000000' || 
-            element.getAttribute('fill') === '#ffffff') {
+        if (element.getAttribute('fill') === 'transparent' || element === backgroundRect) {
           return;
         }
         // Set all QR elements to black
         element.setAttribute('fill', '#000000');
+        // Ensure full opacity
+        element.setAttribute('opacity', '1');
       });
 
       console.log('[qr-code] Cloned SVG')
@@ -623,8 +645,11 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
       />
       </div>
       
-      {showButtons && isLoaded && (
-        <div className="flex gap-2 mt-4">
+      {showButtons && (
+        <div className={cn(
+          "flex gap-2 mt-4",
+          !isLoaded && "opacity-0"
+        )}>
           <button
             onClick={handleDownloadQR}
             className="flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-black/70 dark:text-white hover:bg-primary/90 transition-colors shadow-sm"

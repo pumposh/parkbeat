@@ -437,7 +437,7 @@ export function ProjectSuggestions({
                       >
                         {suggestion.images?.status?.isGenerating || generatingImages[suggestion.id] ? (
                           <div className="flex flex-col items-center gap-2">
-                            <i className="fa-solid fa-wand-magic-sparkles fa-spin text-2xl" />
+                            <i className="fa-solid fa-wand-magic-sparkles text-2xl" />
                             <span className="text-sm">Generating image...</span>
                           </div>
                         ) : (

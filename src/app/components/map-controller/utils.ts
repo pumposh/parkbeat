@@ -25,7 +25,7 @@ export async function getIpLocation(defaultLocation: { latitude: number, longitu
       city: data.city
     }
   } catch (error) {
-    console.error('Failed to get location from IP:', error)
+    console.warn('Failed to get location from IP:', error)
     // Default to New York if IP location fails
     return {
       latitude: defaultLocation.latitude,

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import { capitalize } from '@/lib/str'
-import type { Project, ProjectGroup } from '@/hooks/use-tree-sockets'
+import type { Project, ProjectGroup, ContributionSummary } from '@/hooks/use-tree-sockets'
 import { useUser } from '@clerk/nextjs'
 import { useRouter, usePathname } from 'next/navigation'
 import { useNavigationState } from '@/hooks/use-nav-state'
@@ -14,6 +14,7 @@ interface ProjectInfoPanelProps {
   position: { x: number; y: number }
   isVisible: boolean
   className?: string
+  contributionSummary?: ContributionSummary
 }
 
 // Simple avatar placeholder component
@@ -49,7 +50,7 @@ function MiniProgressBar({ percentage }: { percentage: number }) {
   );
 }
 
-export const ProjectInfoPanel = ({ project, group, position, isVisible, className }: ProjectInfoPanelProps) => {
+export const ProjectInfoPanel = ({ project, group, position, isVisible, className, contributionSummary }: ProjectInfoPanelProps) => {
   const router = useRouter()
   const pathname = usePathname()
   const [isNavigating, startNavigating] = useNavigationState()
@@ -60,16 +61,16 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
   const isProjectsRoute = pathname.includes('/projects')
   
   // Calculate funding progress if project has cost breakdown and contributions
-  const fundingData = project?.cost_breakdown && project?.contribution_summary ? (() => {
+  const fundingData = project?.cost_breakdown && contributionSummary ? (() => {
     const costs = calculateProjectCosts(project.cost_breakdown);
-    const totalAmount = project.contribution_summary.total_amount_cents / 100;
+    const totalAmount = contributionSummary.total_amount_cents / 100;
     const percentage = (costs?.total ?? 0) > 0 ? Math.round((totalAmount / (costs?.total ?? 0)) * 100) : 0;
     return {
       currentAmount: totalAmount,
       targetAmount: costs?.total ?? 0,
       percentage,
-      contributorCount: project.contribution_summary.contributor_count,
-      topContributors: project.contribution_summary.top_contributors || []
+      contributorCount: contributionSummary.contributor_count,
+      topContributors: contributionSummary.top_contributors || []
     };
   })() : null;
 
@@ -79,7 +80,7 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
     year: 'numeric'
   }).format(project._meta_created_at) : null
 
-  const handleEdit = () => {
+  const handleNav = () => {
     if (!project) return
     startNavigating()
     router.push(`/projects/${project.id}?lat=${project._loc_lat}&lng=${project._loc_lng}`)
@@ -103,11 +104,7 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
         transform: `translate(-50%, calc(-100% - 48px))`,
         width: '280px', // Widening the panel
       }}
-      onClick={() => {
-        if (isAdmin || project?.status === 'active') {
-          handleEdit()
-        }
-      }}
+      onClick={() => handleNav()}
     >
       <div className="flex items-center justify-between">
         {group ? (

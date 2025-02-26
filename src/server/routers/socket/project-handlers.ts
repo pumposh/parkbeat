@@ -79,10 +79,9 @@ export const projectServerEvents = {
       contribution_summary: z.object({
         total_amount_cents: z.number(),
         contributor_count: z.number(),
-        contributors: z.array(z.object({
+        top_contributors: z.array(z.object({
           user_id: z.string(),
-          total_amount_cents: z.number(),
-          contribution_count: z.number()
+          amount_cents: z.number()
         })),
         recent_contributions: z.array(z.object({
           id: z.string(),

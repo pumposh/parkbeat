@@ -71,9 +71,9 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
     if (isLoading) {
       return (
         <div className="p-6 pb-0">
-          <div className="animate-pulse bg-gray-200/50 dark:bg-black/20 h-8 w-3/4 rounded mb-4"></div>
-          <div className="animate-pulse bg-gray-200/50 dark:bg-black/20 h-6 w-1/3 rounded mb-4"></div>
-          <div className="animate-pulse bg-gray-200/50 dark:bg-black/20 h-4 w-full rounded"></div>
+          <div className="animate-pulse bg-black/20 h-8 w-3/4 rounded mb-4"></div>
+          <div className="animate-pulse bg-black/20 h-6 w-1/3 rounded mb-4"></div>
+          <div className="animate-pulse bg-black/20 h-4 w-full rounded"></div>
         </div>
       );
     }

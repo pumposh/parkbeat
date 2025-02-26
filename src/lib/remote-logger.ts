@@ -16,6 +16,46 @@ type LogEntry = {
 // Define console method types
 type ConsoleMethod = (...data: any[]) => void;
 
+/**
+ * Safe stringify function that handles circular references
+ */
+function safeStringify(obj: any): string {
+  const seen = new WeakSet();
+  return JSON.stringify(obj, (key, value) => {
+    // Handle DOM nodes and other non-serializable objects
+    if (typeof value === 'object' && value !== null) {
+      // Check for circular reference
+      if (seen.has(value)) {
+        return '[Circular Reference]';
+      }
+      
+      // Handle DOM nodes
+      if (value instanceof Node) {
+        return `[${value.nodeName}]`;
+      }
+      
+      // Handle other special objects
+      if (value instanceof Error) {
+        return {
+          name: value.name,
+          message: value.message,
+          stack: value.stack
+        };
+      }
+      
+      // Add object to seen set
+      seen.add(value);
+    }
+    
+    // Handle functions
+    if (typeof value === 'function') {
+      return '[Function]';
+    }
+    
+    return value;
+  });
+}
+
 class RemoteLogger {
   private static instance: RemoteLogger;
   private serverUrl: string | null = null;
@@ -127,7 +167,7 @@ class RemoteLogger {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
+      body: safeStringify({
         logs,
         device: {
           userAgent: navigator.userAgent,
@@ -137,7 +177,7 @@ class RemoteLogger {
       }),
     }).catch(err => {
       // If sending fails, log to original console and add back to buffer
-      this.originalConsole.error('[RemoteLogger] Failed to send logs:', err);
+      this.originalConsole.warn('[RemoteLogger] Failed to send logs:', err);
       this.buffer = [...logs, ...this.buffer];
     });
   }

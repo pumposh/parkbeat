@@ -40,7 +40,10 @@ export const MapController = ({
   const [isButtonVisible, setIsButtonVisible] = useState(false)
   const [isButtonLeaving, setIsButtonLeaving] = useState(false)
   const [isMapMoving, _setIsMapMoving] = useState(false)
-  const { projectMap } = useLiveTrees()
+  const { 
+    projectMap, 
+    contributionSummaryMap
+  } = useLiveTrees()
   const previousProjects = useRef<Project[]>([])
   const updateTimeout = useRef<NodeJS.Timeout | undefined>(undefined)
   const [isMarkerNearCenter, setIsMarkerNearCenter] = useState(false)
@@ -411,6 +414,8 @@ export const MapController = ({
           project._loc_lng !== prevProject._loc_lng ||
           project.name !== prevProject.name
       })
+      
+    console.log('[MapController] projectsChanged', projectsChanged)
 
     if (!projectsChanged) return
 
@@ -637,6 +642,7 @@ export const MapController = ({
               projects={Array.from(projectMap.values())} 
               map={map.current} 
               onMarkerNearCenter={setIsMarkerNearCenter}
+              contributionSummaryMap={contributionSummaryMap}
             />
           )}
         </>

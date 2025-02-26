@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import type { Project, ProjectGroup } from '@/hooks/use-tree-sockets'
+import type { Project, ProjectGroup, ContributionSummary } from '@/hooks/use-tree-sockets'
 import type maplibregl from 'maplibre-gl'
 import { ProjectMarker } from './tree-marker'
 
@@ -11,6 +11,7 @@ interface MarkersProps {
   projectGroups?: ProjectGroup[]
   map: maplibregl.Map
   onMarkerNearCenter: (isNear: boolean) => void
+  contributionSummaryMap?: Map<string, ContributionSummary>
 }
 
 interface Marker {
@@ -19,7 +20,7 @@ interface Marker {
   isDeleted?: boolean
 }
 
-export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter }: MarkersProps) => {
+export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter, contributionSummaryMap }: MarkersProps) => {
   const [markers, setMarkers] = useState<{ [key: string]: Marker }>({})
   const [groupMarkers, setGroupMarkers] = useState<{ [key: string]: Marker }>({})
   const mapCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -149,7 +150,8 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter }: Ma
       {/* Render individual project markers */}
       {Object.entries(markers).map(([id, marker]) => {
         const project = projects.find(p => p.id === id)
-
+        const contributionSummary = contributionSummaryMap?.get(id)
+        console.log('[Markers] contributionSummary', project?.id, contributionSummary)
         return (
           <ProjectMarker
             key={id}
@@ -158,6 +160,7 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter }: Ma
             position={marker.position}
             isNearCenter={marker.isNearCenter && focusedMarkerId === id}
             map={map}
+            contributionSummary={contributionSummary}
           />
         )
       })}

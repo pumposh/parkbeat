@@ -109,9 +109,9 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
   }
   
     return (
-      <div className="mt-4">
+      <div className="mt-4 pb-16">
         {groupedContributions.length > 0 ? (
-          <div className="space-y-2 flex flex-col-reverse pt-2 pl-6 pr-4 pb-16">
+          <div className="space-y-2 flex flex-col-reverse pt-2 pl-6 pr-4">
             {/* Invisible element to scroll to (now at the top since we reversed the order) */}
             <div ref={contributionsEndRef} />
             {groupedContributions.map((group, index) => (
@@ -122,12 +122,12 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
             ))}
           </div>
         ) : (
-          <div className="text-center py-8 border border-dashed dark:border-gray-500 rounded-lg">
-            <div className="text-4xl mb-2 text-gray-400">
+          <div className="text-center mx-6 py-8 border border-dashed border-gray-500 dark:border-gray-500 rounded-lg">
+            <div className="text-4xl mb-2 opacity-60">
               <i className="fa-solid fa-comments"></i>
             </div>
-            <p className="text-muted-foreground font-display tracking-wide">No contributions yet!</p>
-            <p className="text-muted-foreground font-display opacity-50 text-sm">Be the first to contribute <i className="fa-solid fa-rocket"></i></p>
+            {/* <p className="text-muted-foreground font-display tracking-wide">No contributions yet!</p> */}
+            <p className="text-muted-foreground font-display opacity-60 text-sm">Be the first to back this project!</p>
           </div>
         )}
       </div>

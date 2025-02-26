@@ -1,6 +1,7 @@
 'use client'
 
-import type { Project, ProjectGroup } from '@/hooks/use-tree-sockets'
+import type { Project, ProjectGroup, ContributionSummary } from '@/hooks/use-tree-sockets'
+import { useLiveTrees } from '@/hooks/use-tree-sockets'
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { ProjectInfoPanel } from './tree-info-panel'
@@ -15,10 +16,11 @@ interface ProjectMarkerProps {
   isNearCenter?: boolean
   isDeleted?: boolean
   map: maplibregl.Map
+  contributionSummary?: ContributionSummary
 }
 
 // Helper function to determine marker appearance based on project status and funding
-function getMarkerStyles(project?: Project) {
+function getMarkerStyles(project?: Project, contributionSummary?: ContributionSummary) {
   if (!project) return { color: '#888888', scale: 1, opacity: 0.7 };
   
   // Default styles by status
@@ -32,9 +34,9 @@ function getMarkerStyles(project?: Project) {
   
   // Get funding progress if available
   let fundingPercentage = 0;
-  if (project.cost_breakdown && project.contribution_summary) {
+  if (project.cost_breakdown && contributionSummary) {
     const costs = calculateProjectCosts(project.cost_breakdown);
-    const totalAmount = project.contribution_summary.total_amount_cents / 100;
+    const totalAmount = contributionSummary.total_amount_cents / 100;
     fundingPercentage = (costs?.total ?? 0) > 0 ? (totalAmount / (costs?.total ?? 0)) * 100 : 0;
   }
   
@@ -57,7 +59,13 @@ function getMarkerStyles(project?: Project) {
 
 export const ProjectMarker = ({ project, group, position, isNearCenter, isDeleted, map }: ProjectMarkerProps) => {
   const [showInfoPanel, setShowInfoPanel] = useState(false)
-  const markerStyle = getMarkerStyles(project);
+
+  const { contributionSummaryMap } = useLiveTrees()
+  const contributionSummary = contributionSummaryMap?.get(project?.id ?? "")
+
+  console.log('[ProjectMarker] contribution summary', project?.id, contributionSummary)
+  
+  const markerStyle = getMarkerStyles(project, contributionSummary);
 
   useEffect(() => {
     if (!isNearCenter) {
@@ -79,6 +87,7 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
           group={group}
           position={position}   
           isVisible={showInfoPanel && !isDeleted}
+          contributionSummary={contributionSummary}
         />,
         map.getCanvasContainer()
       )}

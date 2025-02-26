@@ -16,14 +16,16 @@ export type ProjectPayload = BaseProject
 export type Project = Omit<BaseProject, '_meta_updated_at' | '_meta_created_at'> & {
   _meta_updated_at: Date
   _meta_created_at: Date
-  contribution_summary?: {
-    total_amount_cents: number
-    contributor_count: number
-    top_contributors?: Array<{
-      user_id: string
-      amount_cents: number
-    }>
-  }
+}
+
+// Contribution summary type
+export type ContributionSummary = {
+  total_amount_cents: number
+  contributor_count: number
+  top_contributors?: Array<{
+    user_id: string
+    amount_cents: number
+  }>
 }
 
 export type ProjectGroup = {
@@ -44,6 +46,9 @@ export function useLiveTrees() {
   // Main tree storage with O(1) lookup by ID
   const [projectMap, setProjectMap] = useState<Map<string, Project>>(new Map());
   
+  // Store contribution summaries separately by project ID
+  const [contributionSummaryMap, setContributionSummaryMap] = useState<Map<string, ContributionSummary>>(new Map());
+  
   // Store tree groups separately
   const [projectGroups, setProjectGroups] = useState<ProjectGroup[]>([]);
   
@@ -57,6 +62,7 @@ export function useLiveTrees() {
 
   // Use the tree hooks for state updates
   const [newProjectData] = useServerEvent.newProject({} as ProjectPayload);
+  const [projectData] = useServerEvent.projectData({ projectId: '', data: { project: {} as ProjectPayload, images: [], suggestions: [] } });
   const [subscribeData] = useServerEvent.subscribe({ geohash: '', shouldSubscribe: true, projects: [] });
   const [deleteProjectData] = useServerEvent.deleteProject({ id: '' });
 
@@ -82,11 +88,13 @@ export function useLiveTrees() {
     if (!newProjectData || !('id' in newProjectData)) return;
     if (newProjectData.id === "0") return;
 
+    const existingProject = projectMap.get(newProjectData.id);
     const processedProject: Project = {
+      ...existingProject,
       ...newProjectData,
       fundraiser_id: "",
       _meta_updated_at: new Date(newProjectData._meta_updated_at),
-      _meta_created_at: new Date(newProjectData._meta_created_at)
+      _meta_created_at: new Date(newProjectData._meta_created_at),
     };
     
     setProjectMap(prev => {
@@ -98,6 +106,47 @@ export function useLiveTrees() {
     logger.log('debug', `Project ${processedProject.id} updated in client state via newProject`);
   }, [newProjectData, logger]);
 
+  useEffect(() => {
+    console.log('[useLiveTrees] projectData', projectData)
+    if (!projectData || !('id' in projectData)) return;
+    if (projectData.id === "0") return;
+
+    const processedProject: Project = {
+      ...projectData.data.project,
+      fundraiser_id: projectData.data.project.fundraiser_id || "",
+      _meta_updated_at: new Date(projectData.data.project._meta_updated_at),
+      _meta_created_at: new Date(projectData.data.project._meta_created_at)
+    };
+
+    // Update project map
+    setProjectMap(prev => {
+      const next = new Map(prev);
+      next.set(processedProject.id, processedProject);
+      return next;
+    });
+    
+    // Update contribution summary map if contribution data exists
+    if (projectData.data.contribution_summary) {
+      const processedContributionSummary: ContributionSummary = {
+        total_amount_cents: projectData.data.contribution_summary.total_amount_cents,
+        contributor_count: projectData.data.contribution_summary.contributor_count,
+        top_contributors: projectData.data.contribution_summary.top_contributors,
+      }
+
+      console.log('[useLiveTrees] processedContributionSummary', projectData.id, processedContributionSummary)
+
+      setContributionSummaryMap(prev => {
+        const next = new Map(prev);
+        next.set(processedProject.id, processedContributionSummary);
+        return next;
+      });
+      logger.log('debug', `Contribution summary for project ${processedProject.id} updated in client state`);
+    }
+    
+    logger.log('debug', `Project ${projectData.data.project.id} updated in client state via projectData`);
+  }, [projectData, logger]);
+  
+
   // Handle delete tree updates
   useEffect(() => {
     console.log('[useLiveTrees] deleteProjectData', deleteProjectData)
@@ -105,6 +154,13 @@ export function useLiveTrees() {
     if (deleteProjectData.id === "0") return;
 
     setProjectMap(prev => {
+      const next = new Map(prev);
+      next.delete(deleteProjectData.id);
+      return next;
+    });
+
+    // Also remove contribution summary when project is deleted
+    setContributionSummaryMap(prev => {
       const next = new Map(prev);
       next.delete(deleteProjectData.id);
       return next;
@@ -135,6 +191,20 @@ export function useLiveTrees() {
         const next = new Map(prev);
         processedProjects.forEach(project => next.set(project.id, project as Project));
         return next;
+      });
+
+      // Extract contribution summaries if they exist
+      processedProjects.forEach(project => {
+        if ('contribution_summary' in project) {
+          const contributionSummary = (project as any).contribution_summary;
+          if (contributionSummary) {
+            setContributionSummaryMap(prev => {
+              const next = new Map(prev);
+              next.set(project.id, contributionSummary);
+              return next;
+            });
+          }
+        }
       });
     }
   }, [subscribeData, logger]);
@@ -280,6 +350,7 @@ export function useLiveTrees() {
   return {
     projectMap,
     projectGroups,
+    contributionSummaryMap,
     setProject,
     deleteProject,
     isPending,
