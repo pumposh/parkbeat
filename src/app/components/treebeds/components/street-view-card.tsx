@@ -58,6 +58,11 @@ export const StreetViewCard = ({
   const streetViewInstance = useRef<google.maps.StreetViewPanorama | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [validationMessage, setValidationMessage] = useState<ValidationMessage | null>(null)
+  const [streetViewHeight, setStreetViewHeight] = useState<number>(400)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
+  const mutationObserverRef = useRef<MutationObserver | null>(null)
+  const observedElementsRef = useRef<Set<Element>>(new Set())
+  const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const thisContextId = generateId()
   const { validateStreetView, isValidating } = useStreetViewValidation({
@@ -72,6 +77,156 @@ export const StreetViewCard = ({
       onValidationStateChange?.({ isValid: true })
     }
   }, [projectData])
+
+  // Set up resize observer to monitor dialog elements and adjust street view height
+  useEffect(() => {
+    // Clean up previous observers
+    if (resizeObserverRef.current) {
+      resizeObserverRef.current.disconnect();
+    }
+    if (mutationObserverRef.current) {
+      mutationObserverRef.current.disconnect();
+    }
+    if (resizeTimeoutRef.current) {
+      clearTimeout(resizeTimeoutRef.current);
+    }
+    observedElementsRef.current.clear();
+
+    // Debounce function for resize events
+    const debounce = (func: Function, delay: number) => {
+      return function() {
+        if (resizeTimeoutRef.current) {
+          clearTimeout(resizeTimeoutRef.current);
+        }
+        resizeTimeoutRef.current = setTimeout(() => {
+          func();
+        }, delay);
+      };
+    };
+
+    // Function to calculate and set the optimal street view height
+    const calculateOptimalHeight = () => {
+      // Get elements to monitor
+      const header = document.getElementById('step-form-dialog-header');
+      const footer = document.getElementById('step-form-dialog-footer');
+      const locationInfo = document.getElementById('location-info-card-content');
+      
+      // Get viewport height
+      const viewportHeight = window.innerHeight;
+      
+      // Calculate heights of monitored elements
+      const headerHeight = header?.offsetHeight || 0;
+      const footerHeight = footer?.offsetHeight || 0;
+      const locationInfoHeight = locationInfo?.offsetHeight || 0;
+      
+      // Add some padding/margin
+      const padding = 67; // 2rem
+      
+      // Calculate available height
+      const availableHeight = viewportHeight - headerHeight - footerHeight - locationInfoHeight - padding;
+      
+      // Set minimum height
+      const minHeight = 300;
+      const finalHeight = Math.max(availableHeight, minHeight);
+      
+      console.log('[StreetViewCard] Heights:', {
+        viewport: viewportHeight,
+        header: headerHeight,
+        footer: footerHeight,
+        locationInfo: locationInfoHeight,
+        available: availableHeight,
+        final: finalHeight
+      });
+      
+      // Set the height
+      setStreetViewHeight(finalHeight);
+    };
+    
+    // Function to observe an element if it exists
+    const observeElement = (elementId: string) => {
+      const element = document.getElementById(elementId);
+      if (element && !observedElementsRef.current.has(element)) {
+        resizeObserverRef.current?.observe(element);
+        observedElementsRef.current.add(element);
+        return true;
+      }
+      return false;
+    };
+    
+    // Try to observe all target elements
+    const observeAllTargetElements = () => {
+      const elementsToObserve = [
+        'step-form-dialog-header',
+        'step-form-dialog-footer',
+        'location-info-card-content'
+      ];
+      
+      let allObserved = true;
+      elementsToObserve.forEach(id => {
+        const observed = observeElement(id);
+        if (!observed) allObserved = false;
+      });
+      
+      return allObserved;
+    };
+    
+    // Create resize observer
+    resizeObserverRef.current = new ResizeObserver(debounce(() => {
+      calculateOptimalHeight();
+    }, 100));
+    
+    // Initial attempt to observe elements
+    const allElementsObserved = observeAllTargetElements();
+    
+    // If not all elements were found, set up a mutation observer to watch for them
+    if (!allElementsObserved) {
+      mutationObserverRef.current = new MutationObserver((mutations) => {
+        // Check if our target elements have been added
+        const newElementsObserved = observeAllTargetElements();
+        
+        // If all elements are now observed, disconnect the mutation observer
+        if (newElementsObserved) {
+          mutationObserverRef.current?.disconnect();
+        }
+        
+        // Recalculate height regardless
+        calculateOptimalHeight();
+      });
+      
+      // Observe the document body for added nodes
+      mutationObserverRef.current.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+    }
+    
+    // Initial calculation with a small delay to ensure DOM is fully rendered
+    setTimeout(calculateOptimalHeight, 100);
+    
+    // Also recalculate on window resize with debounce
+    const debouncedResize = debounce(calculateOptimalHeight, 100);
+    window.addEventListener('resize', debouncedResize);
+    
+    // Recalculate on orientation change for mobile devices
+    window.addEventListener('orientationchange', () => {
+      // Use a slightly longer delay for orientation changes
+      setTimeout(calculateOptimalHeight, 300);
+    });
+    
+    return () => {
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+      }
+      if (mutationObserverRef.current) {
+        mutationObserverRef.current.disconnect();
+      }
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current);
+      }
+      window.removeEventListener('resize', debouncedResize);
+      window.removeEventListener('orientationchange', calculateOptimalHeight);
+    };
+  }, []);
 
   useEffect(() => {
     if (!lat || !lng || externalLoading || !streetViewRef.current) return
@@ -303,12 +458,16 @@ export const StreetViewCard = ({
           id={thisContextId}
           className={cn(
             "StreetViewCard w-full relative",
-            "sm:min-h-[400px] h-[calc(100vh-22rem)]",
             "transition-all duration-300",
             showLoadingAnimation && isValidating 
               ? "opacity-50 scale-90 blur-[12px] rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.5)]" 
               : "opacity-100 scale-100 blur-0"
           )}
+          style={{
+            height: `${streetViewHeight}px`,
+            minHeight: '300px',
+            maxHeight: '65vh'
+          }}
           aria-label="Google Street View of the location"
         >
           {/* Validation Overlay - Only show if not using full animation */}

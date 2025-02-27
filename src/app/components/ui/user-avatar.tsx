@@ -15,50 +15,41 @@ export function UserAvatar({ userId, size = 40, className }: UserAvatarProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const { getImageUrl, setImageUrl: cacheImageUrl } = useUserAvatarCache();
+  const { getImageUrl, getUserData } = useUserAvatarCache();
 
   useEffect(() => {
-    async function fetchUserData() {
-      try {
-        setLoading(true);
-        
-        // First, check if the image URL is in the cache
-        const cachedImageUrl = getImageUrl(userId);
-        
-        if (cachedImageUrl !== undefined) {
-          // Found in cache, use it
-          setImageUrl(cachedImageUrl);
-          setLoading(false);
-          return;
-        }
-        
-        // Not found in cache, fetch from API
-        const response = await fetch(`/api/users/${userId}`);
-        if (!response.ok) throw new Error('Failed to fetch user data');
-        
-        const userData = await response.json() as { imageUrl: string };
-        
-        if (userData.imageUrl) {
-          setImageUrl(userData.imageUrl);
-          // Store in cache for future use
-          cacheImageUrl(userId, userData.imageUrl);
-        } else {
-          setError(true);
-          // Cache the null result too, to prevent unnecessary API calls
-          cacheImageUrl(userId, null);
-        }
-      } catch (err) {
-        console.error('Error fetching user avatar:', err);
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
+    if (!userId) return;
+
+    // First check if we already have the image URL in cache
+    const cachedImageUrl = getImageUrl(userId);
+    if (cachedImageUrl !== undefined) {
+      setImageUrl(cachedImageUrl);
+      setLoading(false);
+      return;
     }
 
-    if (userId) {
-      fetchUserData();
-    }
-  }, [userId, getImageUrl, cacheImageUrl]);
+    // If not in cache, fetch it using the centralized method
+    let isMounted = true;
+    setLoading(true);
+
+    getUserData(userId)
+      .then(userData => {
+        if (!isMounted) return;
+        setImageUrl(userData.imageUrl);
+        setError(!userData.imageUrl);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (isMounted) {
+          setError(true);
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userId, getImageUrl, getUserData]);
 
   // Show placeholder during loading or error
   if (loading) {

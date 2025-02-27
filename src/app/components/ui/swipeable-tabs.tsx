@@ -73,26 +73,29 @@ export function SwipeableTabs({
       setScrollPositionByTab(prev => ({ ...prev, [tabIndex]: 'middle' }))
     }
 
-    const isScrollable = scrollHeight > clientHeight;
-    if (isScrollable !== hasScrollableContentByTab[tabIndex]) {
-      setHasScrollableContentByTab(prev => ({ ...prev, [tabIndex]: isScrollable }));
-    }
+    // const isScrollable = scrollHeight > clientHeight;
+    // if (isScrollable !== hasScrollableContentByTab[tabIndex]) {
+    //   setHasScrollableContentByTab(prev => ({ ...prev, [tabIndex]: isScrollable }));
+    // }
   };
 
   // Handle tab click
   const handleTabClick = (index: number) => {
+    setActiveTabIndex(index)
     // Scroll to the tab content
-    if (scrollContainerRef.current) {
-      const containerWidth = scrollContainerRef.current.clientWidth
-      scrollContainerRef.current.scrollTo({
-        left: containerWidth * index,
-        behavior: 'smooth'
-      })
-    }
     setTimeout(() => {
-      setActiveTabIndex(index)
-      onChange?.(index)
-    }, 1000)
+      if (scrollContainerRef.current) {
+        const containerWidth = scrollContainerRef.current.clientWidth
+        scrollContainerRef.current.scrollTo({
+          left: containerWidth * index,
+        behavior: 'smooth'
+        })
+      }
+    }, 100)
+
+    if (contentHeightByTab[index]) {
+      setHasScrollableContentByTab(prev => ({ ...prev, [index]: true }))
+    }
   }
   
   // Handle scroll events to update active tab based on scroll position
@@ -202,10 +205,10 @@ export function SwipeableTabs({
       if (ref && hasRendered[index]) {
         const contentElement = ref.firstElementChild as HTMLElement;
         if (contentElement) {
-          const isScrollable = contentElement.scrollHeight > contentElement.clientHeight;
-          if (isScrollable !== hasScrollableContentByTab[index]) {
-            setHasScrollableContentByTab(prev => ({ ...prev, [index]: isScrollable }));
-          }
+          // const isScrollable = contentElement.scrollHeight > contentElement.clientHeight;
+          // if (isScrollable !== hasScrollableContentByTab[index]) {
+          //   setHasScrollableContentByTab(prev => ({ ...prev, [index]: isScrollable }));
+          // }
 
           // Store reference to the content element
           tabContentElementRefs.current[index] = contentElement;

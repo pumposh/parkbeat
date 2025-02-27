@@ -11,71 +11,44 @@ interface UserNameProps {
 }
 
 export function UserName({ userId, className, fallback = 'Contributor' }: UserNameProps) {
-  const [userName, setUserName] = useState<string | null>(null);
-  const [username, setUsername] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [_error, setError] = useState(false);
-  const { getUserName, setUserName: cacheUserName } = useUserAvatarCache();
+  const [error, setError] = useState(false);
+  const { getUserName, getUserData } = useUserAvatarCache();
 
   useEffect(() => {
-    async function fetchUserData() {
-      try {
-        setLoading(true);
-        
-        // First, check if the user name is in the cache
-        const cachedUserName = getUserName(userId);
-        
-        if (cachedUserName !== undefined) {
-          // Found in cache, use it
-          setUserName(cachedUserName);
-          setLoading(false);
-          return;
-        }
-        
-        // Not found in cache, fetch from API
-        const response = await fetch(`/api/users/${userId}`);
-        if (!response.ok) throw new Error('Failed to fetch user data');
-        
-        const userData = await response.json() as { 
-          firstName?: string; 
-          lastName?: string;
-          username?: string;
-        };
-        
-        if (userData.firstName || userData.lastName || userData.username) {
-          if (!userData.firstName && !userData.lastName && userData.username) {
-            setUserName(`@${userData.username}`);
-            cacheUserName(userId, `@${userData.username}`);
-          } else {
-            const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ');
-            setUserName(fullName);
-            // Store in cache for future use
-            cacheUserName(userId, fullName);
-          }
-        } else if (userData.username) {
-          // If no full name, but username exists, store it separately
-          setUsername(userData.username);
-          // We still set userName to null since we want to use the username as fallback
-          setUserName(null);
-          // Cache the null result for the name
-          cacheUserName(userId, null);
-        } else {
-          setError(true);
-          // Cache the null result too, to prevent unnecessary API calls
-          cacheUserName(userId, null);
-        }
-      } catch (err) {
-        console.error('Error fetching user name:', err);
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
+    if (!userId) return;
+
+    // First check if we already have the user name in cache
+    const cachedUserName = getUserName(userId);
+    if (cachedUserName !== undefined) {
+      setDisplayName(cachedUserName);
+      setLoading(false);
+      return;
     }
 
-    if (userId) {
-      fetchUserData();
-    }
-  }, [userId, getUserName, cacheUserName]);
+    // If not in cache, fetch it using the centralized method
+    let isMounted = true;
+    setLoading(true);
+
+    getUserData(userId)
+      .then(userData => {
+        if (!isMounted) return;
+        setDisplayName(userData.name || null);
+        setError(!userData.name);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (isMounted) {
+          setError(true);
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userId, getUserName, getUserData]);
 
   // Show placeholder during loading or error
   if (loading) {
@@ -84,12 +57,8 @@ export function UserName({ userId, className, fallback = 'Contributor' }: UserNa
     );
   }
 
-  if (userName) {
-    return <span className={className}>{userName}</span>;
-  }
-
-  if (username) {
-    return <span className={className}>@{username}</span>;
+  if (displayName) {
+    return <span className={className}>{displayName}</span>;
   }
 
   return <span className={className}>{fallback}</span>;

@@ -1,8 +1,8 @@
 import { ContextWithSuperJSON } from "jstack"
 import { Env } from "../../jstack"
 import { publicProcedure } from "../../jstack"
-import { ServerSocket } from "@/lib/socket/socket"
 import type { ProjectData } from "@/server/types/shared"
+import { ServerSocket } from "jstack-shared"
 
 
 export type ProcedureEnv = ContextWithSuperJSON<Env>

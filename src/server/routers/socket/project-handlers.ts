@@ -8,6 +8,7 @@ import geohash from 'ngeohash'
 import { type ProjectStatus, type BaseProject, type ProjectData, projectSuggestionSchema, projectSchema, baseProjectSchema, contributionSummarySchema } from "../../types/shared";
 import { Procedure } from "jstack";
 import { ContextWithSuperJSON } from "jstack";
+import { DedupeThing } from "@/lib/promise";
 
 export const projectClientEvents = {
   setProject: baseProjectSchema,
@@ -134,6 +135,10 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     if (shouldSubscribe) {
       logger.info(`Handling project subscription for: ${projectId}`)
 
+      const deduped = await DedupeThing.getInstance()
+        .dedupe(socketId, 'subscribeProject', projectId)
+      if (!deduped) return;
+
       try {
         await processCleanupQueue()
         socketId = getSocketId(socket)
@@ -190,6 +195,10 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
 
     try {
       socketId = getSocketId(socket)
+
+      const deduped = await DedupeThing.getInstance()
+        .dedupe(socketId, geohash, shouldSubscribe)
+      if (!deduped) return;
       
       if (shouldSubscribe) {
         await processCleanupQueue()
@@ -248,6 +257,10 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
   socket.on('deleteProject', async (data: { id: string }) => {
     logger.info(`Processing project deletion: ${data.id}`)
     const { db } = ctx
+
+    const deduped = await DedupeThing.getInstance()
+      .dedupe(socketId, 'deleteProject', data.id)
+    if (!deduped) return;
 
     const [project] = await db
       .select()
@@ -420,6 +433,10 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
     logger.info(`Processing contribution for project: ${contribution.project_id}`)
     
     try {
+      const deduped = await DedupeThing.getInstance()
+        .dedupe(socketId, 'addContribution', contribution.project_id)
+      if (!deduped) return;
+
       // Add the contribution to the database
       const result = await addProjectContribution({
         project_id: contribution.project_id,

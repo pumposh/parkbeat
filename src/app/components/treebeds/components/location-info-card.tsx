@@ -148,7 +148,7 @@ export const LocationInfoCard = ({ isLoading, location, locationInfo, children, 
 
   return (
     <div className="frosted-glass rounded-lg space-y-0">
-      <div className="p-4">
+      <div className="p-4" id="location-info-card-content">
         {renderContent()}
       </div>
       {children}

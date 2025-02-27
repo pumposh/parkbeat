@@ -85,7 +85,7 @@
   }
 
   .map-controls-inner {
-    @apply relative flex flex-col gap-2;
+    @apply relative flex flex-col gap-3;
     height: 2.5rem; /* Initial collapsed height */
     transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }

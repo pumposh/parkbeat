@@ -1,5 +1,17 @@
+diff --git a/node_modules/jstack-shared/.bun-tag-17f9b36a511bcc0a b/.bun-tag-17f9b36a511bcc0a
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/jstack-shared/.bun-tag-465fa5a077ebc397 b/.bun-tag-465fa5a077ebc397
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/jstack-shared/.bun-tag-8156b3bde321f1c7 b/.bun-tag-8156b3bde321f1c7
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/jstack-shared/.bun-tag-b73de1aaee52d17f b/.bun-tag-b73de1aaee52d17f
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 27d95247acf8ca59cdac6f79f9a2000e82e47028..dcbd6c0ff912ee84357833856860d319bd734ecf 100644
+index 27d95247acf8ca59cdac6f79f9a2000e82e47028..69b6b51f8eeb250368b97b966ad58edc7cba1d90 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -4415,7 +4415,7 @@ var EventEmitter = class {
@@ -28,7 +40,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..dcbd6c0ff912ee84357833856860d319
            return;
          }
          this.emitter.handleEvent(eventName, eventData);
-@@ -4463,7 +4464,7 @@ var ServerSocket = class {
+@@ -4463,12 +4464,12 @@ var ServerSocket = class {
      });
    }
    get rooms() {
@@ -37,50 +49,159 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..dcbd6c0ff912ee84357833856860d319
    }
    close() {
      this.ws.close();
-@@ -4490,14 +4491,20 @@ var ServerSocket = class {
+-    for (const controller of this.controllers.values()) {
+-      controller.abort();
++    for (const controllers of this.controllers.values()) {
++      controllers.forEach((controller) => controller.abort());
+     }
+     this.controllers.clear();
+     for (const timers of this.heartbeatTimers.values()) {
+@@ -4489,22 +4490,36 @@ var ServerSocket = class {
+   handleEvent(eventName, eventData) {
      this.emitter.handleEvent(eventName, eventData);
    }
-   async join(room) {
+-  async join(room) {
 -    this.room = room;
++  join(room) {
      logger.info(`Socket trying to join room: "${room}".`);
+-    await this.subscribe(room).catch((error) => {
+-      logger.error(`Subscription error for room ${room}:`, error);
+-    }).then(() => logger.success(`Joined room: ${room}`)).then(() => this.createHeartbeat(room));
 +    const status = this.subscribedRooms.get(room)?.status;
 +    if (status === "connecting" || status === "connected") {
 +      logger.warn(`Socket is already ${status} to room: "${room}". Skipping...`);
 +      return;
 +    }
-+    this.subscribedRooms.set(room, { status: "connecting" });
-     await this.subscribe(room).catch((error) => {
-       logger.error(`Subscription error for room ${room}:`, error);
-     }).then(() => logger.success(`Joined room: ${room}`)).then(() => this.createHeartbeat(room));
++    setTimeout(() => {
++      const status2 = this.subscribedRooms.get(room)?.status;
++      if (status2 === "connecting" || status2 === "connected") {
++        logger.warn(`Socket is already ${status2} to room: "${room}". Skipping...`);
++        return;
++      }
++      this.subscribedRooms.set(room, { status: "connecting" });
++      this.subscribe(room).catch((error) => {
++        logger.error(`Subscription error for room ${room}:`, error);
++        this.subscribedRooms.set(room, { status: "disconnected" });
++      }).then(() => logger.success(`Joined room: ${room}`)).then(() => this.createHeartbeat(room));
++    }, Math.random() * 30);
    }
    leave(room) {
-     const controller = this.controllers.get(room);
+-    const controller = this.controllers.get(room);
+-    if (controller) {
+-      controller.abort();
+-      this.controllers.delete(room);
+-      logger.info(`Left room: ${room}`);
++    const controllers = this.controllers.get(room);
 +    this.subscribedRooms.set(room, { status: "disconnected" });
-     if (controller) {
-       controller.abort();
-       this.controllers.delete(room);
-@@ -4540,6 +4547,7 @@ var ServerSocket = class {
++    if (controllers) {
++      controllers.forEach((controller) => controller.abort());
+     } else {
+       logger.warn(`Attempted to leave room "${room}" but no active controller found`);
+     }
++    this.controllers.delete(room);
++    logger.info(`Left room: ${room}`);
+   }
+   createHeartbeat(room) {
+     const heartbeat = {
+@@ -4525,7 +4540,12 @@ var ServerSocket = class {
+     return new Promise(async (resolve, reject) => {
+       try {
+         const controller = new AbortController();
+-        this.controllers.set(room, controller);
++        const controllers = this.controllers.get(room) ?? [];
++        if (controllers.length) {
++          controllers.forEach((controller2) => controller2.abort());
++        }
++        controllers.push(controller);
++        this.controllers.set(room, controllers);
+         this.lastPingTimes.set(room, Date.now());
+         const stream = await fetch(`${this.redisUrl}/subscribe/${room}`, {
+           headers: {
+@@ -4537,6 +4557,7 @@ var ServerSocket = class {
+         const reader = stream.body?.getReader();
+         const decoder = new TextDecoder();
+         let buffer = "";
++        this.subscribedRooms.set(room, { status: "connected" });
          while (reader) {
            const { done, value } = await reader.read();
            resolve();
-+          this.subscribedRooms.set(room, { status: "connected" });
-           if (done) break;
-           const chunk = decoder.decode(value);
-           buffer += chunk;
-@@ -4587,6 +4595,7 @@ var ServerSocket = class {
-     if (controller) {
-       controller.abort();
-       this.controllers.delete(room);
-+      this.subscribedRooms.set(room, { status: "disconnected" });
-       logger.info(`Unsubscribed from room: ${room}`);
+@@ -4546,7 +4567,6 @@ var ServerSocket = class {
+           const messages = buffer.split("\n");
+           buffer = messages.pop() || "";
+           for (const message of messages) {
+-            logger.info("Received message:", message);
+             if (message.startsWith("data: ")) {
+               const data = message.slice(6);
+               try {
+@@ -4561,13 +4581,24 @@ var ServerSocket = class {
+                   logger.warn("Missing payload in message");
+                   continue;
+                 }
+-                const parsed = JSON.parse(payloadStr);
+-                if (parsed[0] === "ping") {
+-                  logger.success("Heartbeat received successfully");
+-                  this.lastPingTimes.set(room, Date.now());
++                const maybePingMessage = payloadStr.substring(0, 8);
++                if (maybePingMessage.includes("ping")) {
++                  const abortControllers = this.controllers.get(room) ?? [];
++                  const status = this.subscribedRooms.get(room)?.status;
++                  if (!abortControllers.length || status !== "connected") {
++                    logger.warn(`Halting heartbeat for room: ${room}`);
++                    abortControllers.forEach((controller2) => controller2.abort());
++                    this.subscribedRooms.set(room, { status: "disconnected" });
++                    continue;
++                  }
++                  const newLastPingTime = Date.now();
++                  const lastPingTime = this.lastPingTimes.get(room) ?? newLastPingTime;
++                  this.lastPingTimes.set(room, newLastPingTime);
++                  this.emitter.handleEvent("onHeartbeat", { lastPingTime, room });
++                  this.handleEvent("onHeartbeat", { lastPingTime, room });
+                 }
+                 if (this.ws.readyState === WebSocket.OPEN) {
+-                  this.ws.send(JSON.stringify(parsed));
++                  this.ws.send(payloadStr);
+                 } else {
+                   logger.debug("WebSocket not open, skipping message");
+                 }
+@@ -4583,14 +4614,21 @@ var ServerSocket = class {
+     });
+   }
+   async unsubscribe(room) {
+-    const controller = this.controllers.get(room);
+-    if (controller) {
+-      controller.abort();
+-      this.controllers.delete(room);
+-      logger.info(`Unsubscribed from room: ${room}`);
++    const controllers = this.controllers.get(room);
++    if (controllers) {
++      controllers.forEach((controller) => controller.abort());
      } else {
        logger.warn(`No active subscription found for room: ${room}`);
+     }
++    const heartbeat = this.heartbeatTimers.get(room);
++    if (heartbeat) {
++      clearInterval(heartbeat.sender);
++      clearInterval(heartbeat.monitor);
++    }
++    this.controllers.delete(room);
++    this.heartbeatTimers.delete(room);
++    this.subscribedRooms.set(room, { status: "disconnected" });
++    logger.info(`Unsubscribed from room: ${room}`);
+   }
+ };
+ var ClientSocket = class {
 diff --git a/dist/index.d.cts b/dist/index.d.cts
-index 373e563d5c46e9b3bbf6234a2541f11c057b12c7..fb64c33fca4c3c56bf8f0acc481f61bb90a321bc 100644
+index 373e563d5c46e9b3bbf6234a2541f11c057b12c7..8e7cfd038ef8ef05804f7e8d89c8ca0487292377 100644
 --- a/dist/index.d.cts
 +++ b/dist/index.d.cts
-@@ -19,7 +19,7 @@ interface SystemEvents {
+@@ -17,9 +17,13 @@ interface ServerSocketOptions {
+ interface SystemEvents {
+     onConnect: void;
      onError: Error;
++    onHeartbeat: {
++        lastPingTime: number;
++        room: string;
++    };
  }
  declare class ServerSocket<IncomingEvents, OutgoingEvents> {
 -    private room;
@@ -88,12 +209,27 @@ index 373e563d5c46e9b3bbf6234a2541f11c057b12c7..fb64c33fca4c3c56bf8f0acc481f61bb
      private ws;
      private controllers;
      private emitter;
+@@ -35,7 +39,7 @@ declare class ServerSocket<IncomingEvents, OutgoingEvents> {
+     on<K extends keyof IncomingEvents>(event: K, callback?: (data: IncomingEvents[K]) => any): void;
+     emit<K extends keyof OutgoingEvents>(event: K, data: OutgoingEvents[K]): boolean;
+     handleEvent(eventName: string, eventData: unknown): void;
+-    join(room: string): Promise<void>;
++    join(room: string): void;
+     leave(room: string): void;
+     private createHeartbeat;
+     private subscribe;
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index 373e563d5c46e9b3bbf6234a2541f11c057b12c7..fb64c33fca4c3c56bf8f0acc481f61bb90a321bc 100644
+index 373e563d5c46e9b3bbf6234a2541f11c057b12c7..8e7cfd038ef8ef05804f7e8d89c8ca0487292377 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
-@@ -19,7 +19,7 @@ interface SystemEvents {
+@@ -17,9 +17,13 @@ interface ServerSocketOptions {
+ interface SystemEvents {
+     onConnect: void;
      onError: Error;
++    onHeartbeat: {
++        lastPingTime: number;
++        room: string;
++    };
  }
  declare class ServerSocket<IncomingEvents, OutgoingEvents> {
 -    private room;
@@ -101,8 +237,17 @@ index 373e563d5c46e9b3bbf6234a2541f11c057b12c7..fb64c33fca4c3c56bf8f0acc481f61bb
      private ws;
      private controllers;
      private emitter;
+@@ -35,7 +39,7 @@ declare class ServerSocket<IncomingEvents, OutgoingEvents> {
+     on<K extends keyof IncomingEvents>(event: K, callback?: (data: IncomingEvents[K]) => any): void;
+     emit<K extends keyof OutgoingEvents>(event: K, data: OutgoingEvents[K]): boolean;
+     handleEvent(eventName: string, eventData: unknown): void;
+-    join(room: string): Promise<void>;
++    join(room: string): void;
+     leave(room: string): void;
+     private createHeartbeat;
+     private subscribe;
 diff --git a/dist/index.js b/dist/index.js
-index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..2e662f82a5ed18bce05d4fed78d9932bda38259d 100644
+index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..e7aa8112acd326397cb336848da92e00b30c6d0c 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -4406,7 +4406,7 @@ var EventEmitter = class {
@@ -131,7 +276,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..2e662f82a5ed18bce05d4fed78d9932b
            return;
          }
          this.emitter.handleEvent(eventName, eventData);
-@@ -4454,7 +4455,7 @@ var ServerSocket = class {
+@@ -4454,12 +4455,12 @@ var ServerSocket = class {
      });
    }
    get rooms() {
@@ -140,41 +285,144 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..2e662f82a5ed18bce05d4fed78d9932b
    }
    close() {
      this.ws.close();
-@@ -4481,14 +4482,20 @@ var ServerSocket = class {
+-    for (const controller of this.controllers.values()) {
+-      controller.abort();
++    for (const controllers of this.controllers.values()) {
++      controllers.forEach((controller) => controller.abort());
+     }
+     this.controllers.clear();
+     for (const timers of this.heartbeatTimers.values()) {
+@@ -4480,22 +4481,36 @@ var ServerSocket = class {
+   handleEvent(eventName, eventData) {
      this.emitter.handleEvent(eventName, eventData);
    }
-   async join(room) {
+-  async join(room) {
 -    this.room = room;
++  join(room) {
      logger.info(`Socket trying to join room: "${room}".`);
+-    await this.subscribe(room).catch((error) => {
+-      logger.error(`Subscription error for room ${room}:`, error);
+-    }).then(() => logger.success(`Joined room: ${room}`)).then(() => this.createHeartbeat(room));
 +    const status = this.subscribedRooms.get(room)?.status;
 +    if (status === "connecting" || status === "connected") {
 +      logger.warn(`Socket is already ${status} to room: "${room}". Skipping...`);
 +      return;
 +    }
-+    this.subscribedRooms.set(room, { status: "connecting" });
-     await this.subscribe(room).catch((error) => {
-       logger.error(`Subscription error for room ${room}:`, error);
-     }).then(() => logger.success(`Joined room: ${room}`)).then(() => this.createHeartbeat(room));
++    setTimeout(() => {
++      const status2 = this.subscribedRooms.get(room)?.status;
++      if (status2 === "connecting" || status2 === "connected") {
++        logger.warn(`Socket is already ${status2} to room: "${room}". Skipping...`);
++        return;
++      }
++      this.subscribedRooms.set(room, { status: "connecting" });
++      this.subscribe(room).catch((error) => {
++        logger.error(`Subscription error for room ${room}:`, error);
++        this.subscribedRooms.set(room, { status: "disconnected" });
++      }).then(() => logger.success(`Joined room: ${room}`)).then(() => this.createHeartbeat(room));
++    }, Math.random() * 30);
    }
    leave(room) {
-     const controller = this.controllers.get(room);
+-    const controller = this.controllers.get(room);
+-    if (controller) {
+-      controller.abort();
+-      this.controllers.delete(room);
+-      logger.info(`Left room: ${room}`);
++    const controllers = this.controllers.get(room);
 +    this.subscribedRooms.set(room, { status: "disconnected" });
-     if (controller) {
-       controller.abort();
-       this.controllers.delete(room);
-@@ -4531,6 +4538,7 @@ var ServerSocket = class {
++    if (controllers) {
++      controllers.forEach((controller) => controller.abort());
+     } else {
+       logger.warn(`Attempted to leave room "${room}" but no active controller found`);
+     }
++    this.controllers.delete(room);
++    logger.info(`Left room: ${room}`);
+   }
+   createHeartbeat(room) {
+     const heartbeat = {
+@@ -4516,7 +4531,12 @@ var ServerSocket = class {
+     return new Promise(async (resolve, reject) => {
+       try {
+         const controller = new AbortController();
+-        this.controllers.set(room, controller);
++        const controllers = this.controllers.get(room) ?? [];
++        if (controllers.length) {
++          controllers.forEach((controller2) => controller2.abort());
++        }
++        controllers.push(controller);
++        this.controllers.set(room, controllers);
+         this.lastPingTimes.set(room, Date.now());
+         const stream = await fetch(`${this.redisUrl}/subscribe/${room}`, {
+           headers: {
+@@ -4528,6 +4548,7 @@ var ServerSocket = class {
+         const reader = stream.body?.getReader();
+         const decoder = new TextDecoder();
+         let buffer = "";
++        this.subscribedRooms.set(room, { status: "connected" });
          while (reader) {
            const { done, value } = await reader.read();
            resolve();
-+          this.subscribedRooms.set(room, { status: "connected" });
-           if (done) break;
-           const chunk = decoder.decode(value);
-           buffer += chunk;
-@@ -4578,6 +4586,7 @@ var ServerSocket = class {
-     if (controller) {
-       controller.abort();
-       this.controllers.delete(room);
-+      this.subscribedRooms.set(room, { status: "disconnected" });
-       logger.info(`Unsubscribed from room: ${room}`);
+@@ -4537,7 +4558,6 @@ var ServerSocket = class {
+           const messages = buffer.split("\n");
+           buffer = messages.pop() || "";
+           for (const message of messages) {
+-            logger.info("Received message:", message);
+             if (message.startsWith("data: ")) {
+               const data = message.slice(6);
+               try {
+@@ -4552,13 +4572,24 @@ var ServerSocket = class {
+                   logger.warn("Missing payload in message");
+                   continue;
+                 }
+-                const parsed = JSON.parse(payloadStr);
+-                if (parsed[0] === "ping") {
+-                  logger.success("Heartbeat received successfully");
+-                  this.lastPingTimes.set(room, Date.now());
++                const maybePingMessage = payloadStr.substring(0, 8);
++                if (maybePingMessage.includes("ping")) {
++                  const abortControllers = this.controllers.get(room) ?? [];
++                  const status = this.subscribedRooms.get(room)?.status;
++                  if (!abortControllers.length || status !== "connected") {
++                    logger.warn(`Halting heartbeat for room: ${room}`);
++                    abortControllers.forEach((controller2) => controller2.abort());
++                    this.subscribedRooms.set(room, { status: "disconnected" });
++                    continue;
++                  }
++                  const newLastPingTime = Date.now();
++                  const lastPingTime = this.lastPingTimes.get(room) ?? newLastPingTime;
++                  this.lastPingTimes.set(room, newLastPingTime);
++                  this.emitter.handleEvent("onHeartbeat", { lastPingTime, room });
++                  this.handleEvent("onHeartbeat", { lastPingTime, room });
+                 }
+                 if (this.ws.readyState === WebSocket.OPEN) {
+-                  this.ws.send(JSON.stringify(parsed));
++                  this.ws.send(payloadStr);
+                 } else {
+                   logger.debug("WebSocket not open, skipping message");
+                 }
+@@ -4574,14 +4605,21 @@ var ServerSocket = class {
+     });
+   }
+   async unsubscribe(room) {
+-    const controller = this.controllers.get(room);
+-    if (controller) {
+-      controller.abort();
+-      this.controllers.delete(room);
+-      logger.info(`Unsubscribed from room: ${room}`);
++    const controllers = this.controllers.get(room);
++    if (controllers) {
++      controllers.forEach((controller) => controller.abort());
      } else {
        logger.warn(`No active subscription found for room: ${room}`);
+     }
++    const heartbeat = this.heartbeatTimers.get(room);
++    if (heartbeat) {
++      clearInterval(heartbeat.sender);
++      clearInterval(heartbeat.monitor);
++    }
++    this.controllers.delete(room);
++    this.heartbeatTimers.delete(room);
++    this.subscribedRooms.set(room, { status: "disconnected" });
++    logger.info(`Unsubscribed from room: ${room}`);
+   }
+ };
+ var ClientSocket = class {

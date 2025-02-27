@@ -10,6 +10,7 @@ import { UserName } from '@/app/components/ui/user-name'
 import { calculateProjectCosts } from '@/lib/cost'
 import { useAuth } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
+import { maybeParseNumber } from '@/lib/parse'
 
 interface ProjectContributionsProps {
   projectId: string
@@ -51,16 +52,28 @@ export function ProjectContributionsSkeleton() {
   )
 }
 
+function TopContributorBadge({ color, className, }: { color: 'silver' | 'gold' | 'bronze', className?: string }) {
+  return (
+    <span className={cn(
+      "rotate-12 ml-0 text-xs px-0 py-0.5",
+      "rounded-full h-6 w-6 flex items-center justify-center overflow-hidden",
+      "outline",
+      color === 'gold' ? "bg-yellow-100 outline-yellow-500 text-yellow-600 brightness-114" : 
+      color === 'silver' ? "bg-gray-100 outline-gray-400 text-gray-600" : 
+      color === 'bronze' ? "bg-amber-100 outline-amber-600 text-amber-600 filter-muted" : '',
+      className,
+    )}>
+      <i className={cn("fa-solid fa-crown opacity-80 text-md")}></i>
+    </span>
+  )
+}
+
 export function ProjectContributions({ projectId, isLoading: externalIsLoading }: ProjectContributionsProps) {
   const { projectData } = useProjectData(projectId)
   const contributionsEndRef = useRef<HTMLDivElement>(null)
   const contributionSummary = projectData?.data?.contribution_summary
   const rawContributions = contributionSummary?.recent_contributions || []
   
-  // Get project cost breakdown and calculate target amount
-  const costBreakdown = projectData?.data?.project?.cost_breakdown
-  const costs = costBreakdown ? calculateProjectCosts(costBreakdown) : null
-
   // Group contributions by sender and recency
   const groupedContributions = useMemo(() => {
     // Sort contributions by date (newest first instead of oldest first)
@@ -95,6 +108,17 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
     
     return groups;
   }, [rawContributions]);
+
+  const topContributors = useMemo(() => {
+    const contributors = projectData.data.contribution_summary?.top_contributors;
+    if (!contributors) return {};
+    return Object.fromEntries(contributors.map(
+      (contributor, ranking) => [contributor.user_id, {
+        amount: contributor.amount_cents,
+        ranking: maybeParseNumber(ranking)
+      }],
+    ))
+  }, [projectData])
   
   // Scroll to top when new contributions arrive
   useEffect(() => {
@@ -121,6 +145,7 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
               <ContributionGroup 
                 key={`${group.userId}-${group.timestamp}`} 
                 group={group} 
+                ranking={topContributors[group.userId]?.ranking}
               />
             ))}
           </div>
@@ -206,7 +231,7 @@ export function ProjectContributionsDialog({ projectId }: { projectId: string })
   )
 }
 
-function ContributionGroup({ group }: { group: GroupedContribution }) {
+function ContributionGroup({ group, ranking }: { group: GroupedContribution, ranking: number | undefined }) {
   const { userId, contributions } = group;
   
   // Sort contributions within the group by date (newest first)
@@ -236,9 +261,16 @@ function ContributionGroup({ group }: { group: GroupedContribution }) {
     .filter(c => c.contribution_type === 'funding' && c.amount_cents)
     .reduce((sum, c) => sum + (c.amount_cents || 0), 0);
   
+  console.log(`ranking: ${ranking}`)
   return (
     <div className="flex items-start gap-4 p-2 rounded-lg bg-card border-border hover:bg-accent/5 transition-colors">
-      <UserAvatar userId={userId} size={30} />
+      <div className="flex items-center flex-col gap-2 relative">
+        <UserAvatar userId={userId} size={30} />
+        {/* Only display gold and silver badges */}
+        {ranking === 0 ? <TopContributorBadge color="gold" className="absolute z-[-1] top-[-6px] right-0 translate-x-[60%] -translate-y-[60%]" />
+        : ranking === 1 ? <TopContributorBadge color="silver" className="absolute z-[-1] top-[-6px] right-0 translate-x-[60%] -translate-y-[60%]" />
+        : null}
+      </div>
       <div className="flex-1">
         <div className="flex justify-between items-start">
           <div className="font-medium flex items-center">

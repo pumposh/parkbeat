@@ -138,8 +138,12 @@ export const treeRouter = j.router({
           
           // Send initial message to confirm connection
           logger.debug('Sending connection confirmation message')
-          socket.on('onHeartbeat' as any, () => {
-            logger.info('heartbeat received')
+          socket.on('onHeartbeat' as any, ({
+            lastPingTime,
+            room
+          }) => {
+            const timeSinceLastPing = (Date.now() - lastPingTime) / 1000
+            logger.info(`heartbeat received from ${room} - ${timeSinceLastPing} seconds since last ping`)
           });
           socket.emit('provideSocketId', socketId ?? undefined)
 

@@ -7,6 +7,7 @@ import type { ServerProcedure } from "../tree-router"
 import type { ProjectStatus } from "@/server/types/shared"
 import { ContextWithSuperJSON } from "jstack"
 import { Env as JstackEnv } from "../../jstack"
+import { asyncTimeout } from "@/lib/async"
 
 type Logger = {
   info: (...args: Parameters<typeof console.info>) => void

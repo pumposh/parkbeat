@@ -15,6 +15,7 @@ import type { ProjectCategory, ProjectSuggestion } from "../../types/shared";
 import { Logger } from "./types";
 import { ImageGenerationAgent } from "../ai-helpers/leonardo-agent";
 import { calculateProjectCosts } from "@/lib/cost";
+import { DedupeThing } from "@/lib/promise";
 
 const streetViewParamsSchema = z.object({
   lat: z.number(),
@@ -596,7 +597,7 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
         // Notify subscribers after all images are generated
         notifyProjectSubscribers(projectId, socketId, io)
 
-        logger.info(`[generateSuggestionsForProject] Successfully completed suggestion and image generation for project: ${projectId}`)
+        logger.info(`[generateSuggestionsForcProject] Successfully completed suggestion and image generation for project: ${projectId}`)
       } catch (error) {
         await ctx.redis.del(executionKey)
         logger.error(`[generateSuggestionsForProject] Error analyzing images:`, error)
@@ -611,6 +612,11 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
   // Image Validation Handler
   socket.on('validateImage', async ({ requestId, imageSource, projectId, fundraiserId }) => {
     logger.info(`[validateImage:${requestId}] Starting validation request`)
+    
+    const socketId = getSocketId(socket)
+    const deduped = await DedupeThing.getInstance()
+      .dedupe(socketId, 'validateImage', requestId)
+    if (!deduped) return;
 
     const validationKey = `validateImage:${requestId}`
     const validationResult = await ctx.redis.get(validationKey)
@@ -723,6 +729,11 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
 
   // Project Subscription Handler
   socket.on('subscribeToProject', async ({ projectId, shouldSubscribe }) => {
+    const socketId = getSocketId(socket)
+    const deduped = await DedupeThing.getInstance()
+      .dedupe(socketId, 'subscribeToProject', projectId)
+    if (!deduped) return;
+
     if (shouldSubscribe) {
       logger.info(`Client subscribing to project: ${projectId}`)
       await socket.join(`project:${projectId}`)
@@ -734,6 +745,11 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
 
   // Update the generateImagesForSuggestions handler to use the shared helper
   socket.on('generateImagesForSuggestions', async ({ projectId, suggestionIds }) => {
+    const socketId = getSocketId(socket)
+    const deduped = await DedupeThing.getInstance()
+      .dedupe(socketId, 'generateImagesForSuggestions', projectId)
+    if (!deduped) return;
+
     logger.info(`[generateImagesForSuggestions] Starting image generation for project: ${projectId}`, {
       suggestionIds: suggestionIds || 'all'
     })

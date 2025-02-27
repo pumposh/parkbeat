@@ -138,19 +138,23 @@ export function StepFormDialog({
           child => child instanceof HTMLElement && child.offsetHeight > 0
         )
         if (contentElement instanceof HTMLElement) {
-          let height = contentElement.getBoundingClientRect().height + 32
+          let height = contentElement.getBoundingClientRect().height + 64
 
           // Get header and footer heights, including padding
           const headerHeight = Number(headerRef.current?.getBoundingClientRect().height || 0)
           const footerHeight = Number(footerRef.current?.getBoundingClientRect().height || 0)
-          const paddingPx = 32
+          const paddingPx = 0
           
           const availableHeight = window.innerHeight - headerHeight - footerHeight - paddingPx
           
           // If content is taller than available space, constrain it
+          console.log('[step-form-dialog] height', height)
+          console.log('[step-form-dialog] availableHeight', availableHeight)
           if (height > availableHeight) {
             height = availableHeight
           }
+
+          console.log('[step-form-dialog] new height', height)
 
           setContentHeight(height)
           setIsHeightTransitioning(true)
@@ -311,7 +315,7 @@ export function StepFormDialog({
           </VisuallyHidden>
           <div className="pointer-events-auto flex flex-col flex-1 overflow-hidden">
             <div className="frosted-glass rounded-2xl relative grid grid-rows-[auto_1fr_auto] overflow-hidden">
-              <div className={cn(
+              <div id="step-form-dialog-header" className={cn(
                 "p-8 pt-4 pb-0 space-y-2 transition-opacity duration-300",
                 currentStepData.style?.hideHeader && "hidden"
               )}
@@ -330,7 +334,7 @@ export function StepFormDialog({
 
               <div 
                 className={cn(
-                  "StepFormDialog__content relative overflow-y-scroll flex-0 transition-[height] duration-300 ease-in-out pb-8",
+                  "StepFormDialog__content relative overflow-y-scroll flex-0 transition-[height] duration-300 ease-in-out pb-0",
                   isHeightTransitioning && 'overflow-hidden',
                   requiresScrollView && scrollPosition === 'top' && 'StepFormDialog__content--at-top',
                   requiresScrollView && scrollPosition === 'bottom' && 'StepFormDialog__content--at-bottom'
@@ -373,7 +377,7 @@ export function StepFormDialog({
                 </div>
               </div>
 
-              <div ref={footerRef} className="pt-0 p-8 pb-4 flex items-center justify-between gap-3">
+              <div ref={footerRef} id="step-form-dialog-footer" className="pt-0 p-8 pb-4 flex items-center justify-between gap-3">
                 {currentStep === 0 ? (
                   <button
                     type="button"
