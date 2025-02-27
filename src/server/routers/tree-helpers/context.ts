@@ -317,10 +317,9 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
       return {
         total_amount_cents: total.total_amount_cents,
         contributor_count: total.contributor_count,
-        contributors: contributors.map((contributor: ContributorSummary) => ({
+        top_contributors: contributors.map((contributor: ContributorSummary) => ({
           user_id: contributor.user_id,
-          total_amount_cents: contributor.total_amount_cents,
-          contribution_count: contributor.contribution_count
+          amount_cents: contributor.total_amount_cents,
         })),
         recent_contributions: recentContributions.map(contribution => ({
           id: contribution.id,
@@ -339,7 +338,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
       return {
         total_amount_cents: 0,
         contributor_count: 0,
-        contributors: [],
+        top_contributors: [],
         recent_contributions: []
       }
     }

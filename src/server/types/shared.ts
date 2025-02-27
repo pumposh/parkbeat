@@ -319,7 +319,19 @@ export type ContributorSummary = z.infer<typeof contributorSummarySchema>
 export const contributionSummarySchema = z.object({
   total_amount_cents: z.number(),
   contributor_count: z.number(),
-  contributors: z.array(contributorSummarySchema),
-  recent_contributions: z.array(projectContributionSchema)
+  top_contributors: z.array(z.object({
+    user_id: z.string(),
+    amount_cents: z.number()
+  })),
+  recent_contributions: z.array(z.object({
+    id: z.string(),
+    project_id: z.string(),
+    user_id: z.string(),
+    contribution_type: z.enum(['funding', 'social']),
+    amount_cents: z.number().optional(),
+    message: z.string().optional(),
+    created_at: z.string(),
+    metadata: z.record(z.unknown()).optional()
+  }))
 })
 export type ContributionSummary = z.infer<typeof contributionSummarySchema> 

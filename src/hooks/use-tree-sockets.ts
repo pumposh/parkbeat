@@ -84,7 +84,6 @@ export function useLiveTrees() {
 
   // Handle new tree updates
   useEffect(() => {
-    console.log('[useLiveTrees] newProjectData', newProjectData)
     if (!newProjectData || !('id' in newProjectData)) return;
     if (newProjectData.id === "0") return;
 
@@ -107,9 +106,8 @@ export function useLiveTrees() {
   }, [newProjectData, logger]);
 
   useEffect(() => {
-    console.log('[useLiveTrees] projectData', projectData)
-    if (!projectData || !('id' in projectData)) return;
-    if (projectData.id === "0") return;
+    if (!projectData || !('projectId' in projectData)) return;
+    if (projectData.projectId === "0") return;
 
     const processedProject: Project = {
       ...projectData.data.project,
@@ -128,22 +126,17 @@ export function useLiveTrees() {
     // Update contribution summary map if contribution data exists
     if (projectData.data.contribution_summary) {
       const processedContributionSummary: ContributionSummary = {
-        total_amount_cents: projectData.data.contribution_summary.total_amount_cents,
-        contributor_count: projectData.data.contribution_summary.contributor_count,
+        total_amount_cents: parseInt(projectData.data.contribution_summary.total_amount_cents.toString()),
+        contributor_count: parseInt(projectData.data.contribution_summary.contributor_count.toString()),
         top_contributors: projectData.data.contribution_summary.top_contributors,
       }
-
-      console.log('[useLiveTrees] processedContributionSummary', projectData.id, processedContributionSummary)
 
       setContributionSummaryMap(prev => {
         const next = new Map(prev);
         next.set(processedProject.id, processedContributionSummary);
         return next;
       });
-      logger.log('debug', `Contribution summary for project ${processedProject.id} updated in client state`);
     }
-    
-    logger.log('debug', `Project ${projectData.data.project.id} updated in client state via projectData`);
   }, [projectData, logger]);
   
 
@@ -171,7 +164,6 @@ export function useLiveTrees() {
 
   // Handle subscription updates
   useEffect(() => {
-    console.log('\n\n[useLiveTrees] subscribeData', subscribeData)
     if (!subscribeData) return;
     
     const { geohash, projects } = subscribeData;
@@ -375,7 +367,6 @@ export function useProjectData(projectId: string) {
   });
 
   useEffect(() => {
-    console.log('[useProjectData] projectId', projectId)
     if (currentProjectId.current === projectId) return;
 
     if (currentProjectId.current) {

@@ -167,7 +167,7 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
         </div>
         
         {/* Chevron moved inline with title */}
-        {isAdmin && project && (
+        {project && (
           <div
             className={cn(
               "text-zinc-500 dark:text-zinc-400",
@@ -177,10 +177,10 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
           >
             {isNavigating ? (
               <i className="fa-solid fa-circle-notch fa-spin text-sm" />
-            ) : project.status === 'active' ? (
-              <i className="fa-solid fa-chevron-right text-sm" />
-            ) : (
+            ) : project.status === 'draft' ? (
               <i className="fa-solid fa-pencil text-sm" />
+            ) : (
+              <i className="fa-solid fa-chevron-right text-sm" />
             )}
           </div>
         )}

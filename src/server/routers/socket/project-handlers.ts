@@ -5,7 +5,7 @@ import { getTreeHelpers } from "../tree-helpers/context";
 import { desc, eq, InferInsertModel, like, sql, and } from "drizzle-orm";
 import { projects, projectContributions } from "@/server/db/schema";
 import geohash from 'ngeohash'
-import { type ProjectStatus, type BaseProject, type ProjectData, projectSuggestionSchema, projectSchema, baseProjectSchema } from "../../types/shared";
+import { type ProjectStatus, type BaseProject, type ProjectData, projectSuggestionSchema, projectSchema, baseProjectSchema, contributionSummarySchema } from "../../types/shared";
 import { Procedure } from "jstack";
 import { ContextWithSuperJSON } from "jstack";
 
@@ -76,24 +76,7 @@ export const projectServerEvents = {
         aiAnalysis: z.any().optional()
       })).optional(),
       suggestions: z.array(projectSuggestionSchema).optional(),
-      contribution_summary: z.object({
-        total_amount_cents: z.number(),
-        contributor_count: z.number(),
-        top_contributors: z.array(z.object({
-          user_id: z.string(),
-          amount_cents: z.number()
-        })),
-        recent_contributions: z.array(z.object({
-          id: z.string(),
-          project_id: z.string(),
-          user_id: z.string(),
-          contribution_type: z.enum(['funding', 'social']),
-          amount_cents: z.number().optional(),
-          message: z.string().optional(),
-          created_at: z.string(),
-          metadata: z.record(z.unknown()).optional()
-        }))
-      }).optional()
+      contribution_summary: contributionSummarySchema.optional()
     })
   }),
   subscribe: z.object({
@@ -309,8 +292,6 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
 
     try {
       const hash = geohash.encode(data._loc_lat, data._loc_lng)
-      console.log(data)
-      console.log('created by', data._meta_created_by);
       const projectData: InferInsertModel<typeof projects> = {
         id: data.id,
         name: data.name,

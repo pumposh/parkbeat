@@ -29,13 +29,16 @@ export function UserAvatarCacheProvider({ children }: { children: ReactNode }) {
   
   // Cache for user names
   const [userNameCache, setUserNameCache] = useState<Record<string, CacheEntry>>({});
+  const getNearestMinute = () => Math.floor(Date.now() / 60000) * 60000;
 
   // Get image URL from cache
   const getImageUrl = (userId: string) => {
     const entry = imageUrlCache[userId];
     
     // If entry exists and hasn't expired
-    if (entry && Date.now() - entry.timestamp < CACHE_EXPIRATION) {
+    const isExpired = entry && getNearestMinute() - entry.timestamp > CACHE_EXPIRATION;
+
+    if (entry && !isExpired) {
       return entry.value;
     }
     
@@ -49,7 +52,7 @@ export function UserAvatarCacheProvider({ children }: { children: ReactNode }) {
       ...prev,
       [userId]: {
         value: url,
-        timestamp: Date.now()
+        timestamp: getNearestMinute()
       }
     }));
   };

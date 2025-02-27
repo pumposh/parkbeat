@@ -62,8 +62,6 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
 
   const { contributionSummaryMap } = useLiveTrees()
   const contributionSummary = contributionSummaryMap?.get(project?.id ?? "")
-
-  console.log('[ProjectMarker] contribution summary', project?.id, contributionSummary)
   
   const markerStyle = getMarkerStyles(project, contributionSummary);
 

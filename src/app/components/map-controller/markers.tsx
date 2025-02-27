@@ -9,7 +9,7 @@ const PROXIMITY_THRESHOLD = 50; // pixels
 interface MarkersProps {
   projects: Project[]
   projectGroups?: ProjectGroup[]
-  map: maplibregl.Map
+  map?: maplibregl.Map
   onMarkerNearCenter: (isNear: boolean) => void
   contributionSummaryMap?: Map<string, ContributionSummary>
 }
@@ -21,15 +21,19 @@ interface Marker {
 }
 
 export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter, contributionSummaryMap }: MarkersProps) => {
+  if (!map) return null;
+
   const [markers, setMarkers] = useState<{ [key: string]: Marker }>({})
   const [groupMarkers, setGroupMarkers] = useState<{ [key: string]: Marker }>({})
   const mapCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const [focusedMarkerId, setFocusedMarkerId] = useState<string | null>(null)
+  
 
   useEffect(() => {
     const updateMarkerPositions = () => {
       const newMarkers: typeof markers = {}
       const newGroupMarkers: typeof groupMarkers = {}
+      if (!map) return;
       const center = map.getContainer().getBoundingClientRect()
       mapCenter.current = {
         x: center.width / 2,
@@ -49,6 +53,8 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter, cont
 
       // Update individual project markers
       [...projects, ...(projectGroups || [])].forEach(project => {
+        if (!map) return;
+        if (isNaN(project._loc_lat) || isNaN(project._loc_lng)) return
         const point = map.project([project._loc_lng, project._loc_lat])
         const dx = point.x - mapCenter.current.x
         const dy = point.y - mapCenter.current.y
@@ -120,12 +126,16 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter, cont
     }
 
     updateMarkerPositions()
-    map.on('move', updateMarkerPositions)
-    map.on('zoom', updateMarkerPositions)
+    if (map) {
+      map.on('move', updateMarkerPositions)
+      map.on('zoom', updateMarkerPositions)
+    }
 
     return () => {
-      map.off('move', updateMarkerPositions)
-      map.off('zoom', updateMarkerPositions)
+      if (map) {
+        map.off('move', updateMarkerPositions)
+        map.off('zoom', updateMarkerPositions)
+      }
     }
   }, [projects, projectGroups, map, onMarkerNearCenter])
 
@@ -134,7 +144,7 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter, cont
       {/* Render project group markers */}
       {projectGroups?.map(group => {
         const marker = groupMarkers[group.id]
-        if (!marker) return null
+        if (!marker || !map) return null
         return (
           <ProjectMarker
             key={group.id}
@@ -149,9 +159,9 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter, cont
 
       {/* Render individual project markers */}
       {Object.entries(markers).map(([id, marker]) => {
+        if (!map) return null;
         const project = projects.find(p => p.id === id)
         const contributionSummary = contributionSummaryMap?.get(id)
-        console.log('[Markers] contributionSummary', project?.id, contributionSummary)
         return (
           <ProjectMarker
             key={id}
