@@ -115,12 +115,12 @@ export const ToastContext = createContext<ToastContextType>({
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Array<ToastProps & { id: string }>>([])
 
-  const show = () => {}; //(props: Omit<ToastProps, 'onClose'>) => {
-  //   const id = Math.random().toString(36).substring(7)
-  //   setToasts(prev => [...prev, { ...props, id, onClose: () => {
-  //     setToasts(prev => prev.filter(toast => toast.id !== id))
-  //   }}])
-  // }
+  const show = (props: Omit<ToastProps, 'onClose'>) => {
+    const id = Math.random().toString(36).substring(7)
+    setToasts(prev => [...prev, { ...props, id, onClose: () => {
+      setToasts(prev => prev.filter(toast => toast.id !== id))
+    }}])
+  }
 
   return (
     <ToastContext.Provider value={{ show }}>

@@ -1,3 +1,5 @@
+'use client'
+
 /**
  * Custom hook for validating Google Street View images before using them in a community project.
  * This hook provides functionality to:
@@ -11,8 +13,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useToast } from '@/app/components/toast'
 import { WebSocketManager } from './websocket-manager'
 import { useServerEvent } from './websocket-manager'
-import type { EventPayloadMap } from './websocket-manager'
 import { generateId } from '@/lib/id'
+import { HydratableDate } from '@/lib/utils'
 
 // Validation error types
 export interface ValidationError {
@@ -145,7 +147,7 @@ export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) 
         code: result.error.code,
         message: result.error.message,
         details: result.error.details,
-        timestamp: new Date().toISOString()
+        timestamp: new HydratableDate().toISOString()
       }
       handleError(error, options)
       setIsValidating(false)

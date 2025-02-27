@@ -5,22 +5,37 @@ import type {
   ProjectSuggestion,
   ProjectCostBreakdown,
   CostRevision,
-  ProjectData
 } from '@/server/types/shared'
+import { HydratableDate as Date } from '@/lib/utils'
+
+const cleanItemTitle = (title: string) => {
+  return title.replace('- ', '').replace(/\([^)]*\)/g, '').replace(/:/g, '').trim()
+}
 
 export function calculateProjectCosts(breakdown?: CostBreakdown) {
   if (!breakdown) return null
 
   const maybeParseFloat = (value: string | number) => {
+    let number: number;
     if (typeof value === 'string') {
-      return parseFloat(value.replace(/[^0-9.-]+/g, ''))
+      number = Number(parseFloat(value.replace(/[^0-9.-]+/g, '')))
+    } else if (typeof value === 'number') {
+      number = value
+    } else {
+      return 0
     }
-    return value
+
+    if (isNaN(number)) {
+      return 0
+    }
+
+    return number
   }
 
   const materials = {
     items: breakdown.materials?.map(item => ({
       ...item,
+      item: cleanItemTitle(item.item),
       isIncluded: item.isIncluded ?? true
     })) || [],
     total: breakdown.materials?.reduce((sum: number, item: { item: string, cost: string, isIncluded?: boolean }) => 
@@ -30,15 +45,17 @@ export function calculateProjectCosts(breakdown?: CostBreakdown) {
   const labor = {
     items: breakdown.labor?.map(item => ({
       ...item,
+      description: cleanItemTitle(item.description),
       isIncluded: item.isIncluded ?? true
     })) || [],
     total: breakdown.labor?.reduce((sum: number, item: { description: string, hours: number, rate: number, isIncluded?: boolean }) => 
-      sum + ((item.isIncluded ?? true) ? item.hours * item.rate : 0), 0) || 0
+      sum + ((item.isIncluded ?? true) ? maybeParseFloat(item.hours) * maybeParseFloat(item.rate) : 0), 0) || 0
   }
 
   const other = {
     items: breakdown.other?.map(item => ({
       ...item,
+      item: cleanItemTitle(item.item),
       isIncluded: item.isIncluded ?? true
     })) || [],
     total: breakdown.other?.reduce((sum: number, item: { item: string, cost: string, isIncluded?: boolean }) => 
@@ -69,7 +86,7 @@ export function convertSuggestionToProjectCosts(suggestion: ProjectSuggestion): 
     projectCosts.push({
       id: generateId(),
       type: 'material',
-      name: item.item?.replace('- ', '').trim(),
+      name: cleanItemTitle(item.item),
       total_cost: costValue,
       is_required: true,
       created_at: new Date().toISOString(),
@@ -85,7 +102,7 @@ export function convertSuggestionToProjectCosts(suggestion: ProjectSuggestion): 
     projectCosts.push({
       id: generateId(),
       type: 'labor',
-      name: item.description?.replace('- ', '').trim() || item.task?.replace('- ', '').trim() || '',
+      name: cleanItemTitle(item.description) || cleanItemTitle(item.task || ''),
       quantity: hourMatch ? parseInt(hourMatch[1] || '0') : undefined,
       unit: 'hours',
       unit_cost: rateMatch ? parseInt(rateMatch[1] || '0') : undefined,
@@ -102,7 +119,7 @@ export function convertSuggestionToProjectCosts(suggestion: ProjectSuggestion): 
     projectCosts.push({
       id: generateId(),
       type: 'other',
-      name: item.item?.replace('- ', '').trim(),
+      name: cleanItemTitle(item.item),
       total_cost: costValue,
       is_required: true,
       created_at: new Date().toISOString(),

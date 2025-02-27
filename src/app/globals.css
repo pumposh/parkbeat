@@ -108,7 +108,7 @@
 
 @layer components {
   .frosted-glass {
-    @apply backdrop-blur-md bg-white/80 dark:bg-black/50 border border-zinc-200/50 dark:border-white/10;
+    @apply backdrop-blur-md bg-white/50 dark:bg-black/50 border border-zinc-200/50 dark:border-white/10;
     backdrop-filter: blur(var(--glass-blur));
     background-color: color-mix(in srgb, var(--background) var(--glass-bg), transparent);
     border: 1px solid color-mix(in srgb, var(--foreground) var(--glass-border), transparent);
@@ -254,7 +254,6 @@
     }
     .cl-formButtonPrimary, .cl-button {
       background-color: color-mix(in srgb, var(--background) 20%, transparent);
-
     }
     .cl-scrollBox,
     .cl-pageScrollBox,
@@ -279,6 +278,7 @@
     .cl-dividerText,
     .cl-userPreviewTextContainer,
     .cl-profileSectionItem p,
+    .cl-formFieldSuccessText__password,
     .cl-formFieldInput {
         color: color-mix(in srgb, var(--foreground) var(--glass-bg), transparent) !important;
         @apply text-sm font-medium text-zinc-800 dark:text-zinc-200
@@ -505,11 +505,13 @@
       position: fixed;
       left: 50%;
       top: 50%;
+      max-width: 40rem;
     }
-
+    
     .dialog-content[data-state="open"] {
       animation: contentShowDesktop var(--transition-duration) var(--transition-ease);
       transform: translate(-50%, -50%) scale(1);
+      max-width: 40rem;
     }
 
     .dialog-content[data-state="closed"] {

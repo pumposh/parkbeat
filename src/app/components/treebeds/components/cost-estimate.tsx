@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/cost'
+import { useDebouncedCallback } from '@/hooks/use-debounce'
+import './cost-estimate.css'
 
 interface CostItem {
   item: string
@@ -43,6 +45,364 @@ interface EditingState {
   field?: 'hours' | 'rate'
 }
 
+// Memoized LineItemToggle component
+const LineItemToggle = memo(({ isIncluded = true, onChange }: { 
+  isIncluded?: boolean
+  onChange: (isIncluded: boolean) => void 
+}) => (
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation()
+      e.preventDefault()
+      onChange(!isIncluded)
+    }}
+    className={cn(
+      "w-4 h-4 rounded-full border transition-colors mr-2 flex-shrink-0",
+      isIncluded 
+        ? "bg-emerald-500 border-emerald-500 hover:bg-emerald-600 hover:border-emerald-600" 
+        : "bg-transparent border-gray-300 dark:border-gray-600 hover:border-emerald-500 dark:hover:border-emerald-500"
+    )}
+    role="checkbox"
+    aria-checked={isIncluded}
+  >
+    {isIncluded && (
+      <div className="w-2 h-2 bg-white rounded-full m-auto" />
+    )}
+  </button>
+))
+
+LineItemToggle.displayName = 'LineItemToggle'
+
+// Memoized EditableValue component
+const EditableValue = memo(({ 
+  value, 
+  section, 
+  index, 
+  field,
+  isIncluded = true,
+  disabled = false,
+  unit = '$',
+  isReadOnly,
+  onEdit,
+  onValueChange,
+  onEditComplete,
+}: { 
+  value: string | number
+  section: 'materials' | 'labor' | 'other'
+  index: number
+  field?: 'hours' | 'rate'
+  isIncluded?: boolean
+  disabled?: boolean
+  unit?: string
+  isReadOnly: boolean
+  onEdit: (section: 'materials' | 'labor' | 'other', index: number, field?: 'hours' | 'rate') => void
+  onValueChange: (section: 'materials' | 'labor' | 'other', index: number, value: string | number, field?: 'hours' | 'rate') => void
+  onEditComplete: () => void
+  isEditing: boolean
+}) => {
+  const cleanValue = (v: string | number) => v.toString().replace(/[^0-9.]/g, '')
+
+  const [localValue, _setLocalValue] = useState(cleanValue(value))
+
+  const [isFocused, setIsFocused] = useState(false)
+
+  useEffect(() => {
+    const newValue = cleanValue(value)
+    if (newValue !== localValue && !isFocused) {
+      setLocalValue(newValue)
+    }
+  }, [value, isFocused])
+
+  // Set cursor to the end of input when focused
+  useEffect(() => {
+    if (isFocused && ref.current) {
+      const length = ref.current.value.length;
+      ref.current.setSelectionRange(length, length);
+    }
+  }, [isFocused]);
+
+  const debouncedCallback = useDebouncedCallback((v: string) => {
+    onValueChange(section, index, v, field)
+  }, 1000, [onEditComplete])
+
+  const setLocalValue = (v: string) => {
+    if (v === '') {
+      _setLocalValue('0')
+      onValueChange(section, index, '0', field)
+    } else {
+      const cleanValue = v.replace(/[^0-9.]/g, '').replace(/^0+(?=\d)/, '')
+      _setLocalValue(cleanValue)
+      onValueChange(section, index, cleanValue, field)
+    }
+  }
+
+  const mostRecentValue = useRef(localValue)
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      debouncedCallback.flush?.()
+      onEditComplete()
+    } else if (e.key === 'Escape') {
+      // Reset to original value and complete editing
+      setLocalValue(mostRecentValue.current)
+      onEditComplete()
+    }
+  }, [onEditComplete, debouncedCallback])
+
+  // Format the display value for both display and to calculate width
+  const formattedValue = useMemo(() => 
+    unit === '$' ? formatCurrency(parseFloat(value.toString())) : value.toString(),
+    [value, unit]
+  )
+
+  // Calculate approximate width based on the formatted value
+  const minWidth = useMemo(() => {
+    const valueLength = localValue.toString().length
+    return Math.max(10, valueLength * 10) + 2 // 8px per character is a rough estimate
+  }, [localValue])
+
+  const ref = useRef<HTMLInputElement>(null)
+
+
+  if (!isReadOnly) {
+    return (
+      <div className="inline-flex items-center flex-shrink-0 gap-2">
+        <div className="flex items-center gap-0">
+          {unit === '$' && (
+            <span className="ml-1 text-md font-mono text-[16px]">$</span>
+          )}
+          <input
+            ref={ref}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={localValue}
+            onChange={(e) => setLocalValue(e.target.value)}
+            onFocus={() => {
+              mostRecentValue.current = localValue
+              setIsFocused(true)
+              setTimeout(() => {
+                if (ref.current) {
+                  const length = ref.current.value.length;
+                  ref.current.setSelectionRange(length, length);
+                }
+              }, 0);
+            }}
+            onBlur={() => {
+              setIsFocused(false)
+              onEditComplete()
+            }}
+            onKeyDown={handleKeyDown}
+            className={cn(
+              "CostEstimateInput font-mono text-md bg-transparent border-0 outline-none tabular-nums text-right p-0",
+              !isIncluded && "opacity-50"
+            )}
+            disabled={disabled || !isIncluded}
+            style={{ 
+              maxWidth: `${minWidth}px`,
+              width: `${minWidth}px`,
+              minWidth: `${minWidth}px`
+            }}
+          />
+          {unit !== '$' && (
+            <span className="ml-1 text-md font-mono text-[16px]">{unit}</span>
+          )}
+        </div>
+        <div
+          onClick={() => {
+            onEdit(section, index, field)
+            if (ref.current) {
+              ref.current.focus()
+            }
+          }}
+          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors flex-shrink-0"
+          aria-label={`Edit ${section} value`}
+        >
+          <i className="fa-solid fa-chevron-left text-xs" />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-0 flex-shrink-0">
+      <span
+        className={cn(
+          "tabular-nums text-right font-mono text-md",
+          !isReadOnly && !disabled && "cursor-pointer",
+          !isIncluded && "opacity-50"
+        )}
+        onClick={() => !isReadOnly && !disabled && onEdit(section, index, field)}
+      >
+        <span>{formattedValue}</span>
+        {unit !== '$' && <span className="ml-[2px]">{unit}</span>}
+      </span>
+      {!isReadOnly && !disabled && (
+        <button
+          type="button"
+          onClick={() => onEdit(section, index, field)}
+          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors flex-shrink-0"
+          aria-label={`Edit ${section} value`}
+        >
+          <i className="fa-solid fa-pencil text-xs" />
+        </button>
+      )}
+    </div>
+  )
+})
+
+EditableValue.displayName = 'EditableValue'
+
+// Memoized CostSection component
+const CostSection = memo(({ 
+  title, 
+  items, 
+  section, 
+  isReadOnly, 
+  editingItem,
+  onItemToggle,
+  onEditStart,
+  onCostChange,
+  onEditComplete
+}: {
+  title: string
+  items: (CostItem | LaborItem)[]
+  section: 'materials' | 'labor' | 'other'
+  isReadOnly: boolean
+  editingItem: EditingState | null
+  onItemToggle: (section: 'materials' | 'labor' | 'other', index: number, isIncluded: boolean) => void
+  onEditStart: (section: 'materials' | 'labor' | 'other', index: number, field?: 'hours' | 'rate') => void
+  onCostChange: (section: 'materials' | 'labor' | 'other', index: number, value: string | number, field?: 'hours' | 'rate') => void
+  onEditComplete: () => void
+}) => {
+  if (items.length === 0) return null
+  
+  // Filter out items with isIncluded === false when in read-only mode
+  const displayItems = isReadOnly 
+    ? items.filter(item => item.isIncluded !== false) 
+    : items;
+    
+  if (displayItems.length === 0) return null;
+
+  return (
+    <>
+      <div className="text-gray-500 dark:text-gray-400 mb-1">{title}</div>
+      {displayItems.map((item, i) => {
+        // Find the original index in the items array
+        const originalIndex = items.findIndex(originalItem => 
+          originalItem === item
+        );
+        
+        if (section === 'labor') {
+          const laborItem = item as LaborItem
+          const isHoursEditing = editingItem?.section === section && 
+                               editingItem?.index === originalIndex && 
+                               editingItem?.field === 'hours'
+          const isRateEditing = editingItem?.section === section && 
+                              editingItem?.index === originalIndex && 
+                              editingItem?.field === 'rate'
+
+          return (
+            <div key={`labor-${originalIndex}`}>
+              <div className="pl-2 text-gray-600 dark:text-gray-300 flex justify-between items-start gap-2">
+                <div className="flex items-center flex-1">
+                  {!isReadOnly && (
+                    <LineItemToggle
+                      isIncluded={laborItem.isIncluded ?? true}
+                      onChange={(isIncluded) => onItemToggle(section, originalIndex, isIncluded)}
+                    />
+                  )}
+                  <span className={cn(
+                    "font-medium flex-1 pl-2",
+                    !isReadOnly && !laborItem.isIncluded && "opacity-50"
+                  )}>
+                    {laborItem.description?.replace('- ', '')}
+                  </span>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <div className="flex items-center gap-2 justify-end">
+                    <EditableValue
+                      value={laborItem.hours}
+                      section={section}
+                      unit="h"
+                      index={originalIndex}
+                      field="hours"
+                      isIncluded={laborItem.isIncluded ?? true}
+                      isReadOnly={isReadOnly}
+                      onEdit={onEditStart}
+                      onValueChange={onCostChange}
+                      onEditComplete={onEditComplete}
+                      isEditing={isHoursEditing}
+                    />
+                    <span className="text-sm opacity-50">×</span>
+                    <EditableValue
+                      value={laborItem.rate}
+                      section={section}
+                      index={originalIndex}
+                      field="rate"
+                      isIncluded={laborItem.isIncluded ?? true}
+                      isReadOnly={isReadOnly}
+                      onEdit={onEditStart}
+                      onValueChange={onCostChange}
+                      onEditComplete={onEditComplete}
+                      isEditing={isRateEditing}
+                    />
+                  </div>
+                  <div className={cn(
+                    "text-sm text-gray-500 dark:text-gray-400 font-mono text-md",
+                    !isReadOnly && !laborItem.isIncluded && "opacity-50"
+                  )}>
+                    {formatCurrency(laborItem.hours * laborItem.rate)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        } else {
+          const costItem = item as CostItem
+          const isEditing = editingItem?.section === section && 
+                          editingItem?.index === originalIndex && 
+                          editingItem?.field === undefined
+
+          return (
+            <div key={`${section}-${originalIndex}`}>
+              <div className="pl-2 text-gray-600 dark:text-gray-300 flex justify-between items-center">
+                <div className="flex items-center flex-1">
+                  {!isReadOnly && (
+                    <LineItemToggle
+                      isIncluded={costItem.isIncluded ?? true}
+                      onChange={(isIncluded) => onItemToggle(section, originalIndex, isIncluded)}
+                    />
+                  )}
+                  <span className={cn(
+                    "font-medium flex-1 pl-2",
+                    !isReadOnly && !costItem.isIncluded && "opacity-50"
+                  )}>
+                    {costItem.item?.replace('- ', '')}
+                  </span>
+                </div>
+                <EditableValue
+                  value={costItem.cost}
+                  section={section}
+                  index={originalIndex}
+                  isIncluded={costItem.isIncluded ?? true}
+                  isReadOnly={isReadOnly}
+                  onEdit={onEditStart}
+                  onValueChange={onCostChange}
+                  onEditComplete={onEditComplete}
+                  isEditing={isEditing}
+                />
+              </div>
+            </div>
+          )
+        }
+      })}
+    </>
+  )
+})
+
+CostSection.displayName = 'CostSection'
+
 export function CostEstimate({ 
   costs, 
   isReadOnly = true,
@@ -50,8 +410,51 @@ export function CostEstimate({
 }: CostEstimateProps) {
   const [isCostBreakdownExpanded, setIsCostBreakdownExpanded] = useState(!isReadOnly)
   const [editingItem, setEditingItem] = useState<EditingState | null>(null)
+  
+  // Memoize the costs to compare with previous values
+  const memoizedCosts = useMemo(() => costs, [
+    costs.materials.total,
+    costs.labor.total,
+    costs.other.total,
+    costs.total,
+    // We don't include the individual items in the dependency array
+    // to prevent re-renders when only the user's edits change
+  ])
+  
+  // Create a debounced version of the commitChange function
+  const debouncedCommitChange = useDebouncedCallback(
+    (section: 'materials' | 'labor' | 'other', index: number, value: string | number, field?: 'hours' | 'rate') => {
+      if (isReadOnly) return
 
-  const handleItemToggle = (
+      const updatedCosts = { ...costs }
+      
+      if (section === 'labor' && field) {
+        const laborItem = updatedCosts.labor.items[index] as LaborItem
+        laborItem[field] = parseFloat(value.toString()) || 0
+        updatedCosts.labor.total = updatedCosts.labor.items.reduce((sum, item) => 
+          sum + (item.isIncluded ? item.hours * item.rate : 0), 0
+        )
+      } else if (section !== 'labor') {
+        const item = updatedCosts[section].items[index] as CostItem
+        item.cost = value.toString()
+        updatedCosts[section].total = updatedCosts[section].items.reduce((sum, item) => 
+          sum + (item.isIncluded ? parseFloat(item.cost.toString()) : 0), 0
+        )
+      }
+
+      updatedCosts.total = (
+        updatedCosts.materials.total + 
+        updatedCosts.labor.total + 
+        updatedCosts.other.total
+      )
+
+      onChange?.(updatedCosts)
+    },
+    800,
+    [memoizedCosts, isReadOnly, onChange]
+  )
+
+  const handleItemToggle = useCallback((
     section: 'materials' | 'labor' | 'other',
     index: number,
     isIncluded: boolean
@@ -81,134 +484,48 @@ export function CostEstimate({
     )
 
     onChange?.(updatedCosts)
-  }
+  }, [costs, isReadOnly, onChange])
 
-  const handleCostChange = (
+  const handleCostChange = useCallback((
     section: 'materials' | 'labor' | 'other',
     index: number,
     value: string | number,
     field?: 'hours' | 'rate'
   ) => {
     if (isReadOnly) return
+    
+    // Debounce the actual change
+    debouncedCommitChange(section, index, value, field)
+  }, [isReadOnly, debouncedCommitChange])
 
-    const updatedCosts = { ...costs }
+  const handleEditStart = useCallback((section: 'materials' | 'labor' | 'other', index: number, field?: 'hours' | 'rate') => {
+    if (isReadOnly) return
+    
+    // Initialize temp value with current value
+    const valueKey = `${section}-${index}-${field || 'cost'}`
+    let currentValue: string | number
     
     if (section === 'labor' && field) {
-      const laborItem = updatedCosts.labor.items[index] as LaborItem
-      laborItem[field] = parseFloat(value.toString()) || 0
-      updatedCosts.labor.total = updatedCosts.labor.items.reduce((sum, item) => 
-        sum + (item.isIncluded ? item.hours * item.rate : 0), 0
-      )
+      currentValue = costs.labor.items[index]?.[field] ?? ''
     } else if (section !== 'labor') {
-      const item = updatedCosts[section].items[index] as CostItem
-      item.cost = value.toString()
-      updatedCosts[section].total = updatedCosts[section].items.reduce((sum, item) => 
-        sum + (item.isIncluded ? parseFloat(item.cost.toString()) : 0), 0
-      )
+      currentValue = (costs[section].items[index] as CostItem)?.cost ?? ''
+    } else {
+      currentValue = ''
     }
-
-    updatedCosts.total = (
-      updatedCosts.materials.total + 
-      updatedCosts.labor.total + 
-      updatedCosts.other.total
-    )
-
-    onChange?.(updatedCosts)
-  }
-
-  const handleEditStart = (section: 'materials' | 'labor' | 'other', index: number, field?: 'hours' | 'rate') => {
-    if (isReadOnly) return
+    
     setEditingItem({ section, index, field })
-  }
+  }, [costs, isReadOnly])
 
-  const handleEditComplete = () => {
+  const handleEditComplete = useCallback(() => {
+    if (!editingItem) return
+    // Commit the final value when input loses focus
+    debouncedCommitChange.flush?.()
+    
     setEditingItem(null)
-  }
+  }, [editingItem, debouncedCommitChange])
 
-  const LineItemToggle = ({ isIncluded = true, onChange }: { 
-    isIncluded?: boolean
-    onChange: (isIncluded: boolean) => void 
-  }) => (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        e.preventDefault()
-        onChange(!isIncluded)
-      }}
-      className={cn(
-        "w-4 h-4 rounded-full border transition-colors mr-2 flex-shrink-0",
-        isIncluded 
-          ? "bg-emerald-500 border-emerald-500 hover:bg-emerald-600 hover:border-emerald-600" 
-          : "bg-transparent border-gray-300 dark:border-gray-600 hover:border-emerald-500 dark:hover:border-emerald-500"
-      )}
-      role="checkbox"
-      aria-checked={isIncluded}
-    >
-      {isIncluded && (
-        <div className="w-2 h-2 bg-white rounded-full m-auto" />
-      )}
-    </button>
-  )
-
-  const EditableValue = ({ 
-    value, 
-    section, 
-    index, 
-    field,
-    isIncluded = true,
-    disabled = false,
-    unit = '$',
-  }: { 
-    value: string | number
-    section: 'materials' | 'labor' | 'other'
-    index: number
-    field?: 'hours' | 'rate'
-    isIncluded?: boolean
-    disabled?: boolean
-    unit?: string
-  }) => {
-    const isEditing = editingItem?.section === section && 
-                     editingItem?.index === index && 
-                     editingItem?.field === field
-
-    if (isEditing) {
-      return (
-        <input
-          type="number"
-          value={value.toString().replace(/[^0-9.]/g, '')}
-          onChange={(e) => handleCostChange(section, index, e.target.value, field)}
-          onBlur={handleEditComplete}
-          autoFocus
-          className={cn(
-            "input w-[80px] text-right py-0 px-2 h-6 text-sm",
-            !isIncluded && "opacity-50"
-          )}
-          disabled={disabled || !isIncluded}
-        />
-      )
-    }
-
-    return (
-      <div className="flex items-center gap-2">
-        <span className={cn(
-          "tabular-nums text-right",
-          !isIncluded && "opacity-50"
-        )}>
-          {unit === '$' ? formatCurrency(parseFloat(value.toString())) : value.toString()} {unit !== '$' ? unit : ''}
-        </span>
-        {!isReadOnly && !disabled && (
-          <button
-            type="button"
-            onClick={() => handleEditStart(section, index, field)}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-          >
-            <i className="fa-solid fa-pencil text-xs" />
-          </button>
-        )}
-      </div>
-    )
-  }
+  // Memoize the total display
+  const totalDisplay = useMemo(() => formatCurrency(costs.total), [costs.total])
 
   return (
     <div className="">
@@ -222,8 +539,8 @@ export function CostEstimate({
         >
           <span>Cost estimate</span>
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">
-              {formatCurrency(costs.total)}
+            <span className="text-sm font-medium font-mono text-md">
+              {totalDisplay}
             </span>
             <i className={cn(
               "fa-solid fa-chevron-down transition-transform",
@@ -236,121 +553,50 @@ export function CostEstimate({
           isCostBreakdownExpanded ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
         )}>
           {costs.materials.items.length > 0 && (
-            <>
-              <div className="text-gray-500 dark:text-gray-400 mb-1">Materials</div>
-              {costs.materials.items.map((item, i) => (
-                <div key={`material-${i}`}>
-                  <div className="pl-2 text-gray-600 dark:text-gray-300 flex justify-between items-center">
-                    <div className="flex items-center flex-1">
-                      {!isReadOnly && (
-                        <LineItemToggle
-                          isIncluded={item.isIncluded ?? true}
-                          onChange={(isIncluded) => handleItemToggle('materials', i, isIncluded)}
-                        />
-                      )}
-                      <span className={cn(
-                        "font-medium flex-1 pl-2",
-                        !isReadOnly && !item.isIncluded && "opacity-50"
-                      )}>
-                        {item.item?.replace('- ', '')}
-                      </span>
-                    </div>
-                    <EditableValue
-                      value={item.cost}
-                      section="materials"
-                      index={i}
-                      isIncluded={item.isIncluded ?? true}
-                    />
-                  </div>
-                </div>
-              ))}
-            </>
+            <CostSection
+              title="Materials"
+              items={costs.materials.items}
+              section="materials"
+              isReadOnly={isReadOnly}
+              editingItem={editingItem}
+              onItemToggle={handleItemToggle}
+              onEditStart={handleEditStart}
+              onCostChange={handleCostChange}
+              onEditComplete={handleEditComplete}
+            />
           )}
-          {costs.labor.items.length > 0 && costs.labor.total > 0 && (
-            <>
-              <div className="text-gray-500 dark:text-gray-400 mb-1">Labor</div>
-              {costs.labor.items.map((item, i) => (
-                <div key={`labor-${i}`}>
-                  <div className="pl-2 text-gray-600 dark:text-gray-300 flex justify-between items-start gap-2">
-                    <div className="flex items-center flex-1">
-                      {!isReadOnly && (
-                        <LineItemToggle
-                          isIncluded={item.isIncluded ?? true}
-                          onChange={(isIncluded) => handleItemToggle('labor', i, isIncluded)}
-                        />
-                      )}
-                      <span className={cn(
-                        "font-medium flex-1 pl-2",
-                        !isReadOnly && !item.isIncluded && "opacity-50"
-                      )}>
-                        {item.description?.replace('- ', '')}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <div className="flex items-center gap-2 justify-end">
-                        <EditableValue
-                          value={item.hours}
-                          section="labor"
-                          unit="h"
-                          index={i}
-                          field="hours"
-                          isIncluded={item.isIncluded ?? true}
-                        />
-                        <span className="text-sm opacity-50">×</span>
-                        <EditableValue
-                          value={item.rate}
-                          section="labor"
-                          index={i}
-                          field="rate"
-                          isIncluded={item.isIncluded ?? true}
-                        />
-                      </div>
-                      <div className={cn(
-                        "text-sm text-gray-500 dark:text-gray-400",
-                        !item.isIncluded && "opacity-50"
-                      )}>
-                        {formatCurrency(item.hours * item.rate)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </>
+          
+          {costs.labor.items.length > 0 && (
+            <CostSection
+              title="Labor"
+              items={costs.labor.items}
+              section="labor"
+              isReadOnly={isReadOnly}
+              editingItem={editingItem}
+              onItemToggle={handleItemToggle}
+              onEditStart={handleEditStart}
+              onCostChange={handleCostChange}
+              onEditComplete={handleEditComplete}
+            />
           )}
-          {costs.other.items.length > 0 && costs.other.total > 0 && (
-            <>
-              <div className="text-gray-500 dark:text-gray-400 mb-1">Other</div>
-              {costs.other.items.map((item, i) => (
-                <div key={`other-${i}`}>
-                  <div className="pl-2 text-gray-600 dark:text-gray-300 flex justify-between items-center">
-                    <div className="flex items-center flex-1">
-                      {!isReadOnly && (
-                        <LineItemToggle
-                          isIncluded={item.isIncluded ?? true}
-                          onChange={(isIncluded) => handleItemToggle('other', i, isIncluded)}
-                        />
-                      )}
-                      <span className={cn(
-                        "font-medium flex-1 pl-2",
-                        !isReadOnly && !item.isIncluded && "opacity-50"
-                      )}>
-                        {item.item?.replace('- ', '')}
-                      </span>
-                    </div>
-                    <EditableValue
-                      value={item.cost}
-                      section="other"
-                      index={i}
-                      isIncluded={item.isIncluded ?? true}
-                    />
-                  </div>
-                </div>
-              ))}
-            </>
+          
+          {costs.other.items.length > 0 && (
+            <CostSection
+              title="Other"
+              items={costs.other.items}
+              section="other"
+              isReadOnly={isReadOnly}
+              editingItem={editingItem}
+              onItemToggle={handleItemToggle}
+              onEditStart={handleEditStart}
+              onCostChange={handleCostChange}
+              onEditComplete={handleEditComplete}
+            />
           )}
+          
           <div className="flex justify-between font-medium text-gray-900 dark:text-gray-100 pt-2 border-t border-gray-200 dark:border-gray-600">
             <span>Total</span>
-            <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(costs.total)}</span>
+            <span className="tabular-nums text-right min-w-[100px] font-mono text-md">{totalDisplay}</span>
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Logo } from "../ui/logo"
+import { Logo, BetaTag } from "../ui/logo"
 import { cn } from "@/lib/utils"
 
 export const Header = () => {
@@ -9,13 +9,20 @@ export const Header = () => {
         <div className="relative">
           <div className="frosted-glass rounded-xl px-3 py-2 flex items-center justify-between relative">
             <Link href="/" className="text-sm font-semibold text-zinc-800 dark:text-zinc-300 hover:text-zinc-600 dark:hover:text-zinc-100 transition">
-              <Logo className="
+              <Logo showBetaTag={false} className="
                 scale-[0.35]
                 absolute
                 translate-x-[calc(-50%+16px)]
                 translate-y-[-50%]
                 drop-shadow-[0_12px_24px_rgba(0,0,0,0.4)]
                 dark:drop-shadow-[0_12px_24px_rgba(0,0,0,0.7)]
+                " />
+              <BetaTag className="
+                absolute
+                translate-x-[calc(-50%+16px)]
+                translate-y-[-50%]
+                opacity-[0.8]
+                left-16
                 " />
             </Link>
             <h1 className={cn(

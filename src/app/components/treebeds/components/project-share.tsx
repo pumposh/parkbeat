@@ -9,6 +9,22 @@ interface ProjectShareProps {
   isLoading?: boolean
 }
 
+export function ProjectShareSkeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn("space-y-4", className)}>
+      <div className="flex flex-col items-center justify-center gap-4">
+        <div className="w-[220px] h-[220px] animate-pulse bg-gray-200/50 dark:bg-black/20 rounded"></div>
+        <div className="animate-pulse bg-gray-200/50 dark:bg-black/20 h-6 w-1/2 rounded mb-4"></div>
+      </div>
+      <div className="flex gap-2">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="flex-1 animate-pulse bg-gray-200/50 dark:bg-black/20 h-10 rounded"></div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function ProjectShare({ projectId, isLoading = false }: ProjectShareProps) {
   const [copied, setCopied] = useState(false)
   const projectUrl = `${window.location.origin}/projects/${projectId}`
@@ -26,17 +42,7 @@ export function ProjectShare({ projectId, isLoading = false }: ProjectShareProps
   }
   
   if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="animate-pulse bg-gray-200/50 dark:bg-black/20 h-6 w-1/2 rounded mb-4"></div>
-        <div className="animate-pulse bg-gray-200/50 dark:bg-black/20 h-10 w-full rounded mb-4"></div>
-        <div className="flex gap-2">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="flex-1 animate-pulse bg-gray-200/50 dark:bg-black/20 h-10 rounded"></div>
-          ))}
-        </div>
-      </div>
-    )
+    return <ProjectShareSkeleton className="pt-6" />
   }
   
   return (
@@ -60,7 +66,7 @@ export function ProjectShare({ projectId, isLoading = false }: ProjectShareProps
           <div className="flex gap-3">
             <button 
               onClick={handleCopyLink}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100/80 dark:bg-gray-800/80 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors relative"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white/40 dark:bg-black/20 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors relative"
               aria-label="Copy direct link"
             >
               <div className="absolute top-0 right-0 left-0 bottom-0 flex items-center justify-center pointer-events-none">
@@ -79,7 +85,7 @@ export function ProjectShare({ projectId, isLoading = false }: ProjectShareProps
                 const url = `https://twitter.com/intent/tweet?url=${encodeURIComponent(projectUrl)}&text=${encodeURIComponent('Check out this community project!')}`;
                 window.open(url, '_blank');
               }}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1DA1F2]/10 text-[#1DA1F2] hover:bg-[#1DA1F2]/20 transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1DA1F2]/20 text-[#1DA1F2] hover:bg-[#1DA1F2]/20 transition-colors"
               aria-label="Share on Twitter"
             >
               <i className="fa-brands fa-x-twitter text-lg"></i>
@@ -117,7 +123,7 @@ export function ProjectShare({ projectId, isLoading = false }: ProjectShareProps
                 const body = encodeURIComponent(`I found this interesting project: ${projectUrl}`);
                 window.location.href = `mailto:?subject=${subject}&body=${body}`;
               }}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#34A853]/10 text-[#34A853] hover:bg-[#34A853]/20 transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#34A853]/20 text-[#34A853] hover:bg-[#34A853]/20 transition-colors"
               aria-label="Share via Email"
             >
               <i className="fa-solid fa-envelope text-lg"></i>
@@ -127,7 +133,7 @@ export function ProjectShare({ projectId, isLoading = false }: ProjectShareProps
                 const message = encodeURIComponent(`Check out this community project: ${projectUrl}`);
                 window.location.href = `sms:?&body=${message}`;
               }}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#5BC236]/10 text-[#5BC236] hover:bg-[#5BC236]/20 transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#5BC236]/20 text-[#5BC236] hover:bg-[#5BC236]/20 transition-colors"
               aria-label="Share via SMS"
             >
               <i className="fa-solid fa-comment text-lg"></i>

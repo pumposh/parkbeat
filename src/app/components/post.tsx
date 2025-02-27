@@ -57,7 +57,6 @@ export const RecentPost = () => {
 
   const { mutate: createPost, isPending } = useMutation({
     mutationFn: async ({ name }: { name: string }) => {
-      const id = generateId();
       console.log("Client: Creating post with name:", name)
       try {
         // Emit the post event and wait for response

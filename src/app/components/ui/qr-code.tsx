@@ -12,7 +12,6 @@ interface QRCodeProps {
   className?: string
   logoSize?: number
   dotColor?: string
-  backgroundColor?: string
   dotOpacity?: number
   dotSize?: number
   showButtons?: boolean
@@ -32,7 +31,6 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
   className,
   logoSize = 50,
   dotColor,
-  backgroundColor = 'transparent',
   dotOpacity = 1,
   dotSize = 0.85, // Size of dots relative to the cell size (0-1)
   showButtons = true,
@@ -270,7 +268,7 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
     }
 
     setIsLoaded(true)
-  }, [qrCodeData, moduleCount, size, effectiveDotColor, backgroundColor, dotOpacity, dotSize, currentTheme, compact])
+  }, [qrCodeData, moduleCount, size, effectiveDotColor, dotOpacity, dotSize, currentTheme, compact])
 
   // Handle button clicks
   const handleDownloadQR = () => {
@@ -629,12 +627,12 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
     <div 
       ref={containerRef}
       className={cn(
-        "relative flex items-center justify-center rounded-lg shadow-md transition-opacity duration-300",
+        "relative flex items-center justify-center rounded-lg shadow-md transition-opacity duration-300 bg-white/40 dark:bg-black/20",
         !isLoaded && "opacity-0",
         isLoaded && "opacity-100",
         className
       )}
-      style={{ width: size, height: size, backgroundColor }}
+      style={{ width: size, height: size }}
     >
       <svg 
         ref={svgRef}
@@ -652,7 +650,7 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
         )}>
           <button
             onClick={handleDownloadQR}
-            className="flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-black/70 dark:text-white hover:bg-primary/90 transition-colors shadow-sm"
+            className="flex bg-white/40 dark:bg-black/20 items-center gap-2 px-4 py-2 rounded-md bg-primary text-black/70 dark:text-white hover:bg-primary/90 transition-colors shadow-sm"
             aria-label="Download QR Code"
             title="Download QR Code"
           >
@@ -660,7 +658,7 @@ export const QRCode = forwardRef<QRCodeRef, QRCodeProps>(({
           </button>
           <button
             onClick={handleCopyQR}
-            className="flex items-center gap-2 px-4 py-2 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm relative"
+            className="flex items-center bg-white/40 dark:bg-black/20 gap-2 px-4 py-2 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm relative"
             aria-label="Copy QR Code to clipboard"
             title="Copy QR Code to clipboard"
           >

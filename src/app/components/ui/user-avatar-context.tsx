@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, ReactNode } from 'react';
-
+import { HydratableDate as Date } from '@/lib/utils'
 // Type for the cache entries
 interface CacheEntry {
   value: string | null;
@@ -62,7 +62,7 @@ export function UserAvatarCacheProvider({ children }: { children: ReactNode }) {
     const entry = userNameCache[userId];
     
     // If entry exists and hasn't expired
-    if (entry && Date.now() - entry.timestamp < CACHE_EXPIRATION) {
+    if (entry && new Date().getTime() - entry.timestamp < CACHE_EXPIRATION) {
       return entry.value;
     }
     
@@ -76,7 +76,7 @@ export function UserAvatarCacheProvider({ children }: { children: ReactNode }) {
       ...prev,
       [userId]: {
         value: name,
-        timestamp: Date.now()
+        timestamp: new Date().getTime() 
       }
     }));
   };

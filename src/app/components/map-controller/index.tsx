@@ -50,6 +50,19 @@ export const MapController = ({
   const [isControlsExpanded, setIsControlsExpanded] = useState(false)
   const collapseTimeout = useRef<NodeJS.Timeout>(null)
 
+      
+  const getCreatedAt = (project: Project) => {
+    if (!project._meta_created_at) return null;
+    if (typeof project._meta_created_at === 'string') {
+      return project._meta_created_at
+    } else if (project._meta_created_at instanceof Date) {
+      console.log('project._meta_created_at', project._meta_created_at)
+      return project._meta_created_at.toISOString()
+    } else {
+      return null
+    }
+  }
+
   // Calculate header offset
   useEffect(() => {
     const calculatePosition = () => {
@@ -266,7 +279,7 @@ export const MapController = ({
               id: project.id,
               name: project.name,
               status: project.status,
-              created_at: project._meta_created_at ? project._meta_created_at.toISOString() : null,
+              created_at: getCreatedAt(project),
               created_by: project._meta_created_by
             }
           }))
@@ -448,7 +461,7 @@ export const MapController = ({
           id: project.id,
           name: project.name,
           status: project.status,
-          created_at: project._meta_created_at ? project._meta_created_at.toISOString() : null,
+          created_at: getCreatedAt(project),
           created_by: project._meta_created_by
         }
       }))

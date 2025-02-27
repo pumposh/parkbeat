@@ -36,7 +36,7 @@ const footerActions: FooterAction[] = [
     href: "/settings",
     icon: "fa-solid fa-gear",
     label: "Settings",
-    component: <SettingsDialog />
+    component: <SettingsDialog className="ring-[1.5px] ring-white/50 dark:ring-gray-800/50 shadow-xl" />
   }
 ]
 
@@ -77,8 +77,8 @@ export const FooterMenu = () => {
                     "flex flex-col items-center gap-1 px-3 py-1 rounded-lg transition-colors",
                     "hover:text-zinc-600 dark:hover:text-zinc-300",
                     pathname === action.href 
-                      ? "text-zinc-600 dark:text-zinc-300 bg-zinc-300/50 dark:bg-zinc-800/50" 
-                      : "text-zinc-700 dark:text-zinc-100"
+                      ? "text-black/80 dark:text-white/80 bg-white/30 dark:bg-black/30 shadow-xl" 
+                      : "text-zinc-600 dark:text-zinc-100"
                   )}
                 >
                   <i className={cn(action.icon, "text-lg")} aria-hidden="true" />

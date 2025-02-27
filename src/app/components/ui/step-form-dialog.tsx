@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog'
-import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 
@@ -90,6 +90,15 @@ export function StepFormDialog({
   if (!currentStepData) {
     return null
   }
+
+  const requiresScrollView = useMemo(() => {
+    if (!contentRef.current || !contentContainerRef.current) return false
+    const contentHeight = contentRef.current.getBoundingClientRect().height
+    const contentContainerHeight = contentContainerRef.current.getBoundingClientRect().height
+    console.log('[step-form-dialog] contentHeight', contentHeight)
+    console.log('[step-form-dialog] contentContainerHeight', contentContainerHeight)
+    return contentHeight >= contentContainerHeight
+  }, [contentRef, contentContainerRef])
 
   // Initialize active steps
   useLayoutEffect(() => {
@@ -303,7 +312,7 @@ export function StepFormDialog({
           <div className="pointer-events-auto flex flex-col flex-1 overflow-hidden">
             <div className="frosted-glass rounded-2xl relative grid grid-rows-[auto_1fr_auto] overflow-hidden">
               <div className={cn(
-                "p-8 pb-0 space-y-2 transition-opacity duration-300",
+                "p-8 pt-4 pb-0 space-y-2 transition-opacity duration-300",
                 currentStepData.style?.hideHeader && "hidden"
               )}
               ref={headerRef}
@@ -323,12 +332,12 @@ export function StepFormDialog({
                 className={cn(
                   "StepFormDialog__content relative overflow-y-scroll flex-0 transition-[height] duration-300 ease-in-out pb-8",
                   isHeightTransitioning && 'overflow-hidden',
-                  scrollPosition === 'top' && 'StepFormDialog__content--at-top',
-                  scrollPosition === 'bottom' && 'StepFormDialog__content--at-bottom'
+                  requiresScrollView && scrollPosition === 'top' && 'StepFormDialog__content--at-top',
+                  requiresScrollView && scrollPosition === 'bottom' && 'StepFormDialog__content--at-bottom'
                 )}
                 ref={contentContainerRef}
                 style={{
-                  height: `calc(${contentHeight}px + 2rem)` || 'auto',
+                  height: `calc(${contentHeight}px)` || 'auto',
                   maxHeight: '100%',
                   minHeight: '200px',
                 }}
@@ -364,12 +373,12 @@ export function StepFormDialog({
                 </div>
               </div>
 
-              <div ref={footerRef} className="pt-0 p-8 flex items-center justify-between gap-3">
+              <div ref={footerRef} className="pt-0 p-8 pb-4 flex items-center justify-between gap-3">
                 {currentStep === 0 ? (
                   <button
                     type="button"
                     onClick={handleCancel}
-                    className="rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 flex items-center justify-center text-zinc-800 dark:text-zinc-100 text-xl disabled:cursor-not-allowed disabled:hover:ring-0 px-6"
+                    className="rounded-2xl frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-10 flex items-center justify-center text-zinc-800 dark:text-zinc-100 text-xl disabled:cursor-not-allowed disabled:hover:ring-0 px-8 py-2"
                     aria-label="Cancel"
                   >
                     <i className="fa-solid fa-xmark transition-opacity" aria-hidden="true" />
@@ -379,7 +388,7 @@ export function StepFormDialog({
                     type="button"
                     onClick={() => handleStepChange(currentStep - 1)}
                     disabled={isTransitioning}
-                    className="rounded-lg frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-12 flex items-center justify-center text-zinc-800 dark:text-zinc-100 text-xl disabled:cursor-not-allowed disabled:hover:ring-0 px-6"
+                    className="rounded-2xl frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-10 flex items-center justify-center text-zinc-800 dark:text-zinc-100 text-xl disabled:cursor-not-allowed disabled:hover:ring-0 px-8 py-2"
                     aria-label="Previous step"
                   >
                     <i className="fa-solid fa-arrow-left transition-opacity" aria-hidden="true" />
@@ -391,7 +400,7 @@ export function StepFormDialog({
                       type="submit"
                       onClick={onSubmit}
                       disabled={!canSubmit || isSubmitting}
-                      className="rounded-lg transition-all bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 h-12 flex items-center justify-center text-white text-xl disabled:cursor-not-allowed disabled:bg-emerald-500/50 px-6"
+                      className="rounded-2xl transition-all bg-emerald-500 hover:bg-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 h-10 flex items-center justify-center text-white text-xl disabled:cursor-not-allowed disabled:bg-emerald-500/50 px-8 py-2"
                       aria-label="Submit"
                     >
                       <i className={`fa-solid ${isSubmitting ? 'fa-circle-notch fa-spin' : 'fa-check'} transition-opacity ${isSubmitting || !canSubmit ? 'opacity-60' : 'opacity-100'}`} aria-hidden="true" />
@@ -402,7 +411,7 @@ export function StepFormDialog({
                       onClick={() => handleStepChange(currentStep + 1)}
                       disabled={!steps[currentStep]?.canProgress}
                       className={cn(
-                        "rounded-lg h-12 flex items-center justify-center text-xl px-6 transition-all",
+                        "rounded-2xl h-10 flex items-center justify-center text-xl px-8 py-2 transition-all",
                         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
                         "disabled:cursor-not-allowed",
                         steps[currentStep]?.canProgress ? [

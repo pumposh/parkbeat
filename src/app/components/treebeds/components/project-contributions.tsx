@@ -32,6 +32,25 @@ function isProjectTargetMet(currentAmount: number, targetAmount: number): boolea
   return currentAmount >= targetAmount;
 }
 
+export function ProjectContributionsSkeleton() {
+  return (
+    <div className="space-y-4 px-6 pt-6">
+      <div className="space-y-8">
+        {[1, 2, 3].map((i) => (
+        <div key={i} className="animate-pulse flex items-start gap-4">
+          <div className="bg-gray-200 dark:bg-black/20 h-10 w-10 rounded-full"></div>
+          <div className="flex-1 space-y-2">
+            <div className="bg-gray-200 dark:bg-black/20 h-4 w-1/4 rounded"></div>
+            <div className="bg-gray-200 dark:bg-black/20 h-3 w-3/4 rounded"></div>
+            <div className="bg-gray-200 dark:bg-black/20 h-3 w-1/2 rounded"></div>
+          </div>
+        </div>
+      ))}
+    </div>
+    </div>
+  )
+}
+
 export function ProjectContributions({ projectId, isLoading: externalIsLoading }: ProjectContributionsProps) {
   const { projectData } = useProjectData(projectId)
   const contributionsEndRef = useRef<HTMLDivElement>(null)
@@ -41,8 +60,7 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
   // Get project cost breakdown and calculate target amount
   const costBreakdown = projectData?.data?.project?.cost_breakdown
   const costs = costBreakdown ? calculateProjectCosts(costBreakdown) : null
-  const targetAmount = costs?.total || 0
-  
+
   // Group contributions by sender and recency
   const groupedContributions = useMemo(() => {
     // Sort contributions by date (newest first instead of oldest first)
@@ -90,22 +108,7 @@ export function ProjectContributions({ projectId, isLoading: externalIsLoading }
   const isLoading = externalIsLoading !== undefined ? externalIsLoading : !projectData?.data
   
   if (isLoading) {
-    return (
-      <div className="space-y-4 px-6 pt-6">
-        <div className="space-y-8">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="animate-pulse flex items-start gap-4">
-              <div className="bg-gray-200 dark:bg-black/20 h-10 w-10 rounded-full"></div>
-              <div className="flex-1 space-y-2">
-                <div className="bg-gray-200 dark:bg-black/20 h-4 w-1/4 rounded"></div>
-                <div className="bg-gray-200 dark:bg-black/20 h-3 w-3/4 rounded"></div>
-                <div className="bg-gray-200 dark:bg-black/20 h-3 w-1/2 rounded"></div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
+    return <ProjectContributionsSkeleton />
   }
   
     return (

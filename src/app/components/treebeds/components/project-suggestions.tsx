@@ -33,6 +33,14 @@ function emitGenerateImagesForSuggestions(projectId: string, suggestionIds: stri
   }, { argBehavior: 'replace' })
 }
 
+const sortSuggestions = (suggestions: ProjectSuggestion[]) => {
+  return suggestions.sort((a, b) => {
+    const aId = a.id
+    const bId = b.id
+    return aId.localeCompare(bId)
+  })
+}
+
 export function ProjectSuggestions({ 
   projectId, 
   onSuggestionSelect,
@@ -40,11 +48,10 @@ export function ProjectSuggestions({
 }: ProjectSuggestionsProps) {
   const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(null)
   const [generatingImages, setGeneratingImages] = useState<Record<string, boolean>>({})
-  const [cardHeights, setCardHeights] = useState<Record<string, number>>({})
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const containerRef = useRef<HTMLDivElement>(null)
   const { projectData: { data: projectData } } = useProjectData(projectId)
-  const suggestions = projectData?.suggestions ?? []
+  const suggestions = sortSuggestions(projectData?.suggestions ?? [])
 
   // Auto-generate images for suggestions that don't have images
   useEffect(() => {

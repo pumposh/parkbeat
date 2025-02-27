@@ -12,6 +12,7 @@ import { useParams } from 'next/navigation'
 import { StreetViewCard } from './components/street-view-card'
 import { ProjectDetails } from './components/project-details'
 import { ProjectSuggestions } from './components/project-suggestions'
+import { useDebouncedCallback } from '@/hooks/use-debounce'
 
 type ProjectSuggestion = NonNullable<ProjectData['suggestions']>[number]
 
@@ -186,7 +187,7 @@ export function TreeDialog(props: {
     }
   }
 
-  const handleProjectFormUpdate = useCallback(async (updates: Partial<ProjectFormData>) => {
+  const handleProjectFormUpdate = useCallback(async (updates: Partial<ProjectFormData>, immediate?: boolean) => {
     console.log('[TreeDialog] Handling project form update:', updates)
     
     // Merge updates with current form data
@@ -202,6 +203,14 @@ export function TreeDialog(props: {
       return
     }
 
+    if (immediate) {
+      saveProjectCallback(mergedData)
+    } else {
+      debouncedSaveProject(mergedData)
+    }
+  }, [formData])
+
+  const saveProject = async (mergedData: ProjectFormData) => {
     try {
       const payload: ProjectData['project'] & {
         lat: number
@@ -211,8 +220,8 @@ export function TreeDialog(props: {
         id: projectId,
         name: mergedData.name || 'Untitled Project',
         description: mergedData.description,
-        lat: mergedData.location.lat,
-        lng: mergedData.location.lng,
+        lat: mergedData.location?.lat ?? 0,
+        lng: mergedData.location?.lng ?? 0,
         status: 'draft' as ProjectStatus,
         _view_heading: mergedData.viewParams?.heading,
         _view_pitch: mergedData.viewParams?.pitch,
@@ -231,7 +240,19 @@ export function TreeDialog(props: {
         type: 'error'
       })
     }
-  }, [formData, projectId, setProject, showToast])
+  }
+  
+  const saveProjectCallback = useCallback(
+    saveProject,
+    [projectData, projectId, setProject, showToast]
+  );
+
+  // Create a debounced version of the save project function
+  const debouncedSaveProject = useDebouncedCallback(
+    saveProject,
+    2000,
+    [projectData, projectId, setProject, showToast]
+  )
 
   const handleSuggestionSelect = useCallback((suggestion: NonNullable<ProjectData['suggestions']>[number] | null) => {
     console.log('[TreeDialog] Selected suggestion:', suggestion)
@@ -368,7 +389,7 @@ export function TreeDialog(props: {
         const suggestion = formData.suggestion;
         return handleProjectFormUpdate({
           cost_breakdown: suggestion?.estimatedCost?.breakdown,
-        })
+        }, true)
       },
       content: (
         <ProjectSuggestions

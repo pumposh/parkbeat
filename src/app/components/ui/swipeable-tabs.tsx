@@ -7,6 +7,7 @@ interface Tab {
   id: string
   label: string
   content: ReactNode
+  skeleton?: ReactNode
   icon?: string | ReactNode
   className?: string
   footerExtension?: ReactNode
@@ -62,15 +63,19 @@ export function SwipeableTabs({
     if (!element) return;
     
     const { scrollTop, scrollHeight, clientHeight } = element;
-    const isAtTop = scrollTop <= 10;
-    const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10;
-    
+    const isAtTop = scrollTop <= 3;
+    const isAtBottom = scrollTop + clientHeight >= scrollHeight - 3;
     if (isAtTop) {
       setScrollPositionByTab(prev => ({ ...prev, [tabIndex]: 'top' }))
     } else if (isAtBottom) {
       setScrollPositionByTab(prev => ({ ...prev, [tabIndex]: 'bottom' }))
     } else {
       setScrollPositionByTab(prev => ({ ...prev, [tabIndex]: 'middle' }))
+    }
+
+    const isScrollable = scrollHeight > clientHeight;
+    if (isScrollable !== hasScrollableContentByTab[tabIndex]) {
+      setHasScrollableContentByTab(prev => ({ ...prev, [tabIndex]: isScrollable }));
     }
   };
 
@@ -197,12 +202,17 @@ export function SwipeableTabs({
       if (ref && hasRendered[index]) {
         const contentElement = ref.firstElementChild as HTMLElement;
         if (contentElement) {
+          const isScrollable = contentElement.scrollHeight > contentElement.clientHeight;
+          if (isScrollable !== hasScrollableContentByTab[index]) {
+            setHasScrollableContentByTab(prev => ({ ...prev, [index]: isScrollable }));
+          }
+
           // Store reference to the content element
           tabContentElementRefs.current[index] = contentElement;
           
           // Observe this element
           resizeObserverRef.current?.observe(contentElement);
-          
+
           // Set up scroll event listeners
           contentElement.addEventListener('scroll', (e) => 
             handleContentScroll(e as unknown as React.UIEvent<HTMLElement>, index)
@@ -324,7 +334,7 @@ export function SwipeableTabs({
             >
               {index === activeTabIndex
                 || hasRendered[index]
-                ? tab.content : null}
+                ? tab.content : tab.skeleton}
             </div>
           </div>
         ))}

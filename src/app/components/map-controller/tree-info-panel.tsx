@@ -205,10 +205,16 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
           </div>
           <MiniProgressBar percentage={fundingData.percentage} />
           <div className="mt-3 text-muted-foreground flex items-center justify-between">
-            <div className="flex items-center justify-center h-full">
-              <i className="fa-solid fa-users text-xs mr-1 opacity-70"></i>
-              <span>{fundingData.contributorCount} supporter{fundingData.contributorCount !== 1 ? 's' : ''}</span>
-            </div>
+            {fundingData.contributorCount > 0 ? (
+              <div className="flex items-center justify-center h-full">
+                <i className="fa-solid fa-users text-xs mr-1 opacity-70"></i>
+                <span>{fundingData.contributorCount} supporter{fundingData.contributorCount !== 1 ? 's' : ''}</span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between w-full h-full">
+                <span className="bg-green-100 opacity-100 w-full text-center dark:bg-green-600 text-green-700 dark:text-white px-3 py-1 rounded-full">Be the first to support this project!</span>
+              </div>
+            )}
             
             {/* Top contributors */}
             {fundingData.topContributors.length > 0 && (

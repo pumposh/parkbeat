@@ -1,4 +1,3 @@
- 
 import { clerkClient } from '@clerk/nextjs/server';
 import { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -34,6 +33,7 @@ export async function GET(
       firstName: user.firstName,
       lastName: user.lastName,
       imageUrl: user.imageUrl,
+      username: user.username,
       // You can include other fields as needed
     });
   } catch (error) {

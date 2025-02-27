@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useRouter } from 'next/navigation'
-import { ProjectDetails } from './project-details'
-import { ProjectContributions, ProjectContributionsDialog } from './project-contributions'
-import { ProjectShare } from './project-share'
+import { ProjectDetails, ProjectDetailsSkeleton } from './project-details'
+import { ProjectContributions, ProjectContributionsDialog, ProjectContributionsSkeleton } from './project-contributions'
+import { ProjectShare, ProjectShareSkeleton } from './project-share'
 import { useProjectData } from '@/hooks/use-tree-sockets'
 import type { ProjectFormData } from '../tree-dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
@@ -143,7 +143,8 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
             />
           )}
         </div>
-      )
+      ),
+      skeleton: <ProjectDetailsSkeleton />
     },
     {
       id: 'community',
@@ -158,7 +159,8 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
             isLoading={isLoading}
           />
         </div>
-      )
+      ),
+      skeleton: <ProjectContributionsSkeleton />
     },
     {
       id: 'share',
@@ -171,7 +173,8 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
             isLoading={isLoading}
           />
         </div>
-      )
+      ),
+      skeleton: <ProjectShareSkeleton className="px-6 pt-6" />
     }
   ];
 

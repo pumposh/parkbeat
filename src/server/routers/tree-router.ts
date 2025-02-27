@@ -99,7 +99,6 @@ export const treeRouter = j.router({
       const {
         getSocketId,
         setSocketSubscription,
-        cleanup,
         enqueueSubscriptionCleanup,
         processCleanupQueue
       } = getTreeHelpers({ ctx, logger })

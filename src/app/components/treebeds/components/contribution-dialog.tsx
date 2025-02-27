@@ -66,13 +66,17 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess, t
   const [contributionType, setContributionType] = useState<ContributionType>('social')
   const [contentHeight, setContentHeight] = useState<number>(0)
   const [isHeightTransitioning, setIsHeightTransitioning] = useState(false)
-  const [id, setId] = useState<string>(generateId())
+  const [id, setId] = useState<string | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const messageInputRef = useRef<HTMLInputElement>(null)
   const amountInputRef = useRef<HTMLInputElement>(null)
 
   const [isDisabled, setIsDisabled] = useState(true)
+
+  useEffect(() => {
+    setId(generateId())
+  }, [projectId])
 
   // Focus input after dialog opens with a delay
   useEffect(() => {
@@ -132,7 +136,7 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess, t
     
     try {
       await addContribution({
-        id,
+        id: id ?? generateId(),
         project_id: projectId,
         user_id: userId,
         contribution_type: contributionType,
@@ -299,7 +303,7 @@ export function ContributionDialog({ projectId, open, onOpenChange, onSuccess, t
                       <button 
                         type="button" 
                         onClick={handleCancelFinancial}
-                        className="inline-flex items-center justify-center rounded-full w-12 h-12 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        className="inline-flex items-center justify-center rounded-full w-12 h-12 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
                         <i className="fa-solid fa-xmark text-lg"></i>
                         <VisuallyHidden>Cancel</VisuallyHidden>

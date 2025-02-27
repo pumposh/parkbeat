@@ -1,4 +1,6 @@
 import type { LocationInfo, MapTilerResponse, NominatimResponse } from "../types/types"
+import { HydratableDate as Date } from "@/lib/utils"
+
 export async function getLocationInfo(lat: number, lng: number, apiKey?: string): Promise<LocationInfo & Partial<NominatimResponse> & Partial<MapTilerResponse>> {
     let partialLocationInfo: LocationInfo = {
         coordinates: { lat, lng },

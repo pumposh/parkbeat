@@ -8,7 +8,7 @@ import { useAuth } from "@clerk/nextjs"
 import { WebSocketLogger } from "./client-log"
 import type { BaseProject, ProjectData, ProjectStatus } from "@/server/types/shared"
 import { useServerEvent, WebSocketManager, type ConnectionState } from "./websocket-manager"
-
+import { HydratableDate as Date } from "@/lib/utils"
 // WebSocket payload type with string dates
 export type ProjectPayload = BaseProject
 
@@ -92,8 +92,12 @@ export function useLiveTrees() {
       ...existingProject,
       ...newProjectData,
       fundraiser_id: "",
-      _meta_updated_at: new Date(newProjectData._meta_updated_at),
-      _meta_created_at: new Date(newProjectData._meta_created_at),
+      _meta_updated_at: newProjectData._meta_updated_at
+        ? new Date(newProjectData._meta_updated_at)
+        : new Date(),
+      _meta_created_at: newProjectData._meta_created_at
+        ? new Date(newProjectData._meta_created_at)
+        : new Date(),
     };
     
     setProjectMap(prev => {
@@ -112,8 +116,12 @@ export function useLiveTrees() {
     const processedProject: Project = {
       ...projectData.data.project,
       fundraiser_id: projectData.data.project.fundraiser_id || "",
-      _meta_updated_at: new Date(projectData.data.project._meta_updated_at),
-      _meta_created_at: new Date(projectData.data.project._meta_created_at)
+      _meta_updated_at: projectData.data.project._meta_updated_at
+        ? new Date(projectData.data.project._meta_updated_at)
+        : new Date(),
+      _meta_created_at: projectData.data.project._meta_created_at
+        ? new Date(projectData.data.project._meta_created_at)
+        : new Date(),
     };
 
     // Update project map
@@ -175,8 +183,12 @@ export function useLiveTrees() {
       const processedProjects: Project[] = projects.map(project => ({
         ...project,
         fundraiser_id: "",
-        _meta_updated_at: new Date(project._meta_updated_at),
-        _meta_created_at: new Date(project._meta_created_at)
+        _meta_updated_at: project._meta_updated_at
+          ? new Date(project._meta_updated_at) 
+          : new Date(),
+        _meta_created_at: project._meta_created_at
+          ? new Date(project._meta_created_at)
+          : new Date(),
       }));
 
       setProjectMap(prev => {

@@ -12,8 +12,9 @@ interface UserNameProps {
 
 export function UserName({ userId, className, fallback = 'Contributor' }: UserNameProps) {
   const [userName, setUserName] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [_error, setError] = useState(false);
   const { getUserName, setUserName: cacheUserName } = useUserAvatarCache();
 
   useEffect(() => {
@@ -35,13 +36,29 @@ export function UserName({ userId, className, fallback = 'Contributor' }: UserNa
         const response = await fetch(`/api/users/${userId}`);
         if (!response.ok) throw new Error('Failed to fetch user data');
         
-        const userData = await response.json() as { firstName?: string; lastName?: string };
+        const userData = await response.json() as { 
+          firstName?: string; 
+          lastName?: string;
+          username?: string;
+        };
         
-        if (userData.firstName || userData.lastName) {
-          const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ');
-          setUserName(fullName);
-          // Store in cache for future use
-          cacheUserName(userId, fullName);
+        if (userData.firstName || userData.lastName || userData.username) {
+          if (!userData.firstName && !userData.lastName && userData.username) {
+            setUserName(`@${userData.username}`);
+            cacheUserName(userId, `@${userData.username}`);
+          } else {
+            const fullName = [userData.firstName, userData.lastName].filter(Boolean).join(' ');
+            setUserName(fullName);
+            // Store in cache for future use
+            cacheUserName(userId, fullName);
+          }
+        } else if (userData.username) {
+          // If no full name, but username exists, store it separately
+          setUsername(userData.username);
+          // We still set userName to null since we want to use the username as fallback
+          setUserName(null);
+          // Cache the null result for the name
+          cacheUserName(userId, null);
         } else {
           setError(true);
           // Cache the null result too, to prevent unnecessary API calls
@@ -67,9 +84,13 @@ export function UserName({ userId, className, fallback = 'Contributor' }: UserNa
     );
   }
 
-  if (error || !userName) {
-    return <span className={className}>{fallback}</span>;
+  if (userName) {
+    return <span className={className}>{userName}</span>;
   }
 
-  return <span className={className}>{userName}</span>;
+  if (username) {
+    return <span className={className}>@{username}</span>;
+  }
+
+  return <span className={className}>{fallback}</span>;
 } 

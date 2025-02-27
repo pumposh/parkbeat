@@ -5,6 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export class HydratableDate extends Date {
+  constructor(dateString?: string | number | Date) {
+    if (!dateString) {
+      const now = new Date()
+      now.setSeconds(0, 0) // Set seconds and milliseconds to 0
+      super(now)
+    } else {
+      super(dateString)
+    }
+  }
+}
+
 /**
  * Formats a date to a string representing the distance from now
  * @param date The date to format
@@ -12,7 +24,7 @@ export function cn(...inputs: ClassValue[]) {
  * @returns A string representing the distance from now (e.g. "2 days ago")
  */
 export function formatDistanceToNow(date: Date, options?: { addSuffix?: boolean }): string {
-  const now = new Date()
+  const now = new HydratableDate()
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
   
   // Convert to appropriate time unit

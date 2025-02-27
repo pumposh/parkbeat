@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
-export const SettingsDialog = () => {
+export const SettingsDialog = ({ className }: { className?: string }) => {
   const router = useRouter()
   const pathname = usePathname()
   const isSettingsRoute = pathname === '/settings'
@@ -37,11 +37,16 @@ export const SettingsDialog = () => {
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Trigger asChild>
         <button
-          className="btn btn-ghost relative flex items-center justify-center w-7 h-7 rounded-full"
           style={{ backgroundColor: '#F2F0E630' }}
+          className={cn(
+            "btn btn-ghost relative flex items-center justify-center w-7 h-7 rounded-full overflow-visible",
+          )}
         >
           <SignedIn>
-            <div className="flex items-center gap-2 pointer-events-none scale-[140%] outline-4 outline-white rounded-full">
+            <div className={cn(
+              "flex items-center gap-2 pointer-events-none scale-[140%] outline-4 outline-white rounded-full",
+              className
+            )}>
               <UserButton />
             </div>
           </SignedIn>
