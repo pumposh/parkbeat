@@ -15,14 +15,16 @@ export const getLoggerMiddleware = (j: JStack) => j.middleware(async ({ c, next 
   
   // Create a request-specific logger group for better tracing
   const requestId = crypto.randomUUID().slice(0, 8);
-  const method = c.req.method;
+  const isWs = c.req.raw.headers.get('upgrade') === 'websocket';
+  const method = isWs ? 'WS' : c.req.method;
   const path = new URL(c.req.url).pathname;
   const startTime = Date.now();
   
   const requestLogger = logger.group(
     `req_${requestId}`, 
     `${method} ${path}`,
-    true // collapsed by default
+    true, // collapsed by default in UI
+    false  // not collapsed when logging to console for better visibility of requests
   );
   
   // Log basic request information

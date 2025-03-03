@@ -31,7 +31,7 @@ export namespace ParkbeatLogger {
   
   export interface GroupLogger extends BaseLogger {
     end(): void;
-    group(id: string, title: string, collapsed?: boolean): GroupLogger;
+    group(id: string, title: string, collapsed?: boolean, logCollapsed?: boolean): GroupLogger;
   }
   
   export interface Logger extends BaseLogger {
@@ -39,7 +39,7 @@ export namespace ParkbeatLogger {
     registerPlugin(plugin: LoggerPlugin): Logger;
     unregisterPlugin(pluginName: string): Logger;
     
-    group(id: string, title: string, collapsed?: boolean): GroupLogger;
+    group(id: string, title: string, collapsed?: boolean, logCollapsed?: boolean): GroupLogger;
     getGroupLogger(groupId: string): GroupLogger;
     groupEnd(groupId: string): void;
     flushAll(): void;

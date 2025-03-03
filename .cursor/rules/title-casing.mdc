@@ -1,0 +1,9 @@
+---
+description: Title casing for titles and labels
+globs: 
+---
+
+# Your rule content
+
+- High preference for title casing in which only the first character is uppercase
+- i.e "Main menu" instead of "Main Menu"

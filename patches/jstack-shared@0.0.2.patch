@@ -1,6 +1,12 @@
 diff --git a/node_modules/jstack-shared/.bun-tag-17f9b36a511bcc0a b/.bun-tag-17f9b36a511bcc0a
 new file mode 100644
 index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/jstack-shared/.bun-tag-21b35236b8bd4120 b/.bun-tag-21b35236b8bd4120
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/jstack-shared/.bun-tag-37fd86b4625d0c99 b/.bun-tag-37fd86b4625d0c99
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/node_modules/jstack-shared/.bun-tag-465fa5a077ebc397 b/.bun-tag-465fa5a077ebc397
 new file mode 100644
 index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
@@ -14,7 +20,7 @@ diff --git a/node_modules/jstack-shared/.bun-tag-ea50255e6048924d b/.bun-tag-ea5
 new file mode 100644
 index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 27d95247acf8ca59cdac6f79f9a2000e82e47028..7312ffb3e413eea562238ee422d0e187ca8a2098 100644
+index 27d95247acf8ca59cdac6f79f9a2000e82e47028..72b12e2f8348b02f26419f4bca1324cf75a2d339 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -4415,7 +4415,7 @@ var EventEmitter = class {
@@ -35,15 +41,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..7312ffb3e413eea562238ee422d0e187
    ws;
    controllers = /* @__PURE__ */ new Map();
    emitter;
-@@ -4454,6 +4454,7 @@ var ServerSocket = class {
-         const [eventName, eventData] = eventSchema.parse(parsedData);
-         if (eventName === "ping") {
-           this.ws.send(JSON.stringify(["pong", null]));
-+          this.emitter.handleEvent("ping", null);
-           return;
-         }
-         this.emitter.handleEvent(eventName, eventData);
-@@ -4463,12 +4464,12 @@ var ServerSocket = class {
+@@ -4463,12 +4463,12 @@ var ServerSocket = class {
      });
    }
    get rooms() {
@@ -59,7 +57,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..7312ffb3e413eea562238ee422d0e187
      }
      this.controllers.clear();
      for (const timers of this.heartbeatTimers.values()) {
-@@ -4489,22 +4490,36 @@ var ServerSocket = class {
+@@ -4489,22 +4489,36 @@ var ServerSocket = class {
    handleEvent(eventName, eventData) {
      this.emitter.handleEvent(eventName, eventData);
    }
@@ -106,7 +104,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..7312ffb3e413eea562238ee422d0e187
    }
    createHeartbeat(room) {
      const heartbeat = {
-@@ -4525,7 +4540,12 @@ var ServerSocket = class {
+@@ -4525,7 +4539,12 @@ var ServerSocket = class {
      return new Promise(async (resolve, reject) => {
        try {
          const controller = new AbortController();
@@ -120,7 +118,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..7312ffb3e413eea562238ee422d0e187
          this.lastPingTimes.set(room, Date.now());
          const stream = await fetch(`${this.redisUrl}/subscribe/${room}`, {
            headers: {
-@@ -4537,6 +4557,7 @@ var ServerSocket = class {
+@@ -4537,6 +4556,7 @@ var ServerSocket = class {
          const reader = stream.body?.getReader();
          const decoder = new TextDecoder();
          let buffer = "";
@@ -128,7 +126,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..7312ffb3e413eea562238ee422d0e187
          while (reader) {
            const { done, value } = await reader.read();
            resolve();
-@@ -4546,7 +4567,6 @@ var ServerSocket = class {
+@@ -4546,7 +4566,6 @@ var ServerSocket = class {
            const messages = buffer.split("\n");
            buffer = messages.pop() || "";
            for (const message of messages) {
@@ -136,7 +134,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..7312ffb3e413eea562238ee422d0e187
              if (message.startsWith("data: ")) {
                const data = message.slice(6);
                try {
-@@ -4561,13 +4581,24 @@ var ServerSocket = class {
+@@ -4561,13 +4580,26 @@ var ServerSocket = class {
                    logger.warn("Missing payload in message");
                    continue;
                  }
@@ -152,21 +150,23 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..7312ffb3e413eea562238ee422d0e187
 +                    logger.warn(`Halting heartbeat for room: ${room}`);
 +                    abortControllers.forEach((controller2) => controller2.abort());
 +                    this.subscribedRooms.set(room, { status: "disconnected" });
++                    return;
++                  } else {
++                    const newLastPingTime = Date.now();
++                    const lastPingTime = this.lastPingTimes.get(room) ?? newLastPingTime;
++                    this.lastPingTimes.set(room, newLastPingTime);
++                    this.handleEvent("onHeartbeat", { lastPingTime, room });
 +                    continue;
 +                  }
-+                  const newLastPingTime = Date.now();
-+                  const lastPingTime = this.lastPingTimes.get(room) ?? newLastPingTime;
-+                  this.lastPingTimes.set(room, newLastPingTime);
-+                  this.handleEvent("onHeartbeat", { lastPingTime, room });
-+                  return;
                  }
                  if (this.ws.readyState === WebSocket.OPEN) {
 -                  this.ws.send(JSON.stringify(parsed));
-+                  this.ws.send(payloadStr);
++                  if (typeof payloadStr === "string") this.ws.send(payloadStr);
++                  else this.ws.send(JSON.stringify(payloadStr));
                  } else {
                    logger.debug("WebSocket not open, skipping message");
                  }
-@@ -4583,14 +4614,21 @@ var ServerSocket = class {
+@@ -4583,14 +4615,21 @@ var ServerSocket = class {
      });
    }
    async unsubscribe(room) {
@@ -193,7 +193,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..7312ffb3e413eea562238ee422d0e187
    }
  };
  var ClientSocket = class {
-@@ -4681,7 +4719,8 @@ Fix this issue: https://jstack.app/docs/getting-started/local-development
+@@ -4681,7 +4720,8 @@ Fix this issue: https://jstack.app/docs/getting-started/local-development
          const [eventName, eventData] = parseResult.data;
          this.emitter.handleEvent(eventName, eventData);
        } else {
@@ -260,7 +260,7 @@ index 373e563d5c46e9b3bbf6234a2541f11c057b12c7..8e7cfd038ef8ef05804f7e8d89c8ca04
      private createHeartbeat;
      private subscribe;
 diff --git a/dist/index.js b/dist/index.js
-index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..f417fb430fe429e74cedf963697571ec32b13fa4 100644
+index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..85ff5912fe3b6345e61f9977846366aa1de6f20b 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -4406,7 +4406,7 @@ var EventEmitter = class {
@@ -281,15 +281,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..f417fb430fe429e74cedf963697571ec
    ws;
    controllers = /* @__PURE__ */ new Map();
    emitter;
-@@ -4445,6 +4445,7 @@ var ServerSocket = class {
-         const [eventName, eventData] = eventSchema.parse(parsedData);
-         if (eventName === "ping") {
-           this.ws.send(JSON.stringify(["pong", null]));
-+          this.emitter.handleEvent("ping", null);
-           return;
-         }
-         this.emitter.handleEvent(eventName, eventData);
-@@ -4454,12 +4455,12 @@ var ServerSocket = class {
+@@ -4454,12 +4454,12 @@ var ServerSocket = class {
      });
    }
    get rooms() {
@@ -305,7 +297,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..f417fb430fe429e74cedf963697571ec
      }
      this.controllers.clear();
      for (const timers of this.heartbeatTimers.values()) {
-@@ -4480,22 +4481,36 @@ var ServerSocket = class {
+@@ -4480,22 +4480,36 @@ var ServerSocket = class {
    handleEvent(eventName, eventData) {
      this.emitter.handleEvent(eventName, eventData);
    }
@@ -352,7 +344,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..f417fb430fe429e74cedf963697571ec
    }
    createHeartbeat(room) {
      const heartbeat = {
-@@ -4516,7 +4531,12 @@ var ServerSocket = class {
+@@ -4516,7 +4530,12 @@ var ServerSocket = class {
      return new Promise(async (resolve, reject) => {
        try {
          const controller = new AbortController();
@@ -366,7 +358,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..f417fb430fe429e74cedf963697571ec
          this.lastPingTimes.set(room, Date.now());
          const stream = await fetch(`${this.redisUrl}/subscribe/${room}`, {
            headers: {
-@@ -4528,6 +4548,7 @@ var ServerSocket = class {
+@@ -4528,6 +4547,7 @@ var ServerSocket = class {
          const reader = stream.body?.getReader();
          const decoder = new TextDecoder();
          let buffer = "";
@@ -374,7 +366,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..f417fb430fe429e74cedf963697571ec
          while (reader) {
            const { done, value } = await reader.read();
            resolve();
-@@ -4537,7 +4558,6 @@ var ServerSocket = class {
+@@ -4537,7 +4557,6 @@ var ServerSocket = class {
            const messages = buffer.split("\n");
            buffer = messages.pop() || "";
            for (const message of messages) {
@@ -382,7 +374,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..f417fb430fe429e74cedf963697571ec
              if (message.startsWith("data: ")) {
                const data = message.slice(6);
                try {
-@@ -4552,13 +4572,24 @@ var ServerSocket = class {
+@@ -4552,13 +4571,26 @@ var ServerSocket = class {
                    logger.warn("Missing payload in message");
                    continue;
                  }
@@ -398,21 +390,23 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..f417fb430fe429e74cedf963697571ec
 +                    logger.warn(`Halting heartbeat for room: ${room}`);
 +                    abortControllers.forEach((controller2) => controller2.abort());
 +                    this.subscribedRooms.set(room, { status: "disconnected" });
++                    return;
++                  } else {
++                    const newLastPingTime = Date.now();
++                    const lastPingTime = this.lastPingTimes.get(room) ?? newLastPingTime;
++                    this.lastPingTimes.set(room, newLastPingTime);
++                    this.handleEvent("onHeartbeat", { lastPingTime, room });
 +                    continue;
 +                  }
-+                  const newLastPingTime = Date.now();
-+                  const lastPingTime = this.lastPingTimes.get(room) ?? newLastPingTime;
-+                  this.lastPingTimes.set(room, newLastPingTime);
-+                  this.handleEvent("onHeartbeat", { lastPingTime, room });
-+                  return;
                  }
                  if (this.ws.readyState === WebSocket.OPEN) {
 -                  this.ws.send(JSON.stringify(parsed));
-+                  this.ws.send(payloadStr);
++                  if (typeof payloadStr === "string") this.ws.send(payloadStr);
++                  else this.ws.send(JSON.stringify(payloadStr));
                  } else {
                    logger.debug("WebSocket not open, skipping message");
                  }
-@@ -4574,14 +4605,21 @@ var ServerSocket = class {
+@@ -4574,14 +4606,21 @@ var ServerSocket = class {
      });
    }
    async unsubscribe(room) {
@@ -439,7 +433,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..f417fb430fe429e74cedf963697571ec
    }
  };
  var ClientSocket = class {
-@@ -4672,7 +4710,8 @@ Fix this issue: https://jstack.app/docs/getting-started/local-development
+@@ -4672,7 +4711,8 @@ Fix this issue: https://jstack.app/docs/getting-started/local-development
          const [eventName, eventData] = parseResult.data;
          this.emitter.handleEvent(eventName, eventData);
        } else {

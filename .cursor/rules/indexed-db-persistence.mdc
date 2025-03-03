@@ -1,0 +1,8 @@
+---
+description: persistent use state hooks
+globs: 
+---
+
+# Your rule content
+
+- In any cases where persistence is required, use the persistent state hook in [use-persistence.ts](mdc:src/hooks/use-persistence.ts) 

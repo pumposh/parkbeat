@@ -22,10 +22,11 @@ export const getServerLogger = () => serverLogger;
  * Create a new logger group with the given ID and title
  * @param id Unique identifier for the group
  * @param title Display title for the group
- * @param collapsed Whether the group should be collapsed by default
+ * @param collapsed Whether the group should be collapsed by default in the UI
+ * @param logCollapsed Whether the group should be collapsed when logging to console (defaults to same as collapsed)
  */
-export const createLoggerGroup = (id: string, title: string, collapsed = true) => {
-  return serverLogger.group(id, title, collapsed);
+export const createLoggerGroup = (id: string, title: string, collapsed = true, logCollapsed?: boolean) => {
+  return serverLogger.group(id, title, collapsed, logCollapsed);
 };
 
 /**
@@ -39,10 +40,12 @@ export const getContextLogger = (ctx: LoggerContext) => {
 /**
  * Create a logger for a specific component or module
  * @param component The name of the component or module
+ * @param collapsed Whether the group should be collapsed by default in the UI
+ * @param logCollapsed Whether the group should be collapsed when logging to console (defaults to same as collapsed)
  */
-export const createComponentLogger = (component: string) => {
+export const createComponentLogger = (component: string, collapsed = true, logCollapsed?: boolean) => {
   const id = `component_${component}_${Date.now()}`;
-  return serverLogger.group(id, `Component: ${component}`, true);
+  return serverLogger.group(id, `Component: ${component}`, collapsed, logCollapsed);
 };
 
 /**

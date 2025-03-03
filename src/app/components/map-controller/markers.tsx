@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { Project, ProjectGroup, ContributionSummary } from '@/hooks/use-tree-sockets'
 import type maplibregl from 'maplibre-gl'
-import { ProjectMarker } from './tree-marker'
+import { ProjectMarker } from './project-marker'
 
 const PROXIMITY_THRESHOLD = 50; // pixels
 
@@ -30,7 +30,12 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter, cont
   
 
   useEffect(() => {
-    const updateMarkerPositions = () => {
+    const updateMarkerPositions = (onMove?: boolean) => {
+      // if (onMove) {
+      //   setMarkers({})
+      //   setGroupMarkers({})
+      // }
+
       const newMarkers: typeof markers = {}
       const newGroupMarkers: typeof groupMarkers = {}
       if (!map) return;
@@ -126,9 +131,13 @@ export const Markers = ({ projects, projectGroups, map, onMarkerNearCenter, cont
     }
 
     updateMarkerPositions()
+
+    const updateOnMove = () => {
+      updateMarkerPositions(true)
+    }
     if (map) {
-      map.on('move', updateMarkerPositions)
-      map.on('zoom', updateMarkerPositions)
+      map.on('move', updateOnMove)
+      map.on('zoom', updateOnMove)
     }
 
     return () => {

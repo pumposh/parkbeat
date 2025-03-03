@@ -22,8 +22,8 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
   const getSocketGeohashKey = (socketId: string): string => `sockets:${socketId}:geohashes`
   const getSocketProjectsKey = (socketId: string): string => `sockets:${socketId}:projects`
 
-  const getSocketId = (socket: any) => {
-    if ('_socketId' in socket) {
+  const getSocketId = (socket: any, noGenerate?: boolean) => {
+    if ('_socketId' in socket || noGenerate) {
       return socket._socketId
     }
     const id = `socket_${generateId()}`

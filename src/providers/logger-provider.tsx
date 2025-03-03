@@ -41,7 +41,7 @@ export function LoggerProvider({
   defaultEnabled = process.env.NODE_ENV !== 'production',
 }: LoggerProviderProps) {
   // Get the logger instance
-  const logger = getLogger();
+  const logger = getLogger(overrideConsole);
   
   // Initialize state
   const [isEnabled, setIsEnabled] = useState(defaultEnabled);

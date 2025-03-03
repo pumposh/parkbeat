@@ -8,9 +8,9 @@ import { Bree_Serif } from "next/font/google"
 import { Suspense } from "react"
 
 import "./globals.css"
+import "./components/ui/variables.css"
 import React from "react"
-import { RemoteLoggerControl } from "./components/dev/remote-logger-control"
-import { LoggerControl } from "./components/dev/logger-control"
+import { FloatingDebugControl } from './components/dev'
 
 const breeSerif = Bree_Serif({ 
   subsets: ['latin'],
@@ -54,7 +54,7 @@ export default function RootLayout({
             crossOrigin="anonymous"
           />
         </head>
-        <body suppressHydrationWarning className="antialiased bg-background text-foreground">
+        <body suppressHydrationWarning className="antialiased fixed bg-background text-foreground h-[100dvh] overflow-hidden max-w-[100dvw]">
           <Providers>
             <Suspense fallback={<div>Loading map...</div>}>
               <MapController />
@@ -64,10 +64,11 @@ export default function RootLayout({
               {children}
             </div>
             <FooterMenu />
-            {/* Logger Controls - only visible in development */}
-            <LoggerControl />
-            {/* Remote Logger Control - only visible in development */}
-            <RemoteLoggerControl />
+            {(
+              <>
+                <FloatingDebugControl />
+              </>
+            )}
           </Providers>
           </body>
         </html>

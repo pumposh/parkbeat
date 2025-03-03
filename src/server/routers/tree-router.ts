@@ -32,6 +32,7 @@ const serverEvents = z.object({
     lastPingTime: z.number(),
     room: z.string()
   }),
+  ping: z.undefined(),
   pong: z.function().args(z.void()).returns(z.void()),
   provideSocketId: z.string().optional(),
   ...projectServerEvents,
@@ -107,6 +108,10 @@ export const treeRouter = j.router({
 
       return {
         onConnect({ socket }) {
+          if (socketId || getSocketId(socket, true)) {
+            console.log(`[Process ${process.pid}] Socket ${socketId} already connected`)
+            return
+          }
           socketId = getSocketId(socket)
           logger = ctx.logger.group(`socket_${socketId}`, `Socket ${socketId}`, true)
 

@@ -1,6 +1,7 @@
 import Link from "next/link"
-import { Logo, BetaTag } from "../ui/logo"
+import { Logo } from "../ui/logo"
 import { cn } from "@/lib/utils"
+import { DebugControl } from "../dev/debug-control"
 
 export const Header = () => {
   return (
@@ -19,7 +20,7 @@ export const Header = () => {
                   dark:drop-shadow-[0_12px_24px_rgba(0,0,0,0.7)]
                   " />
               </Link>
-              <BetaTag className="
+              <DebugControl className="
                 absolute
                 translate-x-[calc(-50%+16px)]
                 translate-y-[-50%]

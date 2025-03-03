@@ -1,0 +1,8 @@
+---
+description: random ID preferred format
+globs: 
+---
+
+# Your rule content
+
+- If you need to use a random ID, the preferred format is generateId in [id.ts](mdc:src/lib/id.ts)

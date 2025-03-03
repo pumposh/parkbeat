@@ -96,7 +96,8 @@ You can create log groups to organize related logs:
 const operationLogger = logger.group(
   'operation_id', 
   'Operation Title',
-  true // collapsed by default
+  true,  // collapsed by default in UI
+  false  // not collapsed when logging to console
 );
 
 operationLogger.info('Starting operation');
@@ -106,6 +107,25 @@ operationLogger.info('Operation completed');
 // Don't forget to end the group when done
 operationLogger.end();
 ```
+
+### Controlling Group Collapse Behavior
+
+The `group` method accepts two boolean parameters to control collapse behavior:
+
+1. `collapsed` - Controls whether the group is collapsed by default in the UI
+2. `logCollapsed` - Controls whether the group is collapsed when logging to the console
+
+This allows you to have different collapse behaviors for UI display versus console output:
+
+```typescript
+// Collapsed in UI, but expanded in console for better visibility
+logger.group('important_logs', 'Important Logs', true, false);
+
+// Expanded in UI, but collapsed in console to save space
+logger.group('verbose_logs', 'Verbose Logs', false, true);
+```
+
+If `logCollapsed` is not specified, it defaults to the same value as `collapsed`.
 
 ## Best Practices
 

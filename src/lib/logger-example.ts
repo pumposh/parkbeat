@@ -73,16 +73,16 @@ export function exampleUsage() {
   
   // Example of using the extended console methods
   // Create a new group using console.createGroup
-  const authGroup = console.createGroup('auth', 'Authentication', false);
+  const authGroup = getLogger().group('auth', 'Authentication', false);
   authGroup.info('User login attempt');
   authGroup.debug('Login details:', { username: 'user@example.com' });
   
   // Log to an existing group using console.getGroup
-  const existingGroup = console.getGroup('MyComponent');
+  const existingGroup = getLogger().getGroupLogger('MyComponent');
   existingGroup.warn('This is added to the existing MyComponent group');
   
   // End a group using console.endGroup
-  console.endGroup('auth');
+  getLogger().groupEnd('auth');
   
   // Example of using a group for a function call
   function processData(data: any, logger: GroupLogger) {

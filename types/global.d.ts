@@ -44,10 +44,11 @@ declare global {
      * Create a new log group with the specified ID and title
      * @param id Unique identifier for the group
      * @param title Display title for the group
-     * @param collapsed Whether the group should be collapsed by default
+     * @param collapsed Whether the group should be collapsed by default in the UI
+     * @param logCollapsed Whether the group should be collapsed when logging to console (defaults to same as collapsed)
      * @returns A GroupLogger instance for the group
      */
-    createGroup(id: string, title: string, collapsed?: boolean): ParkbeatLogger.GroupLogger;
+    createGroup(id: string, title: string, collapsed?: boolean, logCollapsed?: boolean): ParkbeatLogger.GroupLogger;
     
     /**
      * End a log group with the specified ID

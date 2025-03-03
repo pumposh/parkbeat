@@ -33,7 +33,7 @@ type RemoteLoggerProviderProps = {
 export function RemoteLoggerProvider({
   children,
   defaultServerUrl = 'http://localhost:3030/logs',
-  autoEnable = process.env.NODE_ENV === 'development',
+  autoEnable = process.env.NODE_ENV === 'development' || true, // Need this rn
   flushIntervalMs = 1000,
 }: RemoteLoggerProviderProps) {
   const [isEnabled, setIsEnabled] = useState(false);
@@ -62,7 +62,10 @@ export function RemoteLoggerProvider({
   // Auto-enable logging if configured
   useEffect(() => {
     // Only auto-enable in development mode and if autoEnable is true
-    if (autoEnable && process.env.NODE_ENV === 'development') {
+    if (
+      autoEnable
+      // && process.env.NODE_ENV === 'development' // Need this rn
+    ) {
       enableLogging();
       
       // Add a global window property for debugging

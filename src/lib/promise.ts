@@ -16,7 +16,7 @@ export class DedupeThing {
 
   private argMap: Map<string, timestamp> = new Map();
 
-  private cleanMap() {
+  public die() {
     const now = Date.now()
     this.argMap.forEach((value, key) => {
       if ((now - value) > 10000) {
@@ -32,7 +32,7 @@ export class DedupeThing {
     const lastCall = this.argMap.get(key)
     if (lastCall && lastCall > (Date.now() - 1000)) {
       console.log('[DedupeThing] Subsequent call, skipping')
-      this.cleanMap()
+      this.die()
       return false;
     }
     this.argMap.set(key, Date.now())

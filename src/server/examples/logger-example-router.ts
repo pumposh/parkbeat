@@ -89,7 +89,8 @@ export const loggerExampleRouter = {
       const operationLogger = logger.group(
         'perf_operation', 
         'Performance Operation',
-        false // not collapsed
+        false, // not collapsed in UI
+        true   // collapsed when logging to console
       );
       
       operationLogger.info('Starting operation');
@@ -104,6 +105,20 @@ export const loggerExampleRouter = {
       operationLogger.info('Step 1 completed', { 
         durationMs: Date.now() - startTime 
       });
+      
+      // Create a nested group with different collapse settings
+      const nestedLogger = operationLogger.group(
+        'nested_operation',
+        'Nested Operation Details',
+        true,  // collapsed in UI
+        false  // not collapsed when logging to console
+      );
+      
+      nestedLogger.debug('Detailed operation information');
+      nestedLogger.debug('More detailed information');
+      
+      // End the nested group
+      nestedLogger.end();
       
       // Simulate more work
       await new Promise(resolve => setTimeout(resolve, 300));

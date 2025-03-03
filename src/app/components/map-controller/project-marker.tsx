@@ -4,7 +4,7 @@ import type { Project, ProjectGroup, ContributionSummary } from '@/hooks/use-tre
 import { useLiveTrees } from '@/hooks/use-tree-sockets'
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { ProjectInfoPanel } from './tree-info-panel'
+import { ProjectInfoPanel } from './project-info-panel'
 import type maplibregl from 'maplibre-gl'
 import { cn } from '@/lib/utils'
 import { calculateProjectCosts } from '@/lib/cost'

@@ -13,6 +13,7 @@ export namespace ParkbeatLogger {
     messages: LogMessage[];
     startTime: number;
     collapsed: boolean;
+    logCollapsed: boolean;
   };
   
   type LogMessage = {
@@ -150,9 +151,9 @@ export namespace ParkbeatLogger {
     /**
      * Create a nested group
      */
-    public group(id: string, title: string, collapsed: boolean = true): GroupLogger {
+    public group(id: string, title: string, collapsed: boolean = true, logCollapsed?: boolean): GroupLogger {
       const nestedGroupId = `${this.groupId}:${id}`;
-      return this.parentLogger.group(nestedGroupId, title, collapsed);
+      return this.parentLogger.group(nestedGroupId, title, collapsed, logCollapsed);
     }
   }
   
@@ -162,16 +163,7 @@ export namespace ParkbeatLogger {
     private batchTimeoutMs: number = 500;
     private batchTimeouts: Map<string, NodeJS.Timeout> = new Map();
     private plugins: LoggerPlugin[] = [];
-    private originalConsole: ExtendedConsoleMethods = {
-      log: console.log.bind(console),
-      info: console.info.bind(console),
-      warn: console.warn.bind(console),
-      error: console.error.bind(console),
-      debug: console.debug.bind(console),
-      group: console.group.bind(console),
-      groupCollapsed: console.groupCollapsed.bind(console),
-      groupEnd: console.groupEnd.bind(console)
-    };
+    private originalConsole: ExtendedConsoleMethods;
     private consoleOverridden: boolean = false;
     
     // Singleton pattern
@@ -184,8 +176,21 @@ export namespace ParkbeatLogger {
     
     constructor(overrideConsole: boolean = true) {
       super();
+      
+      // Save original console methods safely
+      this.originalConsole = {
+        log: console.log,
+        info: console.info,
+        warn: console.warn,
+        error: console.error,
+        debug: console.debug || console.log,
+        group: console.group || console.log,
+        groupCollapsed: console.groupCollapsed || console.log,
+        groupEnd: console.groupEnd || (() => {})
+      };
+      
       // Initialize with environment settings
-      this._isEnabled = process.env.NODE_ENV !== 'production';
+      this._isEnabled = typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production';
       
       // Allow overriding via localStorage in browser environments
       if (typeof window !== 'undefined') {
@@ -228,9 +233,16 @@ export namespace ParkbeatLogger {
       console.debug = this.createConsoleMethod('debug');
       
       // Add custom group methods to console
-      console.createGroup = this.group.bind(this);
-      console.endGroup = this.groupEnd.bind(this);
-      console.getGroup = this.getGroupLogger.bind(this);
+      const self = this;
+      console.createGroup = function(...args: any[]) { 
+        return self.group.apply(self, args as [string, string, boolean?, boolean?]); 
+      };
+      console.endGroup = function(groupId: string) { 
+        return self.groupEnd.call(self, groupId); 
+      };
+      console.getGroup = function(groupId: string) { 
+        return self.getGroupLogger.call(self, groupId); 
+      };
       
       this.consoleOverridden = true;
     }
@@ -242,10 +254,10 @@ export namespace ParkbeatLogger {
       if (this.consoleOverridden) {
         // Restore standard console methods
         console.log = this.originalConsole.log;
-        console.info = this.originalConsole.info ?? this.originalConsole.log;
+        console.info = this.originalConsole.info;
         console.warn = this.originalConsole.warn;
         console.error = this.originalConsole.error;
-        console.debug = this.originalConsole.debug ?? this.originalConsole.log;
+        console.debug = this.originalConsole.debug;
         
         // Remove custom group methods
         delete (console as any).createGroup;
@@ -257,16 +269,15 @@ export namespace ParkbeatLogger {
     }
     
     /**
-     * Create a console method that logs through our logger
+     * Create a console method that uses our logger
      */
     private createConsoleMethod(level: LogLevel): ConsoleMethod {
-      return (...args: any[]) => {
-        // If our logger is disabled, call the original console method
-        if (!this._isEnabled && this.consoleOverridden) {
-          this.originalConsole[level](...args);
-        } else {
-          // Call our logger method
-          this[level](...args);
+      const self = this;
+      return function(...args: any[]) {
+        self.handler(level, ...args);
+        // Also call the original method for immediate output
+        if (self.originalConsole[level]) {
+          self.originalConsole[level].apply(console, args);
         }
       };
     }
@@ -349,7 +360,7 @@ export namespace ParkbeatLogger {
      * Start a new log group or get an existing one
      * Returns a GroupLogger instance for the group
      */
-    public group(id: string, title: string, collapsed: boolean = true): GroupLogger {
+    public group(id: string, title: string, collapsed: boolean = true, logCollapsed?: boolean): GroupLogger {
       if (!this._isEnabled) return new GroupLogger(this, id);
       
       if (!this.groups.has(id)) {
@@ -358,7 +369,8 @@ export namespace ParkbeatLogger {
           title,
           messages: [],
           startTime: Date.now(),
-          collapsed
+          collapsed,
+          logCollapsed: logCollapsed !== undefined ? logCollapsed : collapsed
         });
       }
       
@@ -548,7 +560,7 @@ export namespace ParkbeatLogger {
       // Log group to console
       if (hasGroupSupport) {
         if (
-          group.collapsed
+          group.logCollapsed
           && typeof console.groupCollapsed === 'function'
         ) {
           Function.prototype.apply.call(this.originalConsole.groupCollapsed, console, [title]);
@@ -571,7 +583,7 @@ export namespace ParkbeatLogger {
         // Create a subgroup for each page if there are multiple pages
         if (totalPages > 1 && hasGroupSupport) {
           const pageTitle = `Page ${page + 1}/${totalPages} (logs ${startIdx + 1}-${endIdx})`;
-          if (group.collapsed && typeof console.groupCollapsed === 'function') {
+          if (group.logCollapsed && typeof console.groupCollapsed === 'function') {
             Function.prototype.apply.call(this.originalConsole.groupCollapsed, console, [pageTitle]);
           } else {
             Function.prototype.apply.call(this.originalConsole.group, console, [pageTitle]);

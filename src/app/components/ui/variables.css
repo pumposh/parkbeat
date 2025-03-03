@@ -1,0 +1,13 @@
+:root {
+  --primary: rgb(59, 130, 246);
+  --primary-foreground: white;
+  --primary-hover: rgb(37, 99, 235);
+  --primary-hover-foreground: white;
+}
+
+.dark {
+  --primary: rgb(96, 165, 250);
+  --primary-foreground: rgb(15, 23, 42);
+  --primary-hover: rgb(147, 197, 253);
+  --primary-hover-foreground: rgb(15, 23, 42);
+} 

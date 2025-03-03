@@ -9,6 +9,7 @@ import type { BaseProject, ProjectData, ProjectStatus } from "@/server/types/sha
 import { useServerEvent, WebSocketManager, type ConnectionState } from "./websocket-manager"
 import { HydratableDate as Date } from "@/lib/utils"
 import { ParkbeatLogger } from "@/lib/logger-types"
+import { getLogger } from "@/lib/logger"
 // WebSocket payload type with string dates
 export type ProjectPayload = BaseProject
 
@@ -72,7 +73,9 @@ export function useLiveTrees() {
 
   // Register handler on mount and handle connection state
   useEffect(() => {
-    const newLogger = console.getGroup(handlerId.current);
+    const newLogger = getLogger().group(
+      handlerId.current, handlerId.current, false, false
+    ) || console;
     setLogger(newLogger);
 
     const unsubscribe = wsManager.onStateChange(setConnectionState);

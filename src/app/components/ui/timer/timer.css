@@ -1,0 +1,209 @@
+:root {
+  --timer-size: 30px;
+  --timer-background: var(--glass-bg);
+  --timer-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.5);
+  --timer-hand-color: var(--accent-foreground);
+  --timer-second-color: var(--background);
+  --timer-center-color: var(--background);
+  /* Subscription timer colors */
+  --timer-color-green: rgb(34, 197, 94);
+  --timer-color-olive: rgb(130, 130, 61);
+  --timer-color-gray: rgb(82, 82, 91);
+  --timer-color-zinc-400: rgb(161, 161, 170);
+  --timer-color-zinc-600: rgb(82, 82, 91);
+}
+
+.timer-container {
+  position: relative;
+  width: var(--timer-size);
+  height: var(--timer-size);
+  margin: 0 auto;
+}
+
+.timer {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--timer-background);
+  box-shadow: var(--timer-shadow);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.3s ease;
+}
+
+/* Center dot */
+.timer::after {
+  content: "";
+  position: absolute;
+  width: calc(var(--timer-size) * 0.05);
+  height: calc(var(--timer-size) * 0.05);
+  background: var(--timer-center-color);
+  border-radius: 50%;
+  z-index: 10;
+}
+
+/* Timer hands */
+.timer-hand {
+  position: absolute;
+  transform-origin: bottom center;
+  bottom: 50%;
+  left: 50%;
+  border-radius: 10px;
+  z-index: 5;
+}
+
+.timer-hand-seconds {
+  height: 40%;
+  width: calc(var(--timer-size) * 0.02);
+  background: var(--timer-second-color);
+}
+
+.timer-hand-minutes {
+  height: 30%;
+  width: calc(var(--timer-size) * 0.025);
+  background: var(--timer-hand-color);
+}
+
+.timer-hand-hours {
+  height: 20%;
+  width: calc(var(--timer-size) * 0.025);
+  background: var(--timer-hand-color);
+}
+
+/* Animation for timer hands */
+@keyframes rotate-hand {
+  to {
+    transform: translateX(-50%) rotate(360deg);
+  }
+}
+
+/* Digital display */
+.timer-digital {
+  position: absolute;
+  bottom: 30%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 14px;
+  color: var(--timer-center-color);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+
+/* Timer states */
+.timer-running .timer-hand-seconds {
+  animation: rotate-hand var(--seconds-duration, 60s) steps(360) infinite;
+  animation-delay: calc(-1s * var(--initial-seconds, 0));
+}
+
+.timer-running .timer-hand-minutes {
+  animation: rotate-hand var(--minutes-duration, 3600s) steps(60) infinite;
+  animation-delay: calc(-60s * var(--initial-minutes, 0));
+}
+
+.timer-running .timer-hand-hours {
+  animation: rotate-hand var(--hours-duration, 43200s) linear infinite;
+  animation-delay: calc(-3600s * var(--initial-hours, 0));
+}
+
+/* Paused state */
+.timer-paused .timer-hand-seconds,
+.timer-paused .timer-hand-minutes,
+.timer-paused .timer-hand-hours {
+  animation-play-state: paused;
+}
+
+/* Timer sizes */
+.timer-sm {
+  --timer-size: 120px;
+  --timer-border-width: 3px;
+}
+
+.timer-lg {
+  --timer-size: 300px;
+  --timer-border-width: 6px;
+}
+
+/* Progress indicator */
+.timer-progress {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--timer-hand-color) 0% var(--progress-percentage, 0%),
+    transparent var(--progress-percentage, 0%) 100%
+  );
+  opacity: 0.15;
+  z-index: 1;
+}
+
+/* Background color animation keyframes */
+@keyframes timer-bg-active {
+  0% {
+    background-color: var(--timer-color-green);
+  }
+  50% {
+    background-color: var(--timer-color-olive);
+  }
+  100% {
+    background-color: var(--timer-color-gray);
+  }
+}
+
+@keyframes timer-bg-inactive {
+  0% {
+    background-color: var(--timer-color-zinc-400);
+  }
+  100% {
+    background-color: var(--timer-color-zinc-600);
+  }
+}
+
+/* Animated background timer styles */
+.timer-animated-bg {
+  border-color: transparent;
+  color: white;
+}
+
+.timer-animated-bg.timer-running {
+  animation: timer-bg-active var(--animation-duration, 45s) linear forwards;
+}
+
+.timer-animated-bg.timer-paused {
+  animation: timer-bg-inactive var(--animation-duration, 15s) linear forwards;
+}
+
+.timer-animated-bg .timer-tick {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.timer-animated-bg .timer-tick:nth-child(5n) {
+  background-color: rgba(255, 255, 255, 0.6);
+}
+
+.timer-animated-bg::after {
+  background-color: white;
+}
+
+.timer-animated-bg .timer-hand-seconds,
+.timer-animated-bg .timer-hand-minutes,
+.timer-animated-bg .timer-hand-hours {
+  background-color: white;
+}
+
+.timer-animated-bg .timer-digital {
+  color: white;
+}
+
+.timer-animated-bg .timer-progress {
+  background: conic-gradient(
+    rgba(255, 255, 255, 0.4) 0% var(--progress-percentage, 0%),
+    transparent var(--progress-percentage, 0%) 100%
+  );
+}
