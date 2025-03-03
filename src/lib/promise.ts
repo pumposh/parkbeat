@@ -19,7 +19,7 @@ export class DedupeThing {
   private cleanMap() {
     const now = Date.now()
     this.argMap.forEach((value, key) => {
-      if (now - value > 1000) {
+      if ((now - value) > 10000) {
         this.argMap.delete(key)
       }
     })

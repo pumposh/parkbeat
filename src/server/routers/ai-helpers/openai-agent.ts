@@ -4,10 +4,13 @@ import type { ProjectCategory } from "@/types/types"
 import { PromptManager } from './prompts'
 import { generateId } from '@/lib/id'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs'
+import { getServerLogger } from '../../utils/logger'
+
 export class OpenAIAgent implements AIAgent {
   private client: OpenAI
   private model = 'gpt-4o'
   private textModel = 'gpt-4o'
+  private logger = getServerLogger()
 
   constructor(apiKey: string) {
     this.client = new OpenAI({ apiKey })
@@ -43,7 +46,7 @@ export class OpenAIAgent implements AIAgent {
       max_tokens: 200
     })
 
-    console.log('result', result.choices[0])
+    this.logger.debug('OpenAI result', result.choices[0])
 
     const content = result.choices[0]?.message?.content
     if (!content) {
@@ -186,7 +189,7 @@ export class OpenAIAgent implements AIAgent {
         }
       })
     } catch (error) {
-      console.error('Error parsing suggestions:', error)
+      this.logger.error('Error parsing suggestions:', error)
       return []
     }
   }
@@ -214,7 +217,7 @@ export class OpenAIAgent implements AIAgent {
 
       return { url: imageUrl }
     } catch (error) {
-      console.error('Error generating image:', error)
+      this.logger.error('Error generating image:', error)
       throw error
     }
   }
@@ -259,7 +262,7 @@ export class OpenAIAgent implements AIAgent {
       throw new Error('Failed to get cost estimate from OpenAI')
     }
 
-    console.log('[generateEstimate] analysis', analysis)
+    this.logger.debug('[generateEstimate] analysis', analysis)
 
     // Parse the response into structured sections
     const sections = analysis.split('\n\n')
@@ -276,7 +279,7 @@ export class OpenAIAgent implements AIAgent {
       confidenceScore: 0.8
     }
 
-    console.log('[generateEstimate] sections', sections)
+    this.logger.debug('[generateEstimate] sections', sections)
 
     // Parse materials section
     const materialsSection = sections.find(s => s.includes('MATERIALS BREAKDOWN'))
@@ -294,7 +297,7 @@ export class OpenAIAgent implements AIAgent {
         })
     }
 
-    console.log('[generateEstimate] materialsSection', materialsSection, estimate.breakdown.materials)
+    this.logger.debug('[generateEstimate] materialsSection', materialsSection, estimate.breakdown.materials)
 
     // Parse labor section
     const laborSection = sections.find(s => s.includes('LABOR COSTS'))
@@ -326,7 +329,7 @@ export class OpenAIAgent implements AIAgent {
       }
     }
 
-    console.log('[generateEstimate] laborSection', laborSection, estimate.breakdown.labor)
+    this.logger.debug('[generateEstimate] laborSection', laborSection, estimate.breakdown.labor)
 
     // Parse other costs
     const otherSection = sections.find(s => s.includes('OTHER COSTS'))
@@ -337,7 +340,7 @@ export class OpenAIAgent implements AIAgent {
       estimate.breakdown.contingency = parseFloat(lines.find(l => l.includes('Contingency'))?.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
     }
 
-    console.log('[generateEstimate] otherSection', otherSection, estimate.breakdown)
+    this.logger.debug('[generateEstimate] otherSection', otherSection, estimate.breakdown)
 
     // Calculate total estimate by summing all components
     const materialTotal = estimate.breakdown.materials.reduce((sum, item) => sum + item.cost, 0)

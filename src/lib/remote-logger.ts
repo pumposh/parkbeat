@@ -1,20 +1,18 @@
 /**
- * Remote Logger
+ * Remote Logger Plugin
  * 
- * This utility captures console logs and sends them to a browser-based console.
+ * This utility captures logs from the Logger class and sends them to a remote server.
  * Useful for debugging mobile applications in simulators where console access is limited.
  */
 
-type LogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
+import { LoggerPlugin, LogLevel, getLogger } from './logger';
+
 type LogEntry = {
   timestamp: number;
   level: LogLevel;
   message: string;
   data: any[];
 };
-
-// Define console method types
-type ConsoleMethod = (...data: any[]) => void;
 
 /**
  * Safe stringify function that handles circular references
@@ -56,64 +54,59 @@ function safeStringify(obj: any): string {
   });
 }
 
-class RemoteLogger {
-  private static instance: RemoteLogger;
+/**
+ * RemoteLoggerPlugin captures logs and sends them to a remote server
+ */
+export class RemoteLoggerPlugin implements LoggerPlugin {
+  private static instance: RemoteLoggerPlugin;
+  public readonly name = 'RemoteLogger';
   private serverUrl: string | null = null;
   private isEnabled: boolean = false;
   private buffer: LogEntry[] = [];
   private flushInterval: NodeJS.Timeout | null = null;
-  private originalConsole: Record<LogLevel, ConsoleMethod> = {
-    log: console.log.bind(console),
-    info: console.info.bind(console),
-    warn: console.warn.bind(console),
-    error: console.error.bind(console),
-    debug: console.debug.bind(console)
-  };
+  private flushIntervalMs: number = 1000;
 
   private constructor() {}
 
-  public static getInstance(): RemoteLogger {
-    if (!RemoteLogger.instance) {
-      RemoteLogger.instance = new RemoteLogger();
+  public static getInstance(): RemoteLoggerPlugin {
+    if (!RemoteLoggerPlugin.instance) {
+      RemoteLoggerPlugin.instance = new RemoteLoggerPlugin();
     }
-    return RemoteLogger.instance;
+    return RemoteLoggerPlugin.instance;
   }
 
   /**
-   * Initialize the remote logger
+   * Initialize the remote logger plugin
    * @param serverUrl The URL of the remote logging server
    * @param flushIntervalMs How often to send logs to the server (in milliseconds)
    */
-  public init(serverUrl: string, flushIntervalMs: number = 1000): void {
+  public init(serverUrl: string, flushIntervalMs: number = 1000): RemoteLoggerPlugin {
     this.serverUrl = serverUrl;
+    this.flushIntervalMs = flushIntervalMs;
     this.isEnabled = true;
     
-    // Override console methods
-    console.log = this.createLogFunction('log') as ConsoleMethod;
-    console.info = this.createLogFunction('info') as ConsoleMethod;
-    console.warn = this.createLogFunction('warn') as ConsoleMethod;
-    console.error = this.createLogFunction('error') as ConsoleMethod;
-    console.debug = this.createLogFunction('debug') as ConsoleMethod;
+    // Register with the logger
+    getLogger().registerPlugin(this);
     
-    // Set up flush interval
-    this.flushInterval = setInterval(() => this.flush(), flushIntervalMs);
-    
-    // Log initialization
-    console.info('[RemoteLogger] Initialized remote logging');
+    return this;
   }
 
   /**
-   * Disable remote logging and restore original console methods
+   * Called when the plugin is initialized by the logger
    */
-  public disable(): void {
+  public onInit(): void {
+    // Set up flush interval
+    if (this.isEnabled && !this.flushInterval) {
+      this.flushInterval = setInterval(() => this.flush(), this.flushIntervalMs);
+      console.info('[RemoteLogger] Initialized remote logging');
+    }
+  }
+
+  /**
+   * Called when the plugin is disabled by the logger
+   */
+  public onDisable(): void {
     this.isEnabled = false;
-    
-    // Restore original console methods
-    console.log = this.originalConsole.log;
-    console.info = this.originalConsole.info;
-    console.warn = this.originalConsole.warn;
-    console.error = this.originalConsole.error;
-    console.debug = this.originalConsole.debug;
     
     // Clear flush interval
     if (this.flushInterval) {
@@ -126,28 +119,27 @@ class RemoteLogger {
   }
 
   /**
-   * Create a function that logs to both the original console and the remote logger
+   * Called for each log message
    */
-  private createLogFunction(level: LogLevel): ConsoleMethod {
-    const originalFn = this.originalConsole[level];
+  public onLog(level: LogLevel, message: string, ...data: any[]): void {
+    if (!this.isEnabled) return;
     
-    return (...args: any[]) => {
-      // Call original console method
-      originalFn(...args);
-      
-      // Add to buffer if enabled
-      if (this.isEnabled) {
-        const message = args[0]?.toString() || '';
-        const data = args.slice(1);
-        
-        this.buffer.push({
-          timestamp: Date.now(),
-          level,
-          message,
-          data
-        });
-      }
-    };
+    this.buffer.push({
+      timestamp: Date.now(),
+      level,
+      message,
+      data
+    });
+  }
+
+  /**
+   * Manually disable the plugin
+   */
+  public disable(): void {
+    if (this.isEnabled) {
+      this.isEnabled = false;
+      getLogger().unregisterPlugin(this.name);
+    }
   }
 
   /**
@@ -177,10 +169,18 @@ class RemoteLogger {
       }),
     }).catch(err => {
       // If sending fails, log to original console and add back to buffer
-      this.originalConsole.warn('[RemoteLogger] Failed to send logs:', err);
+      console.warn('[RemoteLogger] Failed to send logs:', err);
       this.buffer = [...logs, ...this.buffer];
     });
   }
+  
+  /**
+   * Manually flush logs
+   */
+  public manualFlush(): void {
+    this.flush();
+  }
 }
 
-export const remoteLogger = RemoteLogger.getInstance(); 
+// Create a convenience function for getting the remote logger instance
+export const remoteLogger = RemoteLoggerPlugin.getInstance(); 

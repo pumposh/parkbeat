@@ -1,4 +1,6 @@
+import { asyncTimeout } from "@/lib/async";
 import { client } from "@/lib/client";
+import { ParkbeatLogger } from "@/lib/logger-types";
 import type { ClientEvents, ServerEvents } from "@/server/routers/tree-router";
 import { useEffect } from "react";
 import { useMemo } from "react";
@@ -8,7 +10,13 @@ import { Dispatch } from "react";
 // Connection state management
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
 
+// Create a console instance for WebSocketManager
+// const console = getWebSocketLogger();
+
 type ClientSocket = ReturnType<typeof client.tree.live.$ws>
+
+// Define subscription status type
+export type SubscriptionStatus = 'active' | 'unsubscribed';
 
 type EventName = keyof (ClientEvents & ServerEvents);
 type ServerEventName = keyof ServerEvents;
@@ -22,7 +30,30 @@ type Hook<T extends ServerEventName> = (val: ExpectedArgument<T>) => void;
 type HookMap<T extends ServerEventName> = Map<T, Set<Hook<T>>>;
 type HookCache<T extends ServerEventName> = Map<T, ExpectedArgument<T>>;
 
+// Define room subscription data type
+type RoomSubscriptionData = {
+  lastPingTime: number;
+  heartbeatHook?: Hook<"heartbeat">;
+  status: SubscriptionStatus;
+  removalTimeout?: NodeJS.Timeout;
+  unsubscribeTime?: number; // Time when the room was marked for unsubscription
+};
+
 const noop = () => {}
+
+/**
+ * Safely convert any value to a string, handling symbols properly
+ */
+function safeToString(value: any): string {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  if (typeof value === 'symbol') return String(value);
+  try {
+    return String(value);
+  } catch (e) {
+    return '[Unstringable value]';
+  }
+}
 
 type EmissionOptions = {
   argBehavior?: 'append' | 'replace';
@@ -33,7 +64,7 @@ type EmissionOptions = {
 export class WebSocketManager {
   static getInstance(): WebSocketManager {
     if (!WebSocketManager.instance) {
-      console.log('[WebSocketManager] Creating new singleton instance');
+      console.info('Creating new singleton instance');
       WebSocketManager.instance = new WebSocketManager();
     }
     return WebSocketManager.instance;
@@ -42,6 +73,7 @@ export class WebSocketManager {
   private static instance: WebSocketManager | null = null;
   private ws: ClientSocket | null = null;
   private socketId: string | null = null;
+  private console: ParkbeatLogger.GroupLogger | typeof console = console;  
   private hooks: HookMap<ServerEventName> | null = null;
   private hookCache: HookCache<ServerEventName> | null = null;
   private connectionState: ConnectionState = 'disconnected';
@@ -54,7 +86,7 @@ export class WebSocketManager {
     options: EmissionOptions
   }> = [];
   private stateListeners: Set<(state: ConnectionState) => void> = new Set();
-  private projectSubscriptions: Set<string> = new Set();
+  private roomSubscriptions: Map<string, RoomSubscriptionData> = new Map();
   
   // Create a stable reference for the emit queue
   private emitQueueRef: {
@@ -70,47 +102,56 @@ export class WebSocketManager {
   private latestState: Map<EventName, ExpectedArgument<EventName>> = new Map();
 
   private constructor() {
-    console.log('[WebSocketManager] Instance created');
+    console.info('Instance created');
   }
 
-  private connectWs() {
-    console.log('[WebSocketManager] Attempting to connect WebSocket');
+  private connectWs() {    
+    // Double-check connection state to prevent race conditions
     if (this.connectionState === 'connecting') {
-      console.log('[WebSocketManager] Already connecting, skipping connect');
+      this.console.info('Already connecting, skipping connect');
       return;
     }
 
     if (this.ws?.isConnected) {
-      console.log('[WebSocketManager] WebSocket already connected');
+      this.console.info('WebSocket already connected');
+      this.setConnectionState('connected');
       return;
+    }
+    
+    // Ensure any existing connection is properly cleaned up
+    if (this.ws) {
+      this.console.info('Cleaning up existing WebSocket connection before creating a new one');
+      this.ws.cleanup();
+      this.ws.close();
+      this.ws = null;
     }
 
     this.setConnectionState('connecting');
     this.ws = client.tree.live.$ws();
-    console.log('[WebSocketManager] Setting up WebSocket event handlers');
+    this.console.info('Setting up WebSocket event handlers');
 
     this.ws.on('provideSocketId', (socketId: string | undefined) => {
-      console.log('[WebSocketManager] Received socketId from server:', socketId);
+      const wsmGroupKey = `WebSocket_${socketId}`;
+      this.console = console.getGroup(`${wsmGroupKey}`) || console.createGroup(`${wsmGroupKey}`, `${wsmGroupKey}`) || console;
+      this.console.info('Received socketId from server:', socketId || 'undefined');
       this.socketId = socketId ?? null;
     });
     
     // System events
     this.ws.on('onConnect', () => {
-      console.log('[WebSocketManager] WebSocket connected successfully');
+      this.console.info('WebSocket connected successfully');
       this.setConnectionState('connected');
       this.reconnectAttempts = 0;
       if (this.eventBuffer.length > 0) {
-        console.log(`[WebSocketManager] Flushing ${this.eventBuffer.length} buffered events`);
+        this.console.info(`Flushing ${this.eventBuffer.length} buffered events`);
       }
       this.flushEventBuffer();
     });
 
     this.ws.on('onError', (error: Error) => {
-      console.error('[WebSocketManager] WebSocket error:', error);
+      this.console.error('WebSocket error:', error);
       this.handleDisconnect();
     });
-
-    this.ws.on('pong', noop);
 
     // Initialize all possible events with no-op handlers
     const eventNames: (keyof ServerEvents)[] = [
@@ -123,96 +164,149 @@ export class WebSocketManager {
       'projectVision',
       'costEstimate',
       'pong',
-      'ping' as keyof ServerEvents
+      'heartbeat'
     ];
     eventNames.forEach((eventName: keyof ServerEvents) => {
       this.ws?.on(eventName, (arg) =>
-        this.handleEvent(eventName, arg as ExpectedArgument<keyof ServerEvents>)
+        this.handleEvent(eventName, arg as ExpectedArgument<typeof eventName>)
       );
     });
 
-    console.log('[WebSocketManager] Initiating WebSocket connection');
+    this.console.info('Initiating WebSocket connection');
     this.ws.connect();
   }
 
   handleEvent<T extends keyof ServerEvents>(eventName: T, _arg: ExpectedArgument<T>) {
-    if (eventName === 'pong' || eventName === 'ping') {
+    this.console.info(`Handling event ${safeToString(eventName)} from server`);
+    
+    if (eventName === 'pong') {
+      this.console.info(`Received pong event from server`);
       noop();
       return;
     }
-    console.log(`[WebSocketManager] Received ${eventName} event from server`);
+
+    const isHeartbeat = (arg: unknown): arg is EventPayloadMap['heartbeat'] => {
+      if (typeof arg !== 'object' || arg === null) return false;
+      if (
+        'room' in arg
+        && typeof arg.room === 'string'
+        && 'lastPingTime' in arg
+        && typeof arg.lastPingTime === 'number'
+      ) {
+        return true;
+      }
+      return false;
+    }
+    if (eventName === 'heartbeat' && isHeartbeat(_arg)) {
+      this.console.info(`Received heartbeat event from server:`, _arg);
+      // The heartbeat handling is now done by individual project subscriptions
+      // through their registered hooks
+
+      const roomKey: string = _arg.room;
+      const roomData = this.roomSubscriptions.get(roomKey);
+      if (roomData) {
+        roomData.lastPingTime = _arg.lastPingTime;
+      }
+      return;
+    }
+
+    this.console.info(`Processing ${safeToString(eventName)} event from server with data:`, _arg);
 
     // For non-system events, process through hook system if hooks exist
     if (this.hooks?.has(eventName)) {
+      this.console.info(`Found ${this.hooks.get(eventName)?.size || 0} hooks for ${safeToString(eventName)}`);
       const arg = _arg as unknown as ExpectedArgument<typeof eventName>;
       if (!this.hookCache) {
+        this.console.info(`Initializing hook cache`);
         this.hookCache = new Map<ServerEventName, ExpectedArgument<ServerEventName>>();
       }
+      this.console.info(`Updating latest state for ${safeToString(eventName)}`);
       this.latestState.set(eventName, arg);
       this.hookCache.set(eventName, arg);
       const hookSet = this.hooks.get(eventName);
-      hookSet?.forEach(h => h(arg));
+      this.console.info(`Notifying ${hookSet?.size || 0} hooks for ${safeToString(eventName)}`);
+      hookSet?.forEach(h => {
+        try {
+          h(arg);
+        } catch (error) {
+          this.console.error(`Error in hook for ${safeToString(eventName)}:`, error);
+        }
+      });
     } else {
-      console.log(`[WebSocketManager] No hooks registered for ${eventName}, using no-op handler`);
+      this.console.info(`No hooks registered for ${safeToString(eventName)}, using no-op handler`);
       noop();
     }
   }
 
   private disconnectWs() {
     if (this.ws) {
-      console.log('[WebSocketManager] Disconnecting WebSocket');
+      this.console.info('Disconnecting WebSocket');
       this.ws.cleanup();
       this.ws.close();
       if (this.socketId) {
         client.tree.killActiveSockets.$post({ socketId: this.socketId })
       }
       this.ws = null;
-      console.log('[WebSocketManager] WebSocket disconnected and cleaned up');
+      this.console.info('WebSocket disconnected and cleaned up');
     }
   }
 
   registerHook<T extends ServerEventName>(key: T, hook: Hook<T>) {
-    console.log(`[WebSocketManager] Registering hook for event: ${key}`);
+    this.console.info(`Registering hook for event: ${safeToString(key)}`);
     setTimeout(() => {
       if (!this.hooks) {
-        console.log('[WebSocketManager] First hook registration, initializing hooks map and connecting WebSocket');
+        this.console.info('First hook registration, initializing hooks map and connecting WebSocket');
         this.hooks = new Map<ServerEventName, Set<Hook<ServerEventName>>>();
-        setTimeout(() => this.connect(), 0);
+        
+        // Only connect if we're not already connected or connecting
+        if (this.connectionState !== 'connected' && this.connectionState !== 'connecting') {
+          this.console.info('Connecting WebSocket as we are in disconnected state');
+          setTimeout(() => this.connect(), 0);
+        } else {
+          this.console.info(`Not connecting WebSocket as we are already in ${this.connectionState} state`);
+        }
       }
 
       let hookSet = this.hooks.get(key) as Set<Hook<T>> | undefined;
       if (!hookSet) {
-        console.log(`[WebSocketManager] Creating new hook set for event: ${key}`);
+        this.console.info(`Creating new hook set for event: ${safeToString(key)}`);
         hookSet = new Set<Hook<T>>();
       }
       
-      hookSet.add(hook);
-      this.hooks.set(key, hookSet as unknown as Set<Hook<ServerEventName>>);
-      console.log(`[WebSocketManager] Hook registered for ${key}, total hooks: ${hookSet.size}`);
+      // Check if this hook is already registered to avoid duplicates
+      if (!hookSet.has(hook as unknown as Hook<ServerEventName>)) {
+        hookSet.add(hook);
+        this.hooks.set(key, hookSet as unknown as Set<Hook<ServerEventName>>);
+        this.console.info(`Hook registered for ${safeToString(key)}, total hooks: ${hookSet.size}`);
+      } else {
+        this.console.info(`Hook already registered for ${safeToString(key)}, skipping registration`);
+      }
 
       // Immediately update new hook with latest state if available
       const latestState = this.latestState.get(key);
       if (latestState !== undefined) {
-        console.log(`[WebSocketManager] Updating new hook with latest state for ${key}`);
+        this.console.info(`Updating new hook with latest state for ${safeToString(key)}`);
         hook(latestState as ExpectedArgument<T>);
       }
     }, 0);
   }
 
   unregisterHook<T extends ServerEventName>(key: T, hook: Hook<T>) {
-    console.log(`[WebSocketManager] Unregistering hook for event: ${key}`);
     const hookSet = this.hooks?.get(key);
-    if (hookSet) {
-      hookSet.delete(hook as unknown as Hook<ServerEventName>);
-      console.log(`[WebSocketManager] Hook removed, remaining hooks for ${key}: ${hookSet.size}`);
-    }
+    if (!hookSet) return;
+
+    this.console.info(`Unregistering hook for event: ${safeToString(key)}`);
+
+    hookSet.delete(hook as unknown as Hook<ServerEventName>);
+    this.console.info(`Hook removed, remaining hooks for ${safeToString(key)}: ${hookSet.size}`);
+
     if (hookSet?.size === 0) {
-      console.log(`[WebSocketManager] No more hooks for ${key}, cleaning up`);
+      this.console.info(`No more hooks for ${safeToString(key)}, cleaning up`);
       this.hooks?.delete(key);
       this.hookCache?.delete(key);
     }
     if (this.hooks?.size === 0) {
-      console.log('[WebSocketManager] No more hooks registered, disconnecting WebSocket');
+      this.console.info('No more hooks registered, disconnecting WebSocket');
       this.hooks = null;
       this.disconnectWs();
     }
@@ -220,44 +314,44 @@ export class WebSocketManager {
 
   private setConnectionState(state: ConnectionState) {
     if (this.connectionState === state) {
-      console.log(`[WebSocketManager] Already in ${state} state, skipping state change`);
+      this.console.info(`Already in ${state} state, skipping state change`);
       return;
     }
-    console.log(`[WebSocketManager] Connection state changing: ${this.connectionState} -> ${state}`);
+    this.console.info(`Connection state changing: ${this.connectionState} -> ${state}`);
     this.connectionState = state;
     this.stateListeners.forEach(listener => listener(state));
   }
 
   private handleDisconnect() {
     if (this.connectionState === 'disconnected') {
-      console.log('[WebSocketManager] Already disconnected, skipping disconnect handler');
+      this.console.info('Already disconnected, skipping disconnect handler');
       return;
     }
 
-    console.log('[WebSocketManager] Handling disconnect');
+    this.console.info('Handling disconnect');
     this.setConnectionState('disconnected');
 
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      console.log(`[WebSocketManager] Attempting reconnect (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+      this.console.info(`Attempting reconnect (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
       this.reconnectWithBackoff();
     } else {
-      console.log('[WebSocketManager] Max reconnection attempts reached');
+      this.console.info('Max reconnection attempts reached');
     }
   }
 
   private reconnectWithBackoff() {
     this.setConnectionState('reconnecting');
     const backoffTime = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-    console.log(`[WebSocketManager] Scheduling reconnect in ${backoffTime}ms`);
+    this.console.info(`Scheduling reconnect in ${backoffTime}ms`);
     
     if (this.reconnectTimeout) {
-      console.log('[WebSocketManager] Clearing existing reconnect timeout');
+      this.console.info('Clearing existing reconnect timeout');
       clearTimeout(this.reconnectTimeout);
     }
 
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectAttempts++;
-      console.log(`[WebSocketManager] Executing reconnect attempt ${this.reconnectAttempts}`);
+      this.console.info(`Executing reconnect attempt ${this.reconnectAttempts}`);
       this.connectWs();
     }, backoffTime);
   }
@@ -277,105 +371,234 @@ export class WebSocketManager {
       argBehavior: 'append',
       timing: 'delayed'
     }): boolean {
-    console.log(`[WebSocketManager] Attempting to emit ${event} event`);
+    this.console.info(`Attempting to emit ${safeToString(event)} event with data:`, data);
+    this.console.info(`Emit options:`, options);
+    
     if (this.connectionState !== 'connected') {
-      console.log(`[WebSocketManager] Not connected, buffering ${event} event`);
+      this.console.info(`Not connected (state: ${this.connectionState}), buffering ${safeToString(event)} event`);
       this.eventBuffer.push({ event, data, options });
       return false;
     }
 
     const eventQueue = this.emitQueueRef.current[event];
-    console.log(`[WebSocketManager] Current queue for ${event}: ${eventQueue?.args?.size || 0} items`);
+    this.console.info(`Current queue for ${safeToString(event)}: ${eventQueue?.args?.size || 0} items`);
     
     const emissionAction = () => {
-      console.log(`[WebSocketManager] Processing queued ${event} events`);
+      this.console.info(`Processing queued ${safeToString(event)} events`);
       const queue = this.emitQueueRef.current[event];
-      if (!queue || !queue.args) return;
-      console.log(`[WebSocketManager] Queue for ${event}:`);
+      if (!queue || !queue.args) {
+        this.console.info(`No queue found for ${safeToString(event)}, skipping emission`);
+        return;
+      }
+      this.console.info(`Queue for ${safeToString(event)} contains ${queue.args.size} items:`);
       queue.args.forEach(arg => {
-        console.log(arg);
+        this.console.info(`Queue item for ${safeToString(event)}:`, arg);
       });
       queue.args.forEach(arg => {
         if (this.ws) {
-          console.log(`[WebSocketManager] Emitting queued ${event} event`);
+          this.console.info(`Emitting queued ${safeToString(event)} event with data:`, arg);
           if (event === 'ping') {
+            this.console.info(`Emitting ping event`);
             this.ws.emit(event, undefined as never);
             this.ws.emit('pong', () => {
-              console.log('pong received')
+              this.console.info('[WebSocketManager] Pong received');
             });
           } else {
+            this.console.info(`Emitting ${safeToString(event)} event to WebSocket`);
             this.ws.emit(event, arg as never);
           }
+        } else {
+          this.console.error(`ERROR: WebSocket is null, cannot emit ${safeToString(event)}`);
         }
       });
       queue.args.clear();
       if (queue.timeout) {
+        this.console.info(`Clearing timeout for ${safeToString(event)} queue`);
         clearTimeout(queue.timeout);
         queue.timeout = null;
       }
-      console.log(`[WebSocketManager] Queue processed for ${event}`);
+      this.console.info(`Queue processed for ${safeToString(event)}`);
     };
 
     let args = eventQueue?.args;
-    const existingArg = options.uniqueKey ? Array.from(args ?? []).find(arg =>
-      !options.uniqueKey || !arg || !data ? false :
-      (arg as any)[options.uniqueKey] === (data as any)[options.uniqueKey]
-    ) : null;
+    
+    // Check for existing arg with the same uniqueKey if provided
+    let existingArg = null;
+    if (options.uniqueKey && args) {
+      this.console.info(`Checking for existing arg with uniqueKey ${safeToString(options.uniqueKey)}`);
+      
+      // Log all current args in the queue for debugging
+      this.console.info(`Current args in queue for ${safeToString(event)}:`);
+      args.forEach(arg => {
+        this.console.info(`- Arg:`, arg);
+        if (options.uniqueKey && arg) {
+          this.console.info(`  uniqueKey value: ${safeToString((arg as any)[options.uniqueKey])}`);
+        }
+      });
+      
+      // Log the uniqueKey value we're looking for
+      if (data && options.uniqueKey) {
+        this.console.info(`Looking for uniqueKey value: ${safeToString((data as any)[options.uniqueKey])}`);
+      }
+      
+      existingArg = Array.from(args).find(arg => {
+        if (!options.uniqueKey || !arg || !data) {
+          return false;
+        }
+        
+        const keyMatches = (arg as any)[options.uniqueKey] === (data as any)[options.uniqueKey];
+        
+        // Enhanced logging for uniqueKey comparison
+        const argKeyValue = (arg as any)[options.uniqueKey];
+        const dataKeyValue = (data as any)[options.uniqueKey];
+        this.console.info(`Comparing uniqueKey ${safeToString(options.uniqueKey)}: ${safeToString(argKeyValue)} vs ${safeToString(dataKeyValue)}`);
+        
+        if (keyMatches) {
+          this.console.info(`Found existing arg with matching uniqueKey:`, arg);
+        }
+        return keyMatches;
+      });
+    }
 
-    console.log(`[WebSocketManager] Considering new arg for ${event}:`, data);
+    this.console.info(`Processing new arg for ${safeToString(event)}:`, data);
+
+    // For subscribe/unsubscribe events, check if we're trying to cancel out operations
+    if ((event === 'subscribe' || event === 'subscribeProject') && options.uniqueKey) {
+      const isSubscribeRequest = (data as any).shouldSubscribe === true;
+      
+      if (existingArg) {
+        const existingIsSubscribe = (existingArg as any).shouldSubscribe === true;
+        
+        this.console.info(`Found existing ${existingIsSubscribe ? 'subscribe' : 'unsubscribe'} request for the same ${safeToString(options.uniqueKey)}`);
+        this.console.info(`Current request is ${isSubscribeRequest ? 'subscribe' : 'unsubscribe'}`);
+        
+        // If we have a subscribe followed by unsubscribe or vice versa, they cancel each other out
+        if (existingIsSubscribe !== isSubscribeRequest) {
+          this.console.info(`Subscribe/unsubscribe requests cancel each other out, removing from queue`);
+          args?.delete(existingArg);
+          
+          // If this is a subscribe canceling an unsubscribe, we need to update the room status
+          if (isSubscribeRequest && event === 'subscribe' && options.uniqueKey === 'geohash') {
+            const geohash = (data as any).geohash;
+            const roomKey = `geohash:${geohash}`;
+            this.console.info(`Reactivating room ${roomKey} due to canceled unsubscribe`);
+            const roomData = this.roomSubscriptions.get(roomKey);
+            if (roomData && roomData.status === 'unsubscribed') {
+              if (roomData.removalTimeout) {
+                clearTimeout(roomData.removalTimeout);
+              }
+              this.roomSubscriptions.set(roomKey, {
+                ...roomData,
+                status: 'active',
+                removalTimeout: undefined,
+                lastPingTime: Date.now()
+              });
+              this.stateListeners.forEach(listener => listener(this.connectionState));
+            }
+          } else if (isSubscribeRequest && event === 'subscribeProject' && options.uniqueKey === 'projectId') {
+            const projectId = (data as any).projectId;
+            const roomKey = `project:${projectId}`;
+            this.console.info(`Reactivating room ${roomKey} due to canceled unsubscribe`);
+            const roomData = this.roomSubscriptions.get(roomKey);
+            if (roomData && roomData.status === 'unsubscribed') {
+              if (roomData.removalTimeout) {
+                clearTimeout(roomData.removalTimeout);
+              }
+              this.roomSubscriptions.set(roomKey, {
+                ...roomData,
+                status: 'active',
+                removalTimeout: undefined,
+                lastPingTime: Date.now()
+              });
+              this.stateListeners.forEach(listener => listener(this.connectionState));
+            }
+          }
+          
+          return true;
+        }
+      }
+    }
 
     if (options.argBehavior === 'append' && args) {
-      console.log(`[WebSocketManager] Appending to existing ${event} queue`);
+      this.console.info(`Appending to existing ${safeToString(event)} queue`);
       args.add(data);
     } else if (existingArg) {
-      console.log(`[WebSocketManager] Event ${event} has unique key ${options.uniqueKey?.toString() ?? 'undefined'}`);
+      this.console.info(`Replacing existing arg with uniqueKey ${safeToString(options.uniqueKey)}`);
       args?.delete(existingArg);
       args?.add(data);
     } else {
-      console.log(`[WebSocketManager] Creating new ${event} queue`);
-      args?.clear();
-      args = new Set([data]);
+      this.console.info(`Creating new ${safeToString(event)} queue`);
+      args = args || new Set();
+      args.add(data);
     }
 
-    console.log(`[WebSocketManager] Queue for ${event}:`);
+    this.console.info(`Updated queue for ${safeToString(event)} now contains ${args?.size || 0} items:`);
     args?.forEach(arg => {
-      console.log(arg);
+      this.console.info(`Queue item:`, arg);
     });
 
     let timeout: ReturnType<typeof setTimeout> | null = null;
-    if (options.timing === 'immediate') {
+    
+    // For subscription events, use immediate timing to ensure they're processed quickly
+    const useImmediateTiming = options.timing === 'immediate' || 
+                              (event === 'subscribe' || event === 'subscribeProject');
+    
+    if (useImmediateTiming) {
+      this.console.info(`Using immediate timing for ${safeToString(event)}, executing now`);
       setTimeout(emissionAction, 0);
     } else {
       // Clear existing timeout if it exists
       if (eventQueue?.timeout) {
+        this.console.info(`Clearing existing timeout for ${safeToString(event)}`);
         clearTimeout(eventQueue.timeout);
       }
+      this.console.info(`Using delayed timing for ${safeToString(event)}, scheduling for 1000ms`);
       timeout = setTimeout(emissionAction, 1000);
     }
 
     this.emitQueueRef.current[event] = { timeout, args } as any;
-    console.log(`[WebSocketManager] Event ${event} queued successfully`);
+    this.console.info(`Event ${safeToString(event)} queued successfully`);
     return true;
   }
 
   private flushEventBuffer() {
-    if (this.eventBuffer.length > 0) {
-      console.log(`[WebSocketManager] Flushing ${this.eventBuffer.length} buffered events`);
+    if (this.eventBuffer.length === 0) {
+      this.console.info(`Event buffer is empty, nothing to flush`);
+      return;
     }
+    
+    this.console.info(`Flushing ${this.eventBuffer.length} buffered events`);
+    this.console.info(`Current connection state: ${this.connectionState}`);
+    
+    // Log buffered events
+    this.console.info(`Buffered events:`, this.eventBuffer.map(e => `${safeToString(e.event)} (${JSON.stringify(e.data)})`));
+    
+    // Process events in order, but prioritize subscription events by using immediate timing
     while (this.eventBuffer.length > 0) {
       const event = this.eventBuffer.shift();
-      if (event) {
-        console.log(`[WebSocketManager] Processing buffered ${event.event} event`);
-        this.emit(event.event, event.data, event.options);
-      }
+      if (!event) continue;
+      
+      // Use immediate timing for subscription events
+      const isSubscriptionEvent = event.event === 'subscribe' || event.event === 'subscribeProject';
+      const options = isSubscriptionEvent 
+        ? { ...event.options, timing: 'immediate' as const }
+        : event.options;
+      
+      this.console.info(`Processing buffered ${safeToString(event.event)} event with data:`, event.data);
+      this.console.info(`Using options:`, options);
+      
+      const result = this.emit(event.event, event.data, options);
+      this.console.info(`Emit result for buffered ${safeToString(event.event)} event: ${result ? 'success' : 'failure'}`);
     }
+    
+    this.console.info(`Event buffer processing complete`);
   }
 
   onStateChange(listener: (state: ConnectionState) => void) {
-    console.log('[WebSocketManager] Adding state change listener');
+    this.console.info('Adding state change listener');
     this.stateListeners.add(listener);
     return () => {
-      console.log('[WebSocketManager] Removing state change listener');
+      this.console.info('Removing state change listener');
       this.stateListeners.delete(listener);
     };
   }
@@ -385,15 +608,20 @@ export class WebSocketManager {
   }
 
   cleanup() {
-    console.log('[WebSocketManager] Starting cleanup');
+    this.console.info('Starting cleanup');
     // Unsubscribe from all projects
-    this.projectSubscriptions.forEach(projectId => {
-      this.unsubscribeFromProject(projectId);
+    this.roomSubscriptions.forEach((data, room) => {
+      // Unregister heartbeat hook if it exists
+      if (data.heartbeatHook) {
+        this.console.info(`Unregistering heartbeat hook for room: ${room}`);
+        this.unregisterHook('heartbeat', data.heartbeatHook);
+      }
+      this.unsubscribeFromRoom(room);
     });
-    this.projectSubscriptions.clear();
+    this.roomSubscriptions.clear();
 
     if (this.reconnectTimeout) {
-      console.log('[WebSocketManager] Clearing reconnect timeout');
+      this.console.info('Clearing reconnect timeout');
       clearTimeout(this.reconnectTimeout);
     }
     // Clear all timeouts in the emit queue
@@ -404,25 +632,25 @@ export class WebSocketManager {
     });
     this.emitQueueRef.current = {};
     if (this.ws) {
-      console.log('[WebSocketManager] Closing WebSocket connection');
+      this.console.info('Closing WebSocket connection');
       this.ws.close();
       this.ws = null;
     }
     this.setConnectionState('disconnected');
-    console.log('[WebSocketManager] Clearing state listeners');
+    this.console.info('Clearing state listeners');
     this.stateListeners.clear();
-    console.log('[WebSocketManager] Clearing event buffer');
+    this.console.info('Clearing event buffer');
     this.eventBuffer = [];
-    console.log('[WebSocketManager] Cleanup complete');
+    this.console.info('Cleanup complete');
   }
 
   connect() {
     if (this.connectionState === 'connected' || this.connectionState === 'connecting') {
-      console.log('[WebSocketManager] Already connected or connecting, skipping connect');
+      this.console.info(`Already in ${this.connectionState} state, skipping connect request`);
       return;
     }
 
-    console.log('[WebSocketManager] Initiating connection');
+    this.console.info('Initiating connection');
     this.connectWs();
   }
 
@@ -433,54 +661,352 @@ export class WebSocketManager {
 
   getHookCount() {
     const count = this.hooks?.size || 0;
-    console.log(`[WebSocketManager] Current hook count: ${count}`);
+    this.console.info(`Current hook count: ${count}`);
     return count;
   }
 
-  subscribeToProject(projectId: string) {
-    console.log(`[WebSocketManager] Subscribing to project: ${projectId}`);
-    if (this.projectSubscriptions.has(projectId)) {
-      console.log(`[WebSocketManager] Already subscribed to project: ${projectId}`);
+  getActiveSubscriptions(): Set<string> {
+    const activeSubscriptions = new Set<string>();
+    this.roomSubscriptions.forEach((data, key) => {
+      if (data.status === 'active') {
+        activeSubscriptions.add(key);
+      }
+    });
+    this.console.info(`Getting active subscriptions: ${activeSubscriptions.size}`);
+    return activeSubscriptions;
+  }
+
+  getLastPingTime(roomKey: string): number | null {
+    const roomData = this.roomSubscriptions.get(roomKey);
+    return roomData ? roomData.lastPingTime : null;
+  }
+
+  getSubscriptionStatus(roomKey: string): SubscriptionStatus | null {
+    const roomData = this.roomSubscriptions.get(roomKey);
+    return roomData ? roomData.status : null;
+  }
+
+  // Get the time when the room was marked for removal (when it was unsubscribed)
+  getUnsubscribeTime(roomKey: string): number | null {
+    const roomData = this.roomSubscriptions.get(roomKey);
+    if (!roomData || roomData.status !== 'unsubscribed') return null;
+    
+    // Return the stored unsubscribe time if available
+    if (roomData.unsubscribeTime) {
+      return roomData.unsubscribeTime;
+    }
+    
+    // Fall back to estimation if unsubscribeTime is not available (for backward compatibility)
+    return Date.now() - (15000 - this.getRemainingRemovalTime(roomKey));
+  }
+  
+  // Get the remaining time (in ms) until an unsubscribed room is removed
+  getRemainingRemovalTime(roomKey: string): number {
+    const roomData = this.roomSubscriptions.get(roomKey);
+    if (!roomData || roomData.status !== 'unsubscribed' || !roomData.removalTimeout) return 0;
+    
+    // If we have the unsubscribe time, calculate the remaining time directly
+    if (roomData.unsubscribeTime) {
+      const elapsedSinceUnsubscribe = Date.now() - roomData.unsubscribeTime;
+      return Math.max(0, 15000 - elapsedSinceUnsubscribe);
+    }
+    
+    // Fall back to timeout ID estimation if unsubscribeTime is not available
+    // Get the timeout ID as a number
+    const timeoutId = roomData.removalTimeout[Symbol.toPrimitive]();
+    
+    // Get the current highest timeout ID (most recently created timeout)
+    const currentTimeoutId = setTimeout(() => {}, 0)[Symbol.toPrimitive]();
+    clearTimeout(currentTimeoutId);
+    
+    // Estimate remaining time based on the difference between timeout IDs
+    // This is a heuristic and not 100% accurate, but gives a reasonable approximation
+    // The closer the timeout ID is to the current ID, the more recently it was created
+    const idDifference = currentTimeoutId - timeoutId;
+    const estimatedElapsedTime = Math.min(idDifference * 10, 15000); // Scale factor of 10ms per ID difference
+    const remainingTime = Math.max(0, 15000 - estimatedElapsedTime);
+    
+    return remainingTime;
+  }
+
+  setLastPingTime(room: string, lastPingTime: number) {
+    this.console.info(`Setting last ping time for ${room} to ${lastPingTime} (${new Date(lastPingTime).toLocaleTimeString()})`);
+    const existingData = this.roomSubscriptions.get(room);
+    if (!existingData) {
+      this.console.info(`Room ${room} not found, cannot set last ping time`);
       return;
     }
+    
+    this.console.info(`Existing room data for ${room}:`, existingData);
+    const newData = { ...existingData, lastPingTime };  
+    this.roomSubscriptions.set(room, newData);
+    this.console.info(`Updated room data for ${room}:`, newData);
+    
+    if (existingData?.heartbeatHook) {
+      this.console.info(`Calling heartbeat hook for ${room}`);
+      existingData.heartbeatHook({ room, lastPingTime });
+    } else {
+      this.console.info(`No heartbeat hook found for ${room}`);
+    }
+  }
 
-    this.projectSubscriptions.add(projectId);
-    setTimeout(() => {
-      if (
-        this.projectSubscriptions.has(projectId)
-        && this.emitQueueRef.current.subscribeProject?.args.has({ projectId, shouldSubscribe: false })
-      ) {
-        this.emitQueueRef.current.subscribeProject?.args.clear();
-      } else {
-        this.emit('subscribeProject', { projectId, shouldSubscribe: true }, {
-          argBehavior: 'replace',
-          uniqueKey: 'projectId'
+  subscribeToRoom(itemId: string, prefix = 'geohash') {
+    const roomKey = `${prefix}:${itemId}`;
+    this.console.info(`Subscribing to room: ${roomKey}`);
+    this.console.info(`Current connection state: ${this.connectionState}`);
+    this.console.info(`Current subscriptions:`, Array.from(this.roomSubscriptions.keys()));
+    
+    // Check if room exists but is marked as unsubscribed
+    const existingRoom = this.roomSubscriptions.get(roomKey);
+    this.console.info(`Existing room data for ${roomKey}:`, existingRoom);
+    
+    if (existingRoom) {
+      if (existingRoom.status === 'unsubscribed') {
+        this.console.info(`Reactivating unsubscribed room: ${roomKey}`);
+        this.console.info(`Removal timeout exists:`, !!existingRoom.removalTimeout);
+        
+        // Clear any pending removal timeout
+        if (existingRoom.removalTimeout) {
+          this.console.info(`Clearing removal timeout for ${roomKey}`);
+          clearTimeout(existingRoom.removalTimeout);
+        }
+        // Update status to active
+        this.roomSubscriptions.set(roomKey, {
+          ...existingRoom,
+          status: 'active',
+          removalTimeout: undefined,
+          lastPingTime: Date.now() // Reset ping time
         });
+        
+        this.console.info(`Updated room data for ${roomKey}:`, this.roomSubscriptions.get(roomKey));
+        
+        // Notify state listeners about the subscription change
+        this.console.info(`Notifying ${this.stateListeners.size} state listeners about reactivation`);
+        this.stateListeners.forEach(listener => listener(this.connectionState));
+        
+        // Use asyncTimeout to ensure proper timing
+        setTimeout(async () => {
+          await asyncTimeout(0);
+          
+          // Send subscription request based on prefix type
+          this.console.info(`Sending subscription request for reactivated room ${roomKey}`);
+          switch (prefix) {
+            case 'project':
+              this.console.info(`Emitting subscribeProject event for ${itemId}`);
+              this.emit(
+                'subscribeProject', 
+                { projectId: itemId, shouldSubscribe: true }, 
+                { argBehavior: 'replace', uniqueKey: 'projectId', timing: 'immediate' }
+              );
+              break;
+            case 'geohash':
+              this.console.info(`Emitting subscribe event for ${itemId}`);
+              this.emit(
+                'subscribe', 
+                { geohash: itemId, shouldSubscribe: true }, 
+                { argBehavior: 'replace', uniqueKey: 'geohash', timing: 'immediate' }
+              );
+              break;
+          }
+        }, 0);
+        
+        return;
+      } else {
+        this.console.info(`Already subscribed to room: ${roomKey}, status: ${existingRoom.status}`);
+        return;
+      }
+    }
+
+    this.console.info(`Creating new subscription for ${roomKey}`);
+    
+    // Set initial ping time and status
+    this.roomSubscriptions.set(roomKey, { 
+      lastPingTime: Date.now(),
+      status: 'active'
+    });
+    
+    this.console.info(`Initial room data for ${roomKey}:`, this.roomSubscriptions.get(roomKey));
+    
+    // Notify state listeners about the subscription change
+    this.console.info(`Notifying ${this.stateListeners.size} state listeners about new subscription`);
+    this.stateListeners.forEach(listener => listener(this.connectionState));
+    
+    // Register a heartbeat hook for this project
+    const handleHeartbeat = (arg: EventPayloadMap['heartbeat']) => {
+      // Check if this heartbeat is for our project
+      // Room format is "project:${projectId}"
+      this.console.info(`Received heartbeat for room: ${arg.room}, our room: ${roomKey}`);
+      if (arg && typeof arg === 'object' && 'room' in arg && 'lastPingTime' in arg) {
+        const roomPrefix = `${prefix}:`;
+        if (arg.room && typeof arg.room === 'string' && arg.room.startsWith(roomPrefix)) {
+          const roomItemId = arg.room.substring(roomPrefix.length);
+          if (roomItemId === itemId) {
+            this.console.info(`Heartbeat matches our room: ${roomKey}, updating last ping time to ${arg.lastPingTime}`);
+            this.setLastPingTime(roomKey, arg.lastPingTime);
+          } else {
+            this.console.info(`Heartbeat room ID mismatch: expected ${itemId}, got ${roomItemId}`);
+          }
+        } else {
+          this.console.info(`Heartbeat room prefix mismatch: expected ${roomPrefix}, got ${arg.room}`);
+        }
+      } else {
+        this.console.info(`Invalid heartbeat format:`, arg);
+      }
+    };
+    
+    // Register the heartbeat hook
+    this.console.info(`Registering heartbeat hook for ${roomKey}`);
+    this.registerHook('heartbeat', handleHeartbeat);
+
+    // Update the room data with the heartbeat hook
+    const roomData = this.roomSubscriptions.get(roomKey);
+    if (roomData) {
+      this.console.info(`Updating room data with heartbeat hook for ${roomKey}`);
+      this.roomSubscriptions.set(roomKey, {
+        ...roomData,
+        heartbeatHook: handleHeartbeat
+      });
+      this.console.info(`Updated room data:`, this.roomSubscriptions.get(roomKey));
+    } else {
+      this.console.error(`ERROR: Room data not found for ${roomKey} after setting it!`);
+    }
+
+    const event = prefix === 'project' ? 'subscribeProject' : 'subscribe';
+    
+    setTimeout(() => {
+      this.console.info(`In setTimeout for ${roomKey}, checking if room still exists`);
+      // Check if we need to clear existing queue
+      if (this.roomSubscriptions.has(roomKey)) {
+        this.console.info(`Room ${roomKey} still exists in setTimeout`);
+        // Clear any pending events in the queue
+        if (this.emitQueueRef.current[event]?.timeout) {
+          this.console.info(`Clearing existing queue for ${event}`);
+          clearTimeout(this.emitQueueRef.current[event]!.timeout!);
+          this.emitQueueRef.current[event]!.args.clear();
+        }
+        
+        // Use asyncTimeout to ensure proper timing
+        (async () => {
+          await asyncTimeout(0);
+          
+          // Send subscription request based on prefix type
+          this.console.info(`Sending subscription request for ${roomKey} from setTimeout`);
+          switch (prefix) {
+            case 'project':
+              this.console.info(`Emitting subscribeProject event for ${itemId} from setTimeout`);
+              this.emit(
+                'subscribeProject', 
+                { projectId: itemId, shouldSubscribe: true }, 
+                { argBehavior: 'replace', uniqueKey: 'projectId', timing: 'immediate' }
+              );
+              break;
+            case 'geohash':
+              this.console.info(`Emitting subscribe event for ${itemId} from setTimeout`);
+              this.emit(
+                'subscribe', 
+                { geohash: itemId, shouldSubscribe: true }, 
+                { argBehavior: 'replace', uniqueKey: 'geohash', timing: 'immediate' }
+              );
+              break;
+          }
+        })();
+      } else {
+        this.console.info(`Room ${roomKey} no longer exists in setTimeout, skipping subscription request`);
       }
     }, 0);
   }
 
-  unsubscribeFromProject(projectId: string) {
-    console.log(`[WebSocketManager] Unsubscribing from project: ${projectId}`);
-    if (!this.projectSubscriptions.has(projectId)) {
-      console.log(`[WebSocketManager] Not subscribed to project: ${projectId}`);
+  async unsubscribeFromRoom(itemId: string, prefix = 'geohash') {
+    const roomKey = `${prefix}:${itemId}`;
+    this.console.info(`Unsubscribing from room: ${roomKey}`);
+    this.console.info(`Current connection state: ${this.connectionState}`);
+    this.console.info(`Current subscriptions:`, Array.from(this.roomSubscriptions.keys()));
+    
+    // Get the existing subscription data
+    const existingData = this.roomSubscriptions.get(roomKey);
+    this.console.info(`Existing room data for ${roomKey}:`, existingData);
+    
+    if (!existingData) {
+      this.console.info(`Room not found: ${roomKey}, cannot unsubscribe`);
       return;
     }
+    
+    // If already unsubscribed, do nothing
+    if (existingData.status === 'unsubscribed') {
+      this.console.info(`Room already unsubscribed: ${roomKey}, status: ${existingData.status}`);
+      return;
+    }
+    
+    // Mark the room as unsubscribed immediately to prevent race conditions
+    const unsubscribeTime = Date.now();
+    this.console.info(`Setting unsubscribe time for ${roomKey} to ${unsubscribeTime}`);
+    
+    // Create the removal timeout
+    this.console.info(`Creating removal timeout for ${roomKey} (15 seconds)`);
+    const removalTimeout = setTimeout(() => {
+      this.console.info(`Removal timeout triggered for ${roomKey}`);
+      this.console.info(`Removing unsubscribed room after delay: ${roomKey}`);
+      this.roomSubscriptions.delete(roomKey);
+      this.console.info(`Room ${roomKey} removed, remaining rooms:`, Array.from(this.roomSubscriptions.keys()));
+      // Notify state listeners about the subscription change
+      this.console.info(`Notifying ${this.stateListeners.size} state listeners about room removal`);
+      this.stateListeners.forEach(listener => listener(this.connectionState));
+    }, 15000);
+    
+    // Update the room data before sending the unsubscription request
+    this.roomSubscriptions.set(roomKey, {
+      ...existingData,
+      status: 'unsubscribed',
+      unsubscribeTime,
+      removalTimeout
+    });
+    
+    this.console.info(`Updated room data for ${roomKey}:`, this.roomSubscriptions.get(roomKey));
+    
+    // Notify state listeners about the subscription change
+    this.console.info(`Notifying ${this.stateListeners.size} state listeners about unsubscription`);
+    this.stateListeners.forEach(listener => listener(this.connectionState));
+    
+    // Use asyncTimeout to ensure proper timing
+    await asyncTimeout(0);
+    
+    // Send unsubscription request based on prefix type
+    this.console.info(`Sending unsubscription request for ${roomKey}`);
+    switch (prefix) {
+      case 'project':
+        this.console.info(`Emitting subscribeProject event with shouldSubscribe=false for ${itemId}`);
+        this.emit(
+          'subscribeProject', 
+          { projectId: itemId, shouldSubscribe: false }, 
+          { argBehavior: 'replace', uniqueKey: 'projectId', timing: 'immediate' }
+        );
+        break;
+      case 'geohash':
+        this.console.info(`Emitting subscribe event with shouldSubscribe=false for ${itemId}`);
+        this.emit(
+          'subscribe', 
+          { geohash: itemId, shouldSubscribe: false }, 
+          { argBehavior: 'replace', uniqueKey: 'geohash', timing: 'immediate' }
+        );
+        break;
+    }
+    
+    // Unregister any heartbeat hooks
+    if (existingData.heartbeatHook) {
+      this.console.info(`Unregistering heartbeat hook for ${roomKey}`);
+      this.unregisterHook('heartbeat', existingData.heartbeatHook);
+    } else {
+      this.console.info(`No heartbeat hook found for ${roomKey}`);
+    }
+  }
 
-    this.projectSubscriptions.delete(projectId);
-    setTimeout(() => {
-      if (
-        !this.projectSubscriptions.has(projectId)
-        && this.emitQueueRef.current.subscribeProject?.args.has({ projectId, shouldSubscribe: true })
-      ) {
-        this.emitQueueRef.current.subscribeProject?.args.clear();
-      } else {
-        this.emit('subscribeProject', { projectId, shouldSubscribe: false }, {
-          argBehavior: 'replace',
-          uniqueKey: 'projectId'
-        });
-      }
-    }, 0);
+  // Add method to get all subscriptions including unsubscribed ones
+  getAllSubscriptions(): Map<string, SubscriptionStatus> {
+    const allSubscriptions = new Map<string, SubscriptionStatus>();
+    this.roomSubscriptions.forEach((data, key) => {
+      allSubscriptions.set(key, data.status);
+    });
+    return allSubscriptions;
   }
 }
 
@@ -606,5 +1132,82 @@ export const useServerEvent: {
     }, [wsManager]);
     
     return [value, setValue];
+  },
+  heartbeat: (defaultValue: EventPayloadMap['heartbeat']) => {
+    const [value, setValue] = useState<EventPayloadMap['heartbeat']>(defaultValue);
+    const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
+
+    const handleHeartbeat = (arg: EventPayloadMap['heartbeat']) => {
+      wsManager.setLastPingTime(arg.room, arg.lastPingTime);
+      setValue(arg);
+    }
+
+    useEffect(() => {
+      const latestState = wsManager.getLatestState('heartbeat');
+      if (latestState) { setValue(latestState); }
+
+      wsManager.registerHook('heartbeat', handleHeartbeat);
+      return () => wsManager.unregisterHook('heartbeat', handleHeartbeat);
+    }, [wsManager]);
+
+    return [value, setValue];
   }
 };
+
+// Type definition for WebSocket state information
+export type WebSocketState = {
+  connectionState: ConnectionState;
+  activeSubscriptions: string[];
+  unsubscribedRooms: string[];
+  hookCount: number;
+  isConnected: boolean;
+};
+
+// Hook to provide WebSocket connection state and subscriptions
+export function useWebSocketState(): WebSocketState {
+  const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
+  const [state, setState] = useState<WebSocketState>({
+    connectionState: wsManager.getConnectionState() || 'disconnected',
+    activeSubscriptions: Array.from(wsManager.getActiveSubscriptions()),
+    unsubscribedRooms: Array.from(wsManager.getAllSubscriptions())
+      .filter(([_, status]) => status === 'unsubscribed')
+      .map(([key]) => key),
+    hookCount: wsManager.getHookCount(),
+    isConnected: wsManager.getConnectionState() === 'connected'
+  });
+  
+  
+  useEffect(() => {
+    // Initial state update
+    updateState();
+    
+    // Subscribe to connection state changes
+    const unsubscribe = wsManager.onStateChange(() => {
+      updateState();
+    });
+    
+    // Update state function
+    function updateState() {
+      const connectionState = wsManager.getConnectionState();
+      const allSubscriptions = wsManager.getAllSubscriptions();
+      const unsubscribedRooms = Array.from(allSubscriptions)
+        .filter(([_, status]) => status === 'unsubscribed')
+        .map(([key]) => key);
+      
+      setState({
+        connectionState,
+        activeSubscriptions: Array.from(wsManager.getActiveSubscriptions()),
+        unsubscribedRooms,
+        hookCount: wsManager.getHookCount(),
+        isConnected: connectionState === 'connected'
+      });
+    }
+    
+    // Clean up subscription
+    return () => {
+      unsubscribe();
+    };
+  }, [wsManager]);
+  
+  return state;
+}

@@ -1,4 +1,5 @@
-.CostEstimateInput {
+.CostEstimateInput,
+.CostEstimateInput .dark .input, .dark input, .dark textarea {
   border: none !important;
   outline: none !important;
   box-shadow: none !important;

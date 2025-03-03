@@ -10,6 +10,7 @@ import { Suspense } from "react"
 import "./globals.css"
 import React from "react"
 import { RemoteLoggerControl } from "./components/dev/remote-logger-control"
+import { LoggerControl } from "./components/dev/logger-control"
 
 const breeSerif = Bree_Serif({ 
   subsets: ['latin'],
@@ -63,6 +64,8 @@ export default function RootLayout({
               {children}
             </div>
             <FooterMenu />
+            {/* Logger Controls - only visible in development */}
+            <LoggerControl />
             {/* Remote Logger Control - only visible in development */}
             <RemoteLoggerControl />
           </Providers>

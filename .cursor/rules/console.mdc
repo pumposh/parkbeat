@@ -1,0 +1,8 @@
+---
+description: new console log
+globs: 
+---
+
+# Your rule content
+
+- For console logs, this project has an overwritten service applied as a plugin. see src/lib/logger.ts for interface details

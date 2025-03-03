@@ -3,6 +3,7 @@ import { Env } from "../../jstack"
 import { publicProcedure } from "../../jstack"
 import type { ProjectData } from "@/server/types/shared"
 import { ServerSocket } from "jstack-shared"
+import { ParkbeatLogger } from "@/lib/logger"
 
 
 export type ProcedureEnv = ContextWithSuperJSON<Env>
@@ -11,11 +12,7 @@ export type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[
 export type AIIO = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['io']
 export type AISocket = ServerSocket<any, any>
 
-export type Logger = {
-  info: (...args: Parameters<typeof console.info>) => void
-  error: (...args: Parameters<typeof console.error>) => void
-  debug: (...args: Parameters<typeof console.debug>) => void
-}
+export type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
 export interface SocketHelpers {
   getSocketId: (socket: AISocket) => string

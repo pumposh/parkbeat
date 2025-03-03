@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/neon-http"
 import { env } from "hono/adapter"
 import { jstack, Procedure } from "jstack"
 import { Redis } from "@upstash/redis/cloudflare"
+import { getLoggerMiddleware } from "./middleware/logger-middleware"
 
 export interface Env {
   Bindings: { 
@@ -14,6 +15,8 @@ export interface Env {
 }
 
 export const j = jstack.init<Env>()
+
+export type JStack = typeof j
 
 /**
  * Type-safely injects database into all procedures
@@ -43,6 +46,8 @@ const redisMiddleware = j.middleware(async ({ c, next }) => {
   return await next({ redis })
 })
 
+const loggerMiddleware = getLoggerMiddleware(j);
+
 // const authMiddleware = j.middleware(async ({ c, next }) => {
   
 // })
@@ -53,6 +58,7 @@ const redisMiddleware = j.middleware(async ({ c, next }) => {
  * This is the base piece you use to build new queries and mutations on your API.
  */
 export const publicProcedure = j.procedure
+  .use(loggerMiddleware)
   .use(databaseMiddleware)
   .use(redisMiddleware)
 

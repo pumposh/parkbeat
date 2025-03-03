@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { logger } from "@/lib/logger";
 import { createAIAgent, createAIImageAgent, type AIAgent } from "../ai-helpers/aigent";
 import { Env } from "../ai-helpers/types";
 import { Env as JStackEnv } from "@/server/jstack";
@@ -12,10 +11,12 @@ import { ContextWithSuperJSON, Procedure } from "jstack";
 import { eq, desc } from "drizzle-orm";
 import { getTreeHelpers } from "../tree-helpers/context";
 import type { ProjectCategory, ProjectSuggestion } from "../../types/shared";
-import { Logger } from "./types";
 import { ImageGenerationAgent } from "../ai-helpers/leonardo-agent";
 import { calculateProjectCosts } from "@/lib/cost";
 import { DedupeThing } from "@/lib/promise";
+import { ParkbeatLogger } from "@/lib/logger";
+
+type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
 const streetViewParamsSchema = z.object({
   lat: z.number(),
@@ -133,7 +134,9 @@ type LocalProcedure = Procedure<JStackEnv, ProcedureContext, void, typeof client
 type AISocket = Parameters<NonNullable<Awaited<ReturnType<Parameters<LocalProcedure["ws"]>[0]>>['onConnect']>>[0]['socket']
 type AIIO = Parameters<Parameters<LocalProcedure["ws"]>[0]>[0]['io']
 
-export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AIIO, c: ProcedureEnv) => {
+export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AIIO, c: ProcedureEnv, logger: Logger) => {
+  const db = ctx.db;
+
   logger.info('Initializing AI WebSocket handler')
   const {
     notifyProjectSubscribers,
@@ -379,7 +382,6 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
     const socketId = getSocketId(socket)
     
     try {
-      const { db } = ctx
       const { GOOGLE_AI_API_KEY, GOOGLE_MAPS_API_KEY, MAPTILER_API_KEY, LEONARDO_API_KEY } = env<Env>(c)
       
       if (!GOOGLE_AI_API_KEY || !GOOGLE_MAPS_API_KEY || !LEONARDO_API_KEY) {
@@ -437,7 +439,7 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
         })))
 
         const locationContext = imageAnalyses.find(({ locationContext }) => locationContext)?.locationContext
-        console.log('[generateSuggestionsForProject] locationContext', locationContext)
+        logger.debug('[generateSuggestionsForProject] locationContext', locationContext)
 
         let finalLocationContext = locationContext
         if (!finalLocationContext) {
@@ -451,7 +453,7 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
           if (project[0]) {
             const key = MAPTILER_API_KEY
             const locationInfo = await getLocationInfo(Number(project[0]._loc_lat), Number(project[0]._loc_lng), key)
-            console.log('[generateSuggestionsForProject] locationInfo', locationInfo)
+            logger.debug('[generateSuggestionsForProject] locationInfo', locationInfo)
             if (locationInfo.address) {
               finalLocationContext = [
                 locationInfo.address.street || locationInfo.address.road && `Located on ${locationInfo.address.street || locationInfo.address.road}`,
@@ -465,7 +467,7 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
           }
         }
 
-        console.log('[generateSuggestionsForProject] finalLocationContext', finalLocationContext)
+        logger.debug('[generateSuggestionsForProject] finalLocationContext', finalLocationContext)
 
         const result = await agent.analyzeImages({
           images: imageAnalyses,

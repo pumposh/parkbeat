@@ -4,7 +4,6 @@ import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { j, publicProcedure } from "../jstack"
 import { getTreeHelpers } from "./tree-helpers/context"
-import { logger } from "@/lib/logger"
 import { projectClientEvents, projectServerEvents, setupProjectHandlers } from "./socket/project-handlers"
 import { setupAIHandlers, aiClientEvents, aiServerEvents } from "./socket/ai-handlers"
 import { Procedure } from "jstack"
@@ -29,7 +28,10 @@ const clientEvents = z.object({
 
 /** Server sends to client */
 const serverEvents = z.object({
-  ping: z.undefined(),
+  heartbeat: z.object({
+    lastPingTime: z.number(),
+    room: z.string()
+  }),
   pong: z.function().args(z.void()).returns(z.void()),
   provideSocketId: z.string().optional(),
   ...projectServerEvents,
@@ -48,7 +50,8 @@ export const treeRouter = j.router({
     .input(killActiveSocketsSchema)
     .post(async ({ ctx, input }) => {
       const { socketId } = input
-      logger.info(`\n\n[Process ${process.pid}] Killing socket ${socketId}`)
+      const { logger } = ctx
+      logger.info(`[Process ${process.pid}] Killing socket ${socketId}`)
       const { cleanup } = getTreeHelpers({ ctx, logger })
       try {
         await cleanup(socketId)
@@ -90,15 +93,11 @@ export const treeRouter = j.router({
     .incoming(clientEvents)
     .outgoing(serverEvents)
     .ws(({ io, ctx, c }) => {
-      const logger = {
-        info: (...args: Parameters<typeof console.log>) => console.log('Server:', ...args),
-        error: (...args: Parameters<typeof console.error>) => console.error('Server:', ...args),
-        debug: (...args: Parameters<typeof console.debug>) => console.debug('Server:', ...args)
-      }
+      // Use the logger from the context provided by the middleware
+      let logger = ctx.logger.group('socket', 'Generic Socket', true)
 
       const {
         getSocketId,
-        setSocketSubscription,
         enqueueSubscriptionCleanup,
         processCleanupQueue
       } = getTreeHelpers({ ctx, logger })
@@ -107,25 +106,12 @@ export const treeRouter = j.router({
 
 
       return {
-        onMessage(data: any[]) {
-          logger.debug(`Received a cool beans message: ${JSON.stringify(data)}`)
-          // logger.debug(`Received message: ${JSON.stringify(data)}`)
-          if (data.length === 0) return
-          if (data[0] === 'ping') {
-            logger.debug('Keep alive received')
-            if (!socketId) return
-            setSocketSubscription(socketId)
-          }
-        },
-        
-        ping: () => {
-          logger.debug('Keep alive received')
-          if (!socketId) return
-          setSocketSubscription(socketId)
-        },
-
         onConnect({ socket }) {
           socketId = getSocketId(socket)
+          logger = ctx.logger.group(`socket_${socketId}`, `Socket ${socketId}`, true)
+
+          console.log('Client connected to tree updates')
+
           logger.info('Client connected to tree updates')
 
           // Process any outstanding cleanup tasks
@@ -133,8 +119,8 @@ export const treeRouter = j.router({
             logger.error(`[Process ${process.pid}] Error processing cleanup queue on connect:`, error)
           })
 
-          setupProjectHandlers(socket, ctx, io, c)
-          setupAIHandlers(socket, ctx, io, c)
+          setupProjectHandlers(socket, ctx, io, c, logger)
+          setupAIHandlers(socket, ctx, io, c, logger)
           
           // Send initial message to confirm connection
           logger.debug('Sending connection confirmation message')
@@ -144,6 +130,10 @@ export const treeRouter = j.router({
           }) => {
             const timeSinceLastPing = (Date.now() - lastPingTime) / 1000
             logger.info(`heartbeat received from ${room} - ${timeSinceLastPing} seconds since last ping`)
+            socket.emit('heartbeat', {
+              lastPingTime: Date.now(),
+              room
+            })
           });
           socket.emit('provideSocketId', socketId ?? undefined)
 
@@ -155,7 +145,6 @@ export const treeRouter = j.router({
             enqueueSubscriptionCleanup(c, socketId, ['geohash', 'project'])
           }
         },
-
         onDisconnect: ({ socket }) => {
           logger.info(`[Process ${process.pid}] WebSocket connection closed`)
           socketId = getSocketId(socket)

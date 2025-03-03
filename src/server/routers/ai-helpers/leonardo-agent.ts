@@ -1,4 +1,6 @@
-import { logger } from "@/lib/logger"
+import { getLogger } from "@/lib/logger"
+
+const logger = getLogger()
 
 interface LeonardoGenerationParams {
   prompt: string

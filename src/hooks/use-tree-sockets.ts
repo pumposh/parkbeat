@@ -5,10 +5,10 @@ import { generateId } from "@/lib/id"
 import { useEffect, useRef, useState, useMemo } from "react"
 import { boundsToGeohash } from "@/lib/geo/geohash"
 import { useAuth } from "@clerk/nextjs"
-import { WebSocketLogger } from "./client-log"
 import type { BaseProject, ProjectData, ProjectStatus } from "@/server/types/shared"
 import { useServerEvent, WebSocketManager, type ConnectionState } from "./websocket-manager"
 import { HydratableDate as Date } from "@/lib/utils"
+import { ParkbeatLogger } from "@/lib/logger-types"
 // WebSocket payload type with string dates
 export type ProjectPayload = BaseProject
 
@@ -40,7 +40,11 @@ export type ProjectGroup = {
 // Update useLiveTrees hook to use the WebSocketManager
 export function useLiveTrees() {
   const handlerId = useRef(`handler_${generateId()}`);
-  const logger = useMemo(() => WebSocketLogger.getInstance(), []);
+  const [logger, setLogger] = useState<
+    ParkbeatLogger.GroupLogger |
+    ParkbeatLogger.Logger |
+    typeof console
+  >(console);
   const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
 
   // Main tree storage with O(1) lookup by ID
@@ -50,7 +54,7 @@ export function useLiveTrees() {
   const [contributionSummaryMap, setContributionSummaryMap] = useState<Map<string, ContributionSummary>>(new Map());
   
   // Store tree groups separately
-  const [projectGroups, setProjectGroups] = useState<ProjectGroup[]>([]);
+  const [projectGroups] = useState<ProjectGroup[]>([]);
   
   // Current geohash subscription
   const [currentGeohash, setCurrentGeohash] = useState<string | null>(null);
@@ -68,19 +72,21 @@ export function useLiveTrees() {
 
   // Register handler on mount and handle connection state
   useEffect(() => {
-    logger.registerHandler(handlerId.current);
+    const newLogger = console.getGroup(handlerId.current);
+    setLogger(newLogger);
 
     const unsubscribe = wsManager.onStateChange(setConnectionState);
 
     return () => {
-      logger.unregisterHandler(handlerId.current);
       unsubscribe();
       // Only cleanup if this is the last handler
-      if (wsManager.getHookCount() === 0) {
-        wsManager.cleanup();
-      }
+      setTimeout(() => {
+        if (wsManager.getHookCount() === 0) {
+          wsManager.cleanup();
+        }
+      }, 100);
     };
-  }, [logger, wsManager]);
+  }, [wsManager]);
 
   // Handle new tree updates
   useEffect(() => {
@@ -152,7 +158,7 @@ export function useLiveTrees() {
   useEffect(() => {
     console.log('[useLiveTrees] deleteProjectData', deleteProjectData)
     if (!deleteProjectData || !('id' in deleteProjectData)) return;
-    if (deleteProjectData.id === "0") return;
+    if (deleteProjectData.id === "0" || !deleteProjectData.id) return;
 
     setProjectMap(prev => {
       const next = new Map(prev);
@@ -239,18 +245,12 @@ export function useLiveTrees() {
           logger.log('debug', `Changing geohash subscription from ${currentGeohash} to ${geohash}`);
           
           if (currentGeohash) {
-            await wsManager.emit('subscribe', {
-              geohash: currentGeohash,
-              shouldSubscribe: false
-            }, { argBehavior: 'replace', uniqueKey: 'geohash' });
+            wsManager.unsubscribeFromRoom(currentGeohash, 'geohash');
             logger.log('info', `Unsubscribed from geohash: ${currentGeohash}`);
           }
           
           logger.log('info', `Subscribing to geohash: ${geohash}`);
-          await wsManager.emit('subscribe', {
-            geohash,
-            shouldSubscribe: true
-          }, { argBehavior: 'replace', uniqueKey: 'geohash' });
+          wsManager.subscribeToRoom(geohash, 'geohash');
           setCurrentGeohash(geohash);
         }
       }, 500);
@@ -334,7 +334,7 @@ export function useLiveTrees() {
     const cleanup = () => {
       // Only cleanup if this is the last handler
       if (wsManager.getHookCount() === 0) {
-        logger.cleanup();
+        //
       }
     };
     window.addEventListener('beforeunload', cleanup);
@@ -383,13 +383,13 @@ export function useProjectData(projectId: string) {
 
     if (currentProjectId.current) {
       console.log('[useProjectData] unsubscribing from project', currentProjectId.current)
-      wsManager.unsubscribeFromProject(currentProjectId.current);
+      wsManager.unsubscribeFromRoom(currentProjectId.current, 'project');
       currentProjectId.current = null;
     }
 
     if (projectId) {
       console.log('[useProjectData] subscribing to project', projectId)
-      wsManager.subscribeToProject(projectId);
+      wsManager.subscribeToRoom(projectId, 'project');
       currentProjectId.current = projectId;
     }
   }, [projectId, wsManager]);
@@ -398,7 +398,7 @@ export function useProjectData(projectId: string) {
     projectData,
     disconnect: () => {
       if (!currentProjectId.current) return;
-      wsManager.unsubscribeFromProject(currentProjectId.current);
+      wsManager.unsubscribeFromRoom(currentProjectId.current, 'project');
       setProjectData({
         projectId,
         data: {

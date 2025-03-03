@@ -1,4 +1,4 @@
-import { logger } from "@/lib/logger";
+import { getLogger } from "@/lib/logger";
 import { z } from "zod";
 import { Env, publicProcedure } from "@/server/jstack";
 import { getTreeHelpers } from "../tree-helpers/context";
@@ -9,6 +9,9 @@ import { type ProjectStatus, type BaseProject, type ProjectData, projectSuggesti
 import { Procedure } from "jstack";
 import { ContextWithSuperJSON } from "jstack";
 import { DedupeThing } from "@/lib/promise";
+import { ParkbeatLogger } from "@/lib/logger";
+
+type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
 export const projectClientEvents = {
   setProject: baseProjectSchema,
@@ -113,7 +116,13 @@ type LocalProcedure = Procedure<Env, ProcedureContext, void, typeof clientEvents
 type ProcedureIO = Parameters<Parameters<LocalProcedure["ws"]>[0]>[0]['io']
 type ProjectSocket = Parameters<NonNullable<Awaited<ReturnType<Parameters<LocalProcedure["ws"]>[0]>>['onConnect']>>[0]['socket']
 
-export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContext, io: ProcedureIO, c: ProcedureEnv) => {
+export const setupProjectHandlers = (
+  socket: ProjectSocket,
+  ctx: ProcedureContext,
+  io: ProcedureIO,
+  c: ProcedureEnv,
+  logger: Logger,
+) => {
   const {
     getSocketId,
     setSocketSubscription,
@@ -129,11 +138,10 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
 
   let socketId: string | null = null
 
-  logger.info('Initializing WebSocket handler')
   // Project subscription handlers
   socket.on('subscribeProject', async ({ projectId, shouldSubscribe }: { projectId: string; shouldSubscribe: boolean }) => {
     if (shouldSubscribe) {
-      logger.info(`Handling project subscription for: ${projectId}`)
+      logger.log(`Handling project subscription for: ${projectId}`)
 
       const deduped = await DedupeThing.getInstance()
         .dedupe(socketId, 'subscribeProject', projectId)
@@ -158,20 +166,20 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
           // Fetch project data
           projectData = await getProjectData(projectId) ?? projectData
         } catch (error) {
-          logger.info('Project not found, creating empty project data')
+          logger.log('Project not found, creating empty project data')
         }
         
         socket.emit('projectData', {
           projectId,
           data: projectData
         })
-        logger.info(`Subscription complete for project:${projectId}`)
+        logger.log(`Subscription complete for project:${projectId}`)
       } catch (error) {
         logger.error('Error in project subscription handler:', error)
         throw error
       }
     } else {
-      logger.info(`Unsubscribe event received for project: ${projectId}`)
+      logger.log(`Unsubscribe event received for project: ${projectId}`)
       try {
         // Get socket ID
         socketId = getSocketId(socket)
@@ -180,7 +188,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
 
         // Leave the Redis room for this project
         socket.leave(`project:${projectId}`)
-        logger.info(`Client left Redis room for project:${projectId}`)
+        logger.log(`Client left Redis room for project:${projectId}`)
       } catch (error) {
         logger.error('Error in project unsubscribe handler:', error)
         throw error
@@ -190,7 +198,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
 
   // Register event handlers
   socket.on('subscribe', async ({ geohash, shouldSubscribe }: { geohash: string; shouldSubscribe: boolean }) => {
-    logger.info(`Handling ${shouldSubscribe ? 'subscription' : 'unsubscription'} for area: ${geohash}`)
+    logger.log(`Handling ${shouldSubscribe ? 'subscription' : 'unsubscription'} for area: ${geohash}`)
     const { db } = ctx
 
     try {
@@ -242,11 +250,11 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
           await io.to(`geohash:${geohash}`).emit('subscribe', { geohash, projects: projectsToEmit })
         }
 
-        logger.info(`\n\nSubscription complete for geohash:${geohash} - Found ${nearbyProjects.length} projects, emitted ${individualProjects.length} projects`)
+        logger.log(`\n\nSubscription complete for geohash:${geohash} - Found ${nearbyProjects.length} projects, emitted ${individualProjects.length} projects`)
       } else {
         // Handle unsubscription
         socket.leave(`geohash:${geohash}`)
-        logger.info(`\n\nUnsubscription complete for geohash:${geohash}`)
+        logger.log(`\n\nUnsubscription complete for geohash:${geohash}`)
       }
     } catch (error) {
       logger.error('Error in subscription handler:', error)
@@ -255,7 +263,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
   })
 
   socket.on('deleteProject', async (data: { id: string }) => {
-    logger.info(`Processing project deletion: ${data.id}`)
+    logger.log(`Processing project deletion: ${data.id}`)
     const { db } = ctx
 
     const deduped = await DedupeThing.getInstance()
@@ -300,7 +308,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
   })
 
   socket.on('setProject', async (data) => {
-    logger.info(`Processing project update: ${data.name} (${data.id})`)
+    logger.log(`Processing project update: ${data.name} (${data.id})`)
     const { db } = ctx
 
     try {
@@ -415,7 +423,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
         data: projectDataUpdate
       })
 
-      logger.info(
+      logger.log(
         `Project ${existingProject ? 'updated' : 'created'}: ${result.id} - ` +
         `Emitted to ${emittedCount} geohashes (${totalSubscribers} total subscribers), ` +
         `skipped ${skippedCount} empty geohashes and notified project subscribers`
@@ -430,7 +438,7 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
 
   // Handler for adding a contribution to a project
   socket.on('addContribution', async (contribution) => {
-    logger.info(`Processing contribution for project: ${contribution.project_id}`)
+    logger.log(`Processing contribution for project: ${contribution.project_id}`)
     
     try {
       const deduped = await DedupeThing.getInstance()
@@ -454,9 +462,9 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
       await notifyProjectSubscribers(contribution.project_id, notifySocketId, io)
       
       if (result.statusChanged) {
-        logger.info(`Project ${contribution.project_id} status changed to 'funded'. All subscribers notified.`)
+        logger.log(`Project ${contribution.project_id} status changed to 'funded'. All subscribers notified.`)
       } else {
-        logger.info(`Successfully added contribution to project ${contribution.project_id}`)
+        logger.log(`Successfully added contribution to project ${contribution.project_id}`)
       }
       
       return result.contribution
@@ -468,6 +476,9 @@ export const setupProjectHandlers = (socket: ProjectSocket, ctx: ProcedureContex
 }
 
 async function getContributionSummary(projectId: string, db: any) {
+  // Create a logger instance for this function
+  const logger = getLogger();
+  
   try {
     // Use Drizzle to get the total contributions for this project
     const contributionResult = await db

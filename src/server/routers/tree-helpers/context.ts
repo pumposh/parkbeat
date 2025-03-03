@@ -7,13 +7,10 @@ import type { ServerProcedure } from "../tree-router"
 import type { ProjectStatus } from "@/server/types/shared"
 import { ContextWithSuperJSON } from "jstack"
 import { Env as JstackEnv } from "../../jstack"
-import { asyncTimeout } from "@/lib/async"
+import { ParkbeatLogger } from "@/lib/logger"
 
-type Logger = {
-  info: (...args: Parameters<typeof console.info>) => void
-  error: (...args: Parameters<typeof console.error>) => void
-  debug: (...args: Parameters<typeof console.debug>) => void
-}
+// Use the GroupLogger type from our logger
+type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
 type ProcedureEnv = ContextWithSuperJSON<JstackEnv>
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
@@ -376,7 +373,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
         
         // If contribution already exists, return it without creating a duplicate
         if (existingContribution.length > 0) {
-          logger.info(`Contribution with ID ${contribution.id} already exists, skipping creation`)
+          logger.log(`Contribution with ID ${contribution.id} already exists, skipping creation`)
           
           // Fetch the existing contribution to return
           const [existing] = await db
@@ -461,7 +458,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
               
               // If the total amount meets or exceeds the target, update the project status to 'funded'
               if (totalAmountCents >= targetAmountCents) {
-                logger.info(`Project ${contribution.project_id} has met its funding goal. Updating status to 'funded'`)
+                logger.log(`Project ${contribution.project_id} has met its funding goal. Updating status to 'funded'`)
                 
                 await db
                   .update(projects)
@@ -636,7 +633,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
   // Clean up subscriptions on close
   const cleanup = async (socketId: string, subscriptions: ('geohash' | 'project')[] = ['geohash', 'project']) => {
     try {
-      logger.info(`Client ${socketId}: cleaning up subscriptions`)
+      logger.log(`Client ${socketId}: cleaning up subscriptions`)
 
       // Get all geohashes this socket was subscribed to
       const socketKey = getSocketGeohashKey(socketId)
@@ -654,7 +651,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
       let refKeys: string[]
       try {
         refKeys = await Promise.all(keys.map(key => ctx.redis.smembers(key))).then(keys => keys.flat());
-        logger.info(`Found ${refKeys.length} subscriptions for socket ${socketId}, ${refKeys}`)
+        logger.log(`Found ${refKeys.length} subscriptions for socket ${socketId}, ${refKeys}`)
       } catch (error) {
         logger.error('Error getting socket subscriptions:', error)
         return
@@ -666,7 +663,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
           ...keys.map(key => ctx.redis.del(key)),
           ctx.redis.hdel('cleanupQueue', socketId)
         ])
-        logger.info(`Cleaned up all subscriptions for socket ${socketId}`)
+        logger.log(`Cleaned up all subscriptions for socket ${socketId}`)
       } catch (error) {
         logger.error('Error deleting socket keys:', error)
       }
@@ -691,7 +688,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     subscriptions: ('geohash' | 'project')[] = ['geohash', 'project'],
   ) => {
     try {
-      logger.info(`[Process ${process.pid}] Adding socket ${socketId} to cleanup queue`)
+      logger.log(`[Process ${process.pid}] Adding socket ${socketId} to cleanup queue`)
       
       // Get Redis connection details from environment
       const redisUrl = c.env.UPSTASH_REDIS_REST_URL
@@ -725,7 +722,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
 
       if (!queueEntries || Object.keys(queueEntries).length === 0) return
 
-      logger.info(`[Process ${process.pid}] Processing cleanup queue with ${Object.keys(queueEntries).length} entries`)
+      logger.log(`[Process ${process.pid}] Processing cleanup queue with ${Object.keys(queueEntries).length} entries`)
 
       // Process each socket in parallel
       await Promise.allSettled(
@@ -734,13 +731,13 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
             await cleanup(socketId, subscriptions)
             // Remove from queue only if cleanup succeeds
             // await ctx.redis.hdel('cleanupQueue', socketId)
-            logger.info(`[Process ${process.pid}] Cleaned up and removed socket ${socketId} from queue`)
+            logger.log(`[Process ${process.pid}] Cleaned up and removed socket ${socketId} from queue`)
           } catch (error) {
             // If the socket is too old, remove it from the queue
             const age = Date.now() - parseInt(`${timestamp}`)
             if (age > 24 * 60 * 60 * 1000) { // 24 hours
               await ctx.redis.hdel('cleanupQueue', socketId)
-              logger.info(`[Process ${process.pid}] Removed stale socket ${socketId} from queue (age: ${age}ms)`)
+              logger.log(`[Process ${process.pid}] Removed stale socket ${socketId} from queue (age: ${age}ms)`)
             } else {
               logger.error(`[Process ${process.pid}] Failed to clean up socket ${socketId}:`, error)
             }

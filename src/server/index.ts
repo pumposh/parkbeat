@@ -1,5 +1,4 @@
 import { j } from "./jstack"
-import { postRouter } from "./routers/post-router"
 import { cors } from "hono/cors"
 import { treeRouter } from "./routers/tree-router"
 
@@ -41,7 +40,6 @@ const api = j
  * All routers in /server/routers should be added here manually.
  */
 const appRouter = j.mergeRouters(api, {
-  post: postRouter,
   tree: treeRouter,
 })
 

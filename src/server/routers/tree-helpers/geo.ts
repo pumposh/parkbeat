@@ -1,5 +1,9 @@
-import { Project, ProjectGroup } from "@/hooks/use-tree-sockets";
+import { Project, ProjectGroup } from "@/server/types/shared";
 import geohash from 'ngeohash';
+import { getServerLogger } from "../../utils/logger";
+
+// Initialize the logger
+const logger = getServerLogger();
 
 type ProjectGroupingResult = {
   groups: ProjectGroup[];
@@ -145,17 +149,17 @@ export const iterateLatLng = (lat: number, lng: number, direction: string, steps
     'E': { lat: 0, lng: 1 },
     'W': { lat: 0, lng: -1 }
   }
-  console.log('direction', direction)
-  console.log('steps', steps)
-  console.log('directions', directions)
+  logger.debug('direction', direction);
+  logger.debug('steps', steps);
+  logger.debug('directions', directions);
 
   const fuzzy = direction.split('')[0]?.toUpperCase() as keyof typeof directions
-  console.log('fuzzy', fuzzy)
+  logger.debug('fuzzy', fuzzy);
   const newLatLng = {
     lat: lat + directions[fuzzy]?.lat * steps,
     lng: lng + directions[fuzzy]?.lng * steps
   }
-  console.log('newLatLng', newLatLng)
+  logger.debug('newLatLng', newLatLng);
 
   return newLatLng
 }
