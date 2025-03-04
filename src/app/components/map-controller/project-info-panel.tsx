@@ -73,13 +73,7 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
       topContributors: contributionSummary.top_contributors || []
     };
   })() : null;
-
-  const formattedDate = project?._meta_created_at ? new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  }).format(project._meta_created_at) : null
-
+  
   const handleNav = () => {
     if (!project) return
     startNavigating()
@@ -131,13 +125,6 @@ export const ProjectInfoPanel = ({ project, group, position, isVisible, classNam
                 )} />
                 {capitalize(project.status)}
               </div>
-              
-              {formattedDate && (
-                <div className="tree-status bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 text-xs">
-                  <i className="fa-solid fa-calendar-days" />
-                  {formattedDate}
-                </div>
-              )}
             </div>
             
             {/* Profile picture placed inline with status pill */}

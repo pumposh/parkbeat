@@ -333,7 +333,7 @@ export function ProjectDetails({
             onChange={handleCostUpdate}
           />
           {!isReadOnly && (
-            <div className="mt-4 pt-4">
+            <div className="mt-4 pt-4 pb-12">
               <div className="rounded-lg bg-gray-50 dark:bg-black/10 p-4 flex items-center gap-3">
                 <i className="fa-solid fa-circle-info text-gray-400" />
                 <div className="flex flex-col gap-1">

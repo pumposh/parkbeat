@@ -9,9 +9,8 @@ import { Draggable } from 'gsap/Draggable';
 import { generateId } from '@/lib/id';
 import './floating-debug-control.css';
 
-import useDelayedMemo from '@/hooks/use-delayed-memo';
 import { useAdminSettings } from '@/app/state/use-app-settings';
-import { usePersistentRef } from '@/hooks/use-persistence';
+import { usePersistentState } from '@/hooks/use-persistence';
 
 // Register the Draggable plugin
 if (typeof window !== 'undefined') {
@@ -55,7 +54,12 @@ export function FloatingDebugControl() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   
   const [isDragging, setIsDragging] = useState(false);
-  const [edgeState, setEdgeState] = useState<EdgeState>({ top: true, right: false, bottom: false, left: true });
+  const [edgeState, setEdgeState] = useState<EdgeState>({
+    top: true,
+    right: false,
+    bottom: false,
+    left: true,
+  });
   const controlRef = useRef<HTMLDivElement>(null);
   const draggableRef = useRef<any>(null);
   const clickTimeRef = useRef<number>(0);
@@ -63,7 +67,15 @@ export function FloatingDebugControl() {
   
   // Physics tracking refs
   const velocitySamples = useRef<VelocitySample[]>([]);
-  const lastPosition = usePersistentRef('floating-debug-control-last-position', { x: 0, y: 0 });
+  const [
+    lastPosition,
+    setLastPosition,
+    isInitialized,
+  ] = usePersistentState(
+    'floating-debug-control-last-position',
+    { x: 0, y: 0 },
+  );
+
   const animationFrameId = useRef<number | null>(null);
   const currentVelocity = useRef({ x: 0, y: 0 });
   const isInertiaActive = useRef(false);
@@ -155,8 +167,6 @@ export function FloatingDebugControl() {
     return () => window.removeEventListener('resize', updateWindowSize);
   }, []);
 
-  const [borderRadiusStyle, _setBorderRadiusStyle] = useState<React.CSSProperties>({});
-
   // Calculate corner classes based on edge state
   const getCornerClasses = (edgeState: EdgeState) => {
     const { top, right, bottom, left } = edgeState;
@@ -166,48 +176,37 @@ export function FloatingDebugControl() {
     
     // Add individual corner classes - only flatten a corner when both adjacent edges are touched
     // Top-left corner
-    if (top && left) {
+    if (top || left) {
       classes.push('floating-debug-control--corner-tl-flat');
     } else {
       classes.push('floating-debug-control--corner-tl-rounded');
     }
     
     // Top-right corner
-    if (top && right) {
+    if (top || right) {
       classes.push('floating-debug-control--corner-tr-flat');
     } else {
       classes.push('floating-debug-control--corner-tr-rounded');
     }
     
     // Bottom-right corner
-    if (bottom && right) {
+    if (bottom || right) {
       classes.push('floating-debug-control--corner-br-flat');
     } else {
       classes.push('floating-debug-control--corner-br-rounded');
     }
     
     // Bottom-left corner
-    if (bottom && left) {
+    if (bottom || left) {
       classes.push('floating-debug-control--corner-bl-flat');
     } else {
       classes.push('floating-debug-control--corner-bl-rounded');
     }
     
-    // Add edge classes for more specific styling if needed
-    if (top) classes.push('floating-debug-control--edge-top');
-    if (right) classes.push('floating-debug-control--edge-right');
-    if (bottom) classes.push('floating-debug-control--edge-bottom');
-    if (left) classes.push('floating-debug-control--edge-left');
-    
     return classes.join(' ');
   };
 
-  // Update border radius using CSS classes instead of inline styles
-  const setBorderRadius = (newEdgeState: EdgeState) => {
-    // No need to set inline styles anymore, we'll use classes
-    // This function is kept for compatibility with existing code
-    setEdgeState(newEdgeState);
-  };
+  const cornerClasses = useMemo(() => getCornerClasses(edgeState), [edgeState]);
 
   // Update edge state based on position
   const updateEdgeState = (x: number, y: number) => {
@@ -440,8 +439,10 @@ export function FloatingDebugControl() {
           onComplete: () => {
             // Update edge state after animation completes
             updateEdgeState(boundedX, boundedY);
-            // Persist final position
-            lastPosition.current = { x: boundedX, y: boundedY };
+            if (isInitialized) {
+              // Persist final position
+              setLastPosition({ x: boundedX, y: boundedY });
+            }
           }
         });
       }
@@ -460,16 +461,16 @@ export function FloatingDebugControl() {
   // Initialize GSAP Draggable
   useEffect(() => {
     if (!controlRef.current || typeof window === 'undefined') return;
-    if (!lastPosition.isInitialized) return
+    if (!isInitialized) return;
 
     let coords = { x: 0, y: 0 };
-    if (lastPosition.current.x || lastPosition.current.y) {
-      coords = { x: lastPosition.current.x || 0, y: lastPosition.current.y || 0 };
+    if (lastPosition.x || lastPosition.y) {
+      coords = { x: lastPosition.x || 0, y: lastPosition.y || 0 };
     } else {
       coords = { x: 0, y: 0 };
     }
 
-    lastPosition.current = coords;
+    setLastPosition(coords);
     updateEdgeState(coords.x, coords.y);
 
     // Kill any existing draggable instance
@@ -515,10 +516,12 @@ export function FloatingDebugControl() {
         gsap.set(this.target, { clearProps: "transition" });
         
         // Record initial position
-        lastPosition.current = {
-          x: gsap.getProperty(this.target, "x") as number,
-          y: gsap.getProperty(this.target, "y") as number
-        };
+        if (isInitialized) {
+          setLastPosition({
+            x: gsap.getProperty(this.target, "x") as number,
+            y: gsap.getProperty(this.target, "y") as number
+          });
+        }
         
         // Record click time for tap detection
         clickTimeRef.current = Date.now();
@@ -546,12 +549,12 @@ export function FloatingDebugControl() {
         updateEdgeState(currentX, currentY);
         
         // Update total drag distance
-        dragDistance.current.x += Math.abs(currentX - lastPosition.current.x);
-        dragDistance.current.y += Math.abs(currentY - lastPosition.current.y);
+        dragDistance.current.x += Math.abs(currentX - lastPosition.x);
+        dragDistance.current.y += Math.abs(currentY - lastPosition.y);
         
         // Check if we've moved enough to consider this a drag operation
-        const dx = currentX - lastPosition.current.x;
-        const dy = currentY - lastPosition.current.y;
+        const dx = currentX - lastPosition.x;
+        const dy = currentY - lastPosition.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         if (distance > moveThreshold) {
@@ -570,7 +573,9 @@ export function FloatingDebugControl() {
         }
         
         // Update last position
-        lastPosition.current = { x: currentX, y: currentY };
+        if (isInitialized) {
+          setLastPosition({ x: currentX, y: currentY });
+        }
       },
       onRelease: function() {
         // If it was a quick tap/click and we didn't move much, toggle the dialog
@@ -658,14 +663,14 @@ export function FloatingDebugControl() {
                 // Update edge state after animation completes
                 updateEdgeState(finalX, finalY);
                 // Persist final position
-                lastPosition.current = { x: finalX, y: finalY };
+                setLastPosition({ x: finalX, y: finalY });
               }
             });
           } else {
             // Just update the edge state if we're not at an edge
             updateEdgeState(currentX, currentY);
             // Persist position
-            lastPosition.current = { x: currentX, y: currentY };
+            setLastPosition({ x: currentX, y: currentY });
           }
         }
         
@@ -685,7 +690,10 @@ export function FloatingDebugControl() {
         animationFrameId.current = null;
       }
     };
-  }, [isDialogOpen, lastPosition.isInitialized]);
+  }, [isDialogOpen]);
+
+
+
 
   // Handle direct click on the control
   const handleClick = () => {
@@ -713,18 +721,18 @@ export function FloatingDebugControl() {
         id={COMPONENT_ID}
         ref={controlRef}
         onClick={handleClick}
-        className={cn(
-          "frosted-glass floating-debug-control fixed z-[9999] flex items-center gap-2 px-3 py-1.5",
-          getCornerClasses(edgeState),
+        className={`${cornerClasses} ${cn(
+          "frosted-glass-bg-base floating-debug-control fixed z-[9999] flex items-center gap-2 px-3 py-1.5",
           isEnabled ? '' : 'floating-debug-control--disabled',
           "shadow-[0_8px_30px_rgb(0,0,0,0.28)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.24)]",
           "select-none cursor-pointer",
           isDragging && "scale-105"
-        )}
+        )}`}
         style={{
           position: 'absolute',
-          top: '0',
-          left: '0',
+          top: '13px',
+          left: '50dvw',
+          transform: 'translateX(-50%)',
           touchAction: 'none',
           pointerEvents: isEnabled ? 'auto' : 'none', // Control pointer events based on enabled state
           zIndex: 10000, // Use a very high z-index to ensure it's above portals

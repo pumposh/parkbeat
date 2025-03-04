@@ -306,6 +306,8 @@ export class WebSocketManager {
         this.console.info(`Updating new hook with latest state for ${safeToString(key)}`);
         hook(latestState as ExpectedArgument<T>);
       }
+      
+      this.stateListeners.forEach(listener => listener(this.connectionState));
     }, 0);
   }
 

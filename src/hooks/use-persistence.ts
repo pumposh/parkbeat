@@ -97,11 +97,6 @@ interface DBPromiseResult {
 let dbPromise: Promise<DBPromiseResult> | null = null;
 
 const getDB = async (): Promise<DBPromiseResult> => {
-  // Skip if running on the server or indexedDB is not available
-  if (typeof window === 'undefined' || typeof indexedDB === 'undefined') {
-    throw new Error('IndexedDB not available');
-  }
-
   if (!dbPromise) {
     dbPromise = new Promise<DBPromiseResult>((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
