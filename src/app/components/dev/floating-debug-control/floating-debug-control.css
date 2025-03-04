@@ -1,4 +1,4 @@
-.frosted-glass .floating-debug-control {
+.frosted-glass-bg-base .floating-debug-control {
   pointer-events: auto;
   opacity: 1;
   transition: border-radius 0.2s ease-in-out, opacity 0.3s ease-in-out;
@@ -8,7 +8,7 @@
   }
 }
 
-.frosted-glass .floating-debug-control--disabled {
+.frosted-glass-bg-base .floating-debug-control--disabled {
   opacity: 0 !important;
   pointer-events: none !important;
 }
@@ -17,83 +17,112 @@
 .floating-debug-control,
 .floating-debug-control::before {
   border-radius: 12px;
-  transition: border-radius 0.2s ease-out;
+  transition: border-radius 0.2s ease-in-out;
 }
 
 /* Corner border radius helpers */
 /* These classes can be applied to control border radius for each corner individually */
 
 /* Top-left corner */
-.frosted-glass .floating-debug-control--corner-tl-flat,
-.frosted-glass .floating-debug-control--corner-tl-flat::before {
+.floating-debug-control .floating-debug-control--corner-tl-flat,
+.floating-debug-control .floating-debug-control--corner-tl-rounded {
   border-top-left-radius: 0 !important;
+  &::before {
+    border-top-left-radius: 0 !important;
+  }
 }
 
-.frosted-glass .floating-debug-control--corner-tl-rounded,
-.frosted-glass .floating-debug-control--corner-tl-rounded::before {
+.floating-debug-control .floating-debug-control--corner-tl-rounded {
   border-top-left-radius: 12px !important;
+  &::before {
+    border-top-left-radius: 12px !important;
+  }
 }
 
 /* Top-right corner */
-.frosted-glass .floating-debug-control--corner-tr-flat,
-.frosted-glass .floating-debug-control--corner-tr-flat::before {
+.frosted-glass-bg-base .floating-debug-control--corner-tr-flat {
   border-top-right-radius: 0 !important;
+  &::before {
+    border-top-right-radius: 0 !important;
+  }
 }
 
-.frosted-glass .floating-debug-control--corner-tr-rounded,
-.frosted-glass .floating-debug-control--corner-tr-rounded::before {
+.frosted-glass-bg-base .floating-debug-control--corner-tr-rounded {
   border-top-right-radius: 12px !important;
+  &::before {
+    border-top-right-radius: 12px !important;
+  }
 }
 
 /* Bottom-right corner */
-.frosted-glass .floating-debug-control--corner-br-flat,
-.frosted-glass .floating-debug-control--corner-br-flat::before {
+.frosted-glass-bg-base .floating-debug-control--corner-br-flat {
   border-bottom-right-radius: 0 !important;
+  &::before {
+    border-bottom-right-radius: 0 !important;
+  }
 }
 
-.frosted-glass .floating-debug-control--corner-br-rounded,
-.frosted-glass .floating-debug-control--corner-br-rounded::before {
+.frosted-glass-bg-base .floating-debug-control--corner-br-rounded {
   border-bottom-right-radius: 12px !important;
+  &::before {
+    border-bottom-right-radius: 12px !important;
+  }
 }
 
 /* Bottom-left corner */
-.frosted-glass .floating-debug-control--corner-bl-flat,
-.frosted-glass .floating-debug-control--corner-bl-flat::before {
+.frosted-glass-bg-base .floating-debug-control--corner-bl-flat {
   border-bottom-left-radius: 0 !important;
+  &::before {
+    border-bottom-left-radius: 0 !important;
+  }
 }
 
-.frosted-glass .floating-debug-control--corner-bl-rounded,
-.frosted-glass .floating-debug-control--corner-bl-rounded::before {
+.frosted-glass-bg-base .floating-debug-control--corner-bl-rounded {
   border-bottom-left-radius: 12px !important;
+  &::before {
+    border-bottom-left-radius: 12px !important;
+  }
 }
 
 /* Combined edge helpers */
 /* These classes handle multiple corners based on which edge the control is touching */
 
 /* Top edge */
-.frosted-glass .floating-debug-control--edge-top,
-.frosted-glass .floating-debug-control--edge-top::before {
+.frosted-glass-bg-base .floating-debug-control--edge-top {
   border-top-left-radius: 0 !important;
   border-top-right-radius: 0 !important;
+  &::before {
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+  }
 }
 
 /* Right edge */
-.frosted-glass .floating-debug-control--edge-right,
-.frosted-glass .floating-debug-control--edge-right::before {
+.frosted-glass-bg-base .floating-debug-control--edge-right {
   border-top-right-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
+  &::before {
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
 }
 
 /* Bottom edge */
-.frosted-glass .floating-debug-control--edge-bottom,
-.frosted-glass .floating-debug-control--edge-bottom::before {
+.frosted-glass-bg-base .floating-debug-control--edge-bottom {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
+  &::before {
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
 }
 
 /* Left edge */
-.floating-debug-control--edge-left .frosted-glass,
-.floating-debug-control--edge-left::before {
+.frosted-glass-bg-base .floating-debug-control--edge-left {
   border-top-left-radius: 0 !important;
   border-bottom-left-radius: 0 !important;
+  &::before {
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+  }
 }

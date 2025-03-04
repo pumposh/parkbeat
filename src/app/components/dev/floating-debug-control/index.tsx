@@ -155,8 +155,6 @@ export function FloatingDebugControl() {
     return () => window.removeEventListener('resize', updateWindowSize);
   }, []);
 
-  const [borderRadiusStyle, _setBorderRadiusStyle] = useState<React.CSSProperties>({});
-
   // Calculate corner classes based on edge state
   const getCornerClasses = (edgeState: EdgeState) => {
     const { top, right, bottom, left } = edgeState;
@@ -166,48 +164,37 @@ export function FloatingDebugControl() {
     
     // Add individual corner classes - only flatten a corner when both adjacent edges are touched
     // Top-left corner
-    if (top && left) {
+    if (top || left) {
       classes.push('floating-debug-control--corner-tl-flat');
     } else {
       classes.push('floating-debug-control--corner-tl-rounded');
     }
     
     // Top-right corner
-    if (top && right) {
+    if (top || right) {
       classes.push('floating-debug-control--corner-tr-flat');
     } else {
       classes.push('floating-debug-control--corner-tr-rounded');
     }
     
     // Bottom-right corner
-    if (bottom && right) {
+    if (bottom || right) {
       classes.push('floating-debug-control--corner-br-flat');
     } else {
       classes.push('floating-debug-control--corner-br-rounded');
     }
     
     // Bottom-left corner
-    if (bottom && left) {
+    if (bottom || left) {
       classes.push('floating-debug-control--corner-bl-flat');
     } else {
       classes.push('floating-debug-control--corner-bl-rounded');
     }
     
-    // Add edge classes for more specific styling if needed
-    if (top) classes.push('floating-debug-control--edge-top');
-    if (right) classes.push('floating-debug-control--edge-right');
-    if (bottom) classes.push('floating-debug-control--edge-bottom');
-    if (left) classes.push('floating-debug-control--edge-left');
-    
     return classes.join(' ');
   };
 
-  // Update border radius using CSS classes instead of inline styles
-  const setBorderRadius = (newEdgeState: EdgeState) => {
-    // No need to set inline styles anymore, we'll use classes
-    // This function is kept for compatibility with existing code
-    setEdgeState(newEdgeState);
-  };
+  const cornerClasses = useMemo(() => getCornerClasses(edgeState), [edgeState]);
 
   // Update edge state based on position
   const updateEdgeState = (x: number, y: number) => {
@@ -713,14 +700,13 @@ export function FloatingDebugControl() {
         id={COMPONENT_ID}
         ref={controlRef}
         onClick={handleClick}
-        className={cn(
-          "frosted-glass floating-debug-control fixed z-[9999] flex items-center gap-2 px-3 py-1.5",
-          getCornerClasses(edgeState),
+        className={`${cornerClasses} ${cn(
+          "frosted-glass-bg-base floating-debug-control fixed z-[9999] flex items-center gap-2 px-3 py-1.5",
           isEnabled ? '' : 'floating-debug-control--disabled',
           "shadow-[0_8px_30px_rgb(0,0,0,0.28)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.24)]",
           "select-none cursor-pointer",
           isDragging && "scale-105"
-        )}
+        )}`}
         style={{
           position: 'absolute',
           top: '0',
