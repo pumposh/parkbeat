@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, ReactNode, useMemo } from 'react'
+import { useState, useRef, useEffect, ReactNode, useMemo, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import styles from './carousel-tabs.module.css'
 import { isNullish } from '@/lib/nullable'
@@ -47,6 +47,8 @@ export function CarouselTabs({
   const [contentHeights, setContentHeights] = useState<Record<number, number>>({})
   const [interpolatedHeight, setInterpolatedHeight] = useState<number | null>(null)
   const [isScrolling, setIsScrolling] = useState(false)
+  const [viewportHeight, setViewportHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 0)
+  const [maxPossibleHeight, setMaxPossibleHeight] = useState(typeof window !== 'undefined' ? window.innerHeight * 0.8 : 500)
   const scrollingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
   // References
@@ -72,7 +74,7 @@ export function CarouselTabs({
     
   // Calculate maximum height based on container position
   // This accounts for the space taken by tab buttons and other UI elements
-  const calculateMaxHeight = (viewportHeight: number) => {
+  const calculateMaxHeight = useCallback((viewportHeight: number) => {
     if (!heightContainerRef.current || !tabsContainerRef.current) return viewportHeight * 0.8
     
     const containerRect = heightContainerRef.current.getBoundingClientRect()
@@ -91,11 +93,28 @@ export function CarouselTabs({
     }
     
     return Math.max(200, maxHeight) // Ensure a reasonable minimum height
-  }
+  }, [tabPosition])
+  
+  // Initialize component with correct measurements
+  useEffect(() => {
+    // Update viewport height and max height on mount
+    if (typeof window !== 'undefined') {
+      setViewportHeight(window.innerHeight)
+      // Small delay to ensure DOM is fully rendered
+      setTimeout(() => {
+        setMaxPossibleHeight(calculateMaxHeight(window.innerHeight))
+      }, 50)
+    }
+  }, [calculateMaxHeight])
+  
+  // Update maxPossibleHeight when dependencies change
+  useEffect(() => {
+    setMaxPossibleHeight(calculateMaxHeight(viewportHeight))
+  }, [calculateMaxHeight, viewportHeight, tabPosition])
   
   const maxHeight = useMemo(() => {
-    return calculateMaxHeight(window.innerHeight)
-  }, [window.innerHeight, heightContainerRef])
+    return maxPossibleHeight
+  }, [maxPossibleHeight])
 
   // Handle scroll in the carousel
   const handleCarouselScroll = () => {
@@ -129,8 +148,7 @@ export function CarouselTabs({
     if (leftHeight > 0 && rightHeight > 0) {
       // Linear interpolation between the two heights
       const newHeight = leftHeight + (rightHeight - leftHeight) * progress
-      const minHeight = calculateMaxHeight(window.innerHeight)
-      setInterpolatedHeight(Math.min(newHeight, minHeight))
+      setInterpolatedHeight(Math.min(newHeight, maxPossibleHeight))
     }
     
     // Detect when we've snapped to a tab
@@ -166,11 +184,8 @@ export function CarouselTabs({
     
     const { scrollTop, scrollHeight, clientHeight } = element
     
-    const viewportHeight = window.innerHeight
-    const maxHeight = calculateMaxHeight(viewportHeight)
-
     // Update scrollable state
-    const isScrollable = scrollHeight > (maxHeight ?? clientHeight)
+    const isScrollable = scrollHeight > (maxPossibleHeight ?? clientHeight)
     setHasScrollableContent(prev => ({ ...prev, [tabIndex]: isScrollable }))
     
     // Only evaluate scroll position if content is actually scrollable
@@ -256,6 +271,13 @@ export function CarouselTabs({
   useEffect(() => {
     // Function to handle window resize
     const handleResize = () => {
+      // Update viewport height
+      const newViewportHeight = window.innerHeight
+      setViewportHeight(newViewportHeight)
+      
+      // Update max possible height
+      setMaxPossibleHeight(calculateMaxHeight(newViewportHeight))
+      
       // Force a re-render to recalculate maximum height
       setContentHeights(prev => ({ ...prev }))
       
@@ -274,7 +296,7 @@ export function CarouselTabs({
     return () => {
       window.removeEventListener('resize', handleResize)
     }
-  }, [activeTabIndex])
+  }, [activeTabIndex, calculateMaxHeight])
   
   // Handle parent updates to currentTabIndex
   useEffect(() => {
@@ -336,18 +358,13 @@ export function CarouselTabs({
   }
   
   // Calculate the height to use for the container
-  const getContainerHeight = () => {
+  const getContainerHeight = useCallback(() => {
     if (!adaptiveHeight) return 'auto'
     
     // When scrolling, use the interpolated height, but cap it to max possible height
     if (isScrolling && interpolatedHeight !== null) {
       return `${interpolatedHeight}px`
     }
-    
-    // Get current viewport height
-    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 0
-    
-    const maxPossibleHeight = calculateMaxHeight(viewportHeight)
     
     // Otherwise use the height of the active tab, capped to max possible height
     const activeTabHeight = contentHeights[activeTabIndex]
@@ -357,7 +374,7 @@ export function CarouselTabs({
     
     // Fallback height if nothing is available
     return `${maxPossibleHeight}px`
-  }
+  }, [adaptiveHeight, isScrolling, interpolatedHeight, contentHeights, activeTabIndex, maxPossibleHeight])
   
   return (
     <div className={cn("flex flex-col overflow-hidden relative", className)}>
@@ -410,7 +427,6 @@ export function CarouselTabs({
               }}
               role="tabpanel"
               aria-labelledby={tab.id}
-              hidden={activeTabIndex !== index && !isScrolling}
             >
               <div 
                 className={cn(

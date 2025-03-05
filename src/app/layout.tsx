@@ -35,7 +35,7 @@ export default function RootLayout({
         {/* ClerkProvider is required at the app level for authentication to work properly */}
         <html lang="en" suppressHydrationWarning className={breeSerif.variable}>
         <head>
-        {/* <link
+        <link
           rel="preload"
           href="/parkbeat.svg"
           as="image"
@@ -48,7 +48,7 @@ export default function RootLayout({
           as="image"
           type="image/png"
           fetchPriority="high"
-        /> */}
+        />
         <script
           src="https://kit.fontawesome.com/aaef78e0d5.js"
           crossOrigin="anonymous"
@@ -61,10 +61,10 @@ export default function RootLayout({
           </Suspense>
           {/* Container for page content */}
           <div className={cn(
-                "root-layout-container",
-                "fixed flex flex-col items-center inset-0 pointer-events-none",
-                "z-content",
-              )}
+              "root-layout-container",
+              "fixed flex flex-col items-center inset-0 pointer-events-none",
+              "z-content",
+            )}
               style={{ zIndex: 'var(--z-content)' }}
             >
             {children}

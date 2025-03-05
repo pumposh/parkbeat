@@ -276,7 +276,6 @@
         gap: 0.5rem;
         -webkit-box-pack: center;
         justify-content: center;
-        grid-template-columns: repeat(3, 1fr);
       }
     }
     .cl-formButtonPrimary, .cl-button {
