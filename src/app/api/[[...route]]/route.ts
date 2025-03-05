@@ -6,4 +6,4 @@ export const GET = handle(appRouter.handler)
 export const POST = handle(appRouter.handler)
 export const OPTIONS = handle(appRouter.handler)
 
-export const runtime = 'edge'
+// export const runtime = 'edge'

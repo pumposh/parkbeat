@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense } from "react"
-import { PostsContent } from "../components/posts-content"
+import { PostsContent } from "@/app/components/posts-content"
 
 function PostsPageContent() {
   return (

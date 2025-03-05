@@ -25,7 +25,6 @@ export async function getLocationInfo(lat: number, lng: number, apiKey?: string)
       partialLocationInfo.importance = nominatimData.importance
       partialLocationInfo.osmType = nominatimData.osm_type
       partialLocationInfo.osmId = nominatimData.osm_id
-      console.log('nominatimData', nominatimData)
   
       // MapTiler API for additional context like neighborhoods
       try {

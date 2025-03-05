@@ -165,6 +165,7 @@ export namespace ParkbeatLogger {
     private plugins: LoggerPlugin[] = [];
     private originalConsole: ExtendedConsoleMethods;
     private consoleOverridden: boolean = false;
+    private isLogging: boolean = false; // Guard flag to prevent recursive logging
     
     // Singleton pattern
     public static getInstance(overrideConsole: boolean = true): Logger {
@@ -380,10 +381,10 @@ export namespace ParkbeatLogger {
     /**
      * Get a GroupLogger instance for an existing group
      */
-    public getGroupLogger(groupId: string): GroupLogger {
+    public getGroupLogger(groupId: string, collapsed: boolean = true): GroupLogger {
       // Create the group if it doesn't exist
       if (!this.groups.has(groupId)) {
-        return this.group(groupId, groupId);
+        return this.group(groupId, groupId, collapsed);
       }
       
       return new GroupLogger(this, groupId);
@@ -413,45 +414,54 @@ export namespace ParkbeatLogger {
     private handler = (logMethod: LogLevel, ...args: Parameters<typeof console[LogLevel]>) => {
       if (!this._isEnabled) return;
       
-      // Extract group title from message if possible
-      const maybeExtractGroupTitle = (param: typeof args[0]) => {
-        if (typeof param === 'string' && param.startsWith('[')) {
-          const end = param.indexOf(']');
-          if (end !== -1) {
-            return param.slice(1, end);
-          }
-        }
-        return null;
-      };
-  
-      let groupTitle = maybeExtractGroupTitle(args[0]);
-      let message = args[0];
-      let data = args.slice(1);
-  
-      if (groupTitle) {
-        // If we extracted a group title, update the message and data
-        if (typeof args[0] === 'string') {
-          message = args[0].substring(args[0].indexOf(']') + 1).trim();
-          if (message === '') {
-            message = args[1];
-            data = args.slice(2);
-          }
-        }
-      } else if (args.length > 2) {
-        groupTitle = String(args[0]);
-      } else {
-        groupTitle = 'Generic logs';
-      }
-  
-      // Add message to group
-      this.addMessage(groupTitle, logMethod, message, data);
+      // Prevent recursive logging
+      if (this.isLogging) return;
       
-      // Notify plugins
-      this.notifyPlugins(logMethod, message, ...data);
-      
-      // If console is not overridden, log to console
-      if (!this.consoleOverridden) {
-        this.originalConsole[logMethod](this.consoleOverridden, ...args);
+      try {
+        this.isLogging = true;
+        
+        // Extract group title from message if possible
+        const maybeExtractGroupTitle = (param: typeof args[0]) => {
+          if (typeof param === 'string' && param.startsWith('[')) {
+            const end = param.indexOf(']');
+            if (end !== -1) {
+              return param.slice(1, end);
+            }
+          }
+          return null;
+        };
+    
+        let groupTitle = maybeExtractGroupTitle(args[0]);
+        let message = args[0];
+        let data = args.slice(1);
+    
+        if (groupTitle) {
+          // If we extracted a group title, update the message and data
+          if (typeof args[0] === 'string') {
+            message = args[0].substring(args[0].indexOf(']') + 1).trim();
+            if (message === '') {
+              message = args[1];
+              data = args.slice(2);
+            }
+          }
+        } else if (args.length > 2) {
+          groupTitle = String(args[0]);
+        } else {
+          groupTitle = 'Generic logs';
+        }
+    
+        // Add message to group
+        this.addMessage(groupTitle, logMethod, message, data);
+        
+        // Notify plugins
+        this.notifyPlugins(logMethod, message, ...data);
+        
+        // If console is not overridden, log to console
+        if (!this.consoleOverridden) {
+          this.originalConsole[logMethod](this.consoleOverridden, ...args);
+        }
+      } finally {
+        this.isLogging = false;
       }
     };
     

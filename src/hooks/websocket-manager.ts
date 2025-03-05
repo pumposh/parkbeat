@@ -4,7 +4,7 @@ import { getLogger } from "@/lib/logger";
 import { ParkbeatLogger } from "@/lib/logger-types";
 import { DedupeThing } from "@/lib/promise";
 import type { ClientEvents, ServerEvents } from "@/server/routers/tree-router";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useMemo } from "react";
 import { useState } from "react";
 import { Dispatch } from "react";
@@ -316,6 +316,7 @@ export class WebSocketManager {
     if (!hookSet) return;
 
     this.console.info('hookSet', hookSet);
+    this.stateListeners.forEach(listener => listener(this.connectionState));
 
     this.console.info(`Unregistering hook for event: ${safeToString(key)}`);
 
@@ -679,7 +680,6 @@ export class WebSocketManager {
 
   getHookCount() {
     const count = this.hooks?.size || 0;
-    this.console.info(`Current hook count: ${count}`);
     return count;
   }
 
@@ -690,7 +690,6 @@ export class WebSocketManager {
         activeSubscriptions.add(key);
       }
     });
-    this.console.info(`Getting active subscriptions: ${activeSubscriptions.size}`);
     return activeSubscriptions;
   }
 
@@ -768,12 +767,8 @@ export class WebSocketManager {
     const logger = this.roomSubscriptions?.get(room)?.logger
       || getLogger().group(room, room, false, false)
       || this.console;
-    logger.info(`Setting last ping time for ${room} to ${lastPingTime} (${new Date(lastPingTime).toLocaleTimeString()})`);
     const existingData = this.roomSubscriptions?.get(room);
-    if (!existingData) {
-      logger.info(`Room ${room} not found, cannot set last ping time`);
-      return;
-    }
+    if (!existingData) return;
     
     logger.info(`Existing room data for ${room}:`, existingData);
     const newData = { ...existingData, lastPingTime };  

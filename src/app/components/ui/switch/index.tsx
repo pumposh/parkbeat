@@ -59,12 +59,6 @@ export const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
     };
 
     const toggleCheckbox = async () => {
-      // const dedupe = DedupeThing.getInstance();
-      // const shallPass = await dedupe.dedupe(dedupeKey);
-      // if (!shallPass) {
-      //   dedupe.die();
-      //   return;
-      // }
       _setCheckboxProxy(prev => {
         handleChange(!prev);
         return !prev;
@@ -153,6 +147,12 @@ export const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
           onTouchStart={() => {
             toggleCheckbox();
             navigator.vibrate(50);
+          }}
+          onChange={(e) => {
+            if (e.target.checked && !checkboxProxy) {
+              toggleCheckbox();
+              navigator.vibrate(50);
+            }
           }}
           {...props}
         />

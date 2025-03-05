@@ -17,7 +17,7 @@ import {
 } from './debug-ui';
 import * as Dialog from '@radix-ui/react-dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { SwipeableTabs } from '@/app/components/ui/swipeable-tabs';
+import { CarouselTabs } from '@/app/components/ui/carousel-tabs';
 import useDelayedMemo from '@/hooks/use-delayed-memo';
 import { useMemo } from 'react';
 import { SettingsTab } from './settings-tab';
@@ -297,10 +297,9 @@ export function DebugMenu({
                 </div>
                 
                 <div className="flex-1 overflow-hidden flex flex-col">
-                  <SwipeableTabs 
+                  <CarouselTabs 
                     tabs={debugTabs}
                     adaptiveHeight={true}
-                    defaultTabIndex={initialTabIndex}
                     contentClassName="h-auto"
                     tabPosition="bottom"
                     className="mt-auto mb-2 relative"

@@ -77,9 +77,29 @@ export const MapController = ({
       }
     }
 
+    // Initial calculation
     calculatePosition()
+    
+    // Watch for DOM changes that might affect the header
+    const observer = new MutationObserver(() => {
+      calculatePosition()
+    })
+    
+    // Observe the entire document for structural changes
+    observer.observe(document.body, { 
+      childList: true, 
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style', 'class']
+    })
+    
+    // Also handle resize events
     window.addEventListener('resize', calculatePosition)
-    return () => window.removeEventListener('resize', calculatePosition)
+    
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', calculatePosition)
+    }
   }, [])
 
   // Get IP location on mount
@@ -427,8 +447,6 @@ export const MapController = ({
           project._loc_lng !== prevProject._loc_lng ||
           project.name !== prevProject.name
       })
-      
-    console.log('[MapController] projectsChanged', projectsChanged)
 
     if (!projectsChanged) return
 

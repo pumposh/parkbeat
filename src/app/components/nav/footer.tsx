@@ -1,12 +1,9 @@
-'use client'
+'use server'
 
-import { useUser } from "@clerk/nextjs"
+import { currentUser } from "@clerk/nextjs/server"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { useState, useEffect } from "react"
 import { SettingsDialog } from "../settings-dialog"
-import { UserButton } from "@clerk/nextjs"
 
 type FooterAction = {
   href?: string
@@ -40,21 +37,23 @@ const footerActions: FooterAction[] = [
   }
 ]
 
-export const FooterMenu = () => {
-  const { user } = useUser()
-  const pathname = usePathname()
+// Using memo to prevent unnecessary re-renders
+export default async function FooterMenu({ pathname }: { pathname: string }) {
+  const user = await currentUser()
 
-  const isAdmin = user?.organizationMemberships?.some(
-    (membership) => membership.role === "org:admin"
-  )
+  console.log(user);
+  const isAdmin = false;
+  // const isAdmin = user?.publicMetadata.some(
+  //   (membership) => membership.role === "org:admin"
+  // )
 
   const visibleActions = footerActions.filter(action => 
     !action.adminOnly || (action.adminOnly && isAdmin)
   )
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 parkbeat-footer" style={{ zIndex: 'var(--z-header)' }}>
-      <div className="mx-auto px-3 py-1.5">
+    <div id="footer" className="parkbeat-footer" style={{ zIndex: 'var(--z-header)' }}>
+      <div className="mx-auto px-3 pb-1.5">
         <div className="relative">
           <nav className="frosted-glass rounded-2xl px-3 py-1.5 flex items-center justify-around relative">
             {visibleActions.map((action) => (

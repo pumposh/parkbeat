@@ -90,13 +90,14 @@
     background-color: var(--background);
     color: var(--foreground);
   }
-  body:has([data-clerk-component="SignIn"]) { 
+  body:has([data-clerk-component="SignIn"]),
+  body:has(.WelcomePage) { 
     .map-controls {
       opacity: 0 !important;
       pointer-events: none !important;
     }
-    .maplibregl-canvas {
-      filter: blur(4px) !important;
+    .map-container {
+      filter: blur(8px) !important;
     }
   }
   
@@ -120,7 +121,6 @@
       inset: -1.4px;
       background: transparent;
       border-radius: inherit;
-      background-color: red;
       opacity: 0.4;
       pointer-events: none;
     }
@@ -259,6 +259,26 @@
       color: var(--foreground);
       backdrop-filter: blur(16px) !important;
     }
+    .cl-signIn-root .cl-card,
+    .cl-signIn-root .cl-signIn-start {
+      @apply bg-transparent;
+      backdrop-filter: none !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0.5rem !important;
+      min-width: 250px !important;
+
+      .cl-socialButtons {
+        box-sizing: border-box;
+        display: grid;
+        -webkit-box-align: stretch;
+        align-items: stretch;
+        gap: 0.5rem;
+        -webkit-box-pack: center;
+        justify-content: center;
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
     .cl-formButtonPrimary, .cl-button {
       background-color: color-mix(in srgb, var(--background) 20%, transparent);
     }
@@ -336,7 +356,7 @@
     }
 
     .root-layout-container {
-      > :first-child {
+      > * {
         pointer-events: auto
       }
     }

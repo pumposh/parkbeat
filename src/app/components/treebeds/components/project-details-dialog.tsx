@@ -9,10 +9,10 @@ import { ProjectShare, ProjectShareSkeleton } from './project-share'
 import { useProjectData } from '@/hooks/use-tree-sockets'
 import type { ProjectFormData } from '../tree-dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
-import { SwipeableTabs } from '@/app/components/ui/swipeable-tabs'
 import { cn } from '@/lib/utils'
 import { ProjectTargetTracker } from './project-target-tracker'
 import { calculateProjectCosts } from '@/lib/cost'
+import { CarouselTabs } from '../../ui/carousel-tabs'
 
 interface ProjectDetailsDialogProps {
   projectId: string
@@ -211,10 +211,9 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
                   isLoading && "min-h-[400px] rounded-lg"
                 )}>
                   {initialData && (
-                    <SwipeableTabs 
+                    <CarouselTabs
                       tabs={tabs}
                       adaptiveHeight={true}
-                      defaultTabIndex={0}
                       contentClassName="h-auto"
                       tabPosition="bottom"
                       className="mt-auto mb-2 relative"

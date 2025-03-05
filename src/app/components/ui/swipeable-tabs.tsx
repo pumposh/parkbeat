@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
-interface Tab {
+export interface Tab {
   id: string
   label: string
   content: ReactNode
@@ -20,9 +20,9 @@ interface SwipeableTabsProps {
   tabClassName?: string
   contentClassName?: string
   onChange?: (index: number) => void
-  defaultTabIndex?: number
+  currentTabIndex?: number
   adaptiveHeight?: boolean
-  tabPosition?: 'top' | 'bottom'
+  tabPosition?: 'top' | 'bottom' | 'none'
 }
 
 export function SwipeableTabs({
@@ -31,24 +31,33 @@ export function SwipeableTabs({
   tabClassName,
   contentClassName,
   onChange,
-  defaultTabIndex = 0,
+  currentTabIndex = 0,
   adaptiveHeight = true,
-  tabPosition = 'top'
+  tabPosition = 'top',
 }: SwipeableTabsProps) {
-  const [activeTabIndex, _setActiveTabIndex] = useState(defaultTabIndex)
+  const [activeTabIndex, _setActiveTabIndex] = useState(currentTabIndex)
   const [isScrolling, setIsScrolling] = useState(false)
   const [contentHeightByTab, setContentHeightByTab] = useState<Record<number, number | null>>({})
+  const [interpolatedHeight, setInterpolatedHeight] = useState<number | null>(null)
+  const [initialHeightsLoaded, setInitialHeightsLoaded] = useState(false)
+  const [allTabsPreloaded, setAllTabsPreloaded] = useState(false)
+  const [isProgrammaticScroll, setIsProgrammaticScroll] = useState(false)
+  const [translateX, setTranslateX] = useState(0)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const tabsContainerRef = useRef<HTMLDivElement>(null)
   const tabContentRefs = useRef<(HTMLDivElement | null)[]>(tabs.map(() => null))
   const tabContentElementRefs = useRef<(HTMLElement | null)[]>(tabs.map(() => null))
+  const preloadContainerRef = useRef<HTMLDivElement>(null)
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const [scrollPositionByTab, setScrollPositionByTab] = useState<Record<number, 'middle' | 'top' | 'bottom'>>({})
   const [hasScrollableContentByTab, setHasScrollableContentByTab] = useState<Record<number, boolean>>({})
   const [displayFooter, setDisplayFooter] = useState(false)
+  const pendingScrollRef = useRef<number | null>(null)
 
-  const [hasRendered, setHasRendered] = useState<boolean[]>(tabs.map((_, index) => index === defaultTabIndex))
+  // Initialize all tabs as rendered for preloading
+  const [hasRendered, setHasRendered] = useState<boolean[]>(tabs.map(() => true))
+  
   const setActiveTabIndex = (index: number) => {
     _setActiveTabIndex(index)
     setHasRendered(prev => {
@@ -57,6 +66,75 @@ export function SwipeableTabs({
       return newHasRendered
     })
   }
+
+  // Proxy function to handle all tab change requests
+  const changeTab = (index: number, source: 'parent' | 'button' | 'scroll') => {
+    // Only update if the index is valid
+    if (index < 0 || index >= tabs.length) {
+      return;
+    }
+    
+    // If the change is from scrolling, just update the active tab
+    if (source === 'scroll') {
+      setActiveTabIndex(index);
+      onChange?.(index);
+      return;
+    }
+    
+    // For parent or button changes, update the scroll position
+    if (scrollContainerRef.current) {
+      const containerWidth = scrollContainerRef.current.clientWidth;
+      
+      // Set flag to indicate this is a programmatic scroll
+      setIsProgrammaticScroll(true);
+      
+      // Store the target index for when scrolling completes
+      pendingScrollRef.current = index;
+      
+      const { scrollLeft } = scrollContainerRef.current
+      const targetScrollLeft = containerWidth * index
+      const dx = targetScrollLeft - scrollLeft
+      setTranslateX(-dx)
+
+      const targetHeight = Math.min(
+        contentHeightByTab[index] ?? 0,
+        scrollContainerRef.current?.clientHeight ?? 0
+      )
+      setInterpolatedHeight(targetHeight)
+      
+      // Set a timeout to handle the case where the scroll event might not fire
+      setTimeout(() => {
+        if (pendingScrollRef.current === index) {
+          setIsProgrammaticScroll(false);
+          pendingScrollRef.current = null;
+          setActiveTabIndex(index);
+          onChange?.(index);
+          setTranslateX(0)
+
+          const targetEl = tabsContainerRef.current?.children[index]
+          if (targetEl) {
+            targetEl.scrollIntoView({ behavior: 'instant' })
+          } else {
+            scrollContainerRef.current?.scrollTo({
+              left: targetScrollLeft,
+              behavior: 'instant'
+            })
+          }
+        }
+      }, 300); // Slightly longer than the scroll animation
+    } else {
+      // If scroll container isn't available, just update the active tab
+      setActiveTabIndex(index);
+      onChange?.(index);
+    }
+  };
+
+  // Handle parent updates to currentTabIndex
+  useEffect(() => {
+    if (currentTabIndex !== activeTabIndex) {
+      changeTab(currentTabIndex, 'parent');
+    }
+  }, [currentTabIndex]);
   
   // Check scroll position to apply appropriate mask
   const checkScrollPosition = (element: HTMLElement, tabIndex: number) => {
@@ -72,38 +150,86 @@ export function SwipeableTabs({
     } else {
       setScrollPositionByTab(prev => ({ ...prev, [tabIndex]: 'middle' }))
     }
-
-    // const isScrollable = scrollHeight > clientHeight;
-    // if (isScrollable !== hasScrollableContentByTab[tabIndex]) {
-    //   setHasScrollableContentByTab(prev => ({ ...prev, [tabIndex]: isScrollable }));
-    // }
   };
 
   // Handle tab click
   const handleTabClick = (index: number) => {
-    setActiveTabIndex(index)
-    // Scroll to the tab content
-    setTimeout(() => {
-      if (scrollContainerRef.current) {
-        const containerWidth = scrollContainerRef.current.clientWidth
-        scrollContainerRef.current.scrollTo({
-          left: containerWidth * index,
-        behavior: 'smooth'
-        })
-      }
-    }, 100)
-
-    if (contentHeightByTab[index]) {
-      setHasScrollableContentByTab(prev => ({ ...prev, [index]: true }))
-    }
+    changeTab(index, 'button');
   }
   
   // Handle scroll events to update active tab based on scroll position
   const handleScroll = () => {
     if (scrollContainerRef.current) {
-      // Set scrolling state to true
-      setIsScrolling(true)
+      // Set scrolling state to true if not programmatic
+      if (!isProgrammaticScroll) {
+        setIsScrolling(true)
+      }
       
+      // Calculate the current scroll progress and interpolate height
+      // regardless of scroll source
+      if (adaptiveHeight) {
+        const { scrollLeft, clientWidth } = scrollContainerRef.current
+        // Avoid division by zero
+        if (clientWidth === 0) {
+          return
+        }
+        
+        // Calculate which tabs we're between and the progress
+        const rawProgress = scrollLeft / clientWidth
+        
+        // Find the indices of the tabs we're between
+        const tabCount = tabs.length
+        let leftIndex = -1
+        let rightIndex = -1
+        let progress = 0
+        
+        // Find the two tabs we're between
+        for (let i = 0; i < tabCount - 1; i++) {
+          const leftBound = i
+          const rightBound = i + 1
+          
+          if (rawProgress >= leftBound && rawProgress <= rightBound) {
+            leftIndex = i
+            rightIndex = i + 1
+            progress = rawProgress - leftBound
+            break
+          }
+        }
+        
+        // Handle edge cases
+        if (leftIndex === -1) {
+          if (rawProgress < 0) {
+            leftIndex = 0
+            rightIndex = 0
+            progress = 0
+          } else {
+            leftIndex = tabCount - 1
+            rightIndex = tabCount - 1
+            progress = 0
+          }
+        }
+        
+        // Get heights for the tabs we're between
+
+        const leftHeight = contentHeightByTab[leftIndex] ?? null
+        const rightHeight = contentHeightByTab[rightIndex] ?? null
+        
+        // Only interpolate if both heights are available
+        if (leftHeight !== null && rightHeight !== null && leftHeight > 0 && rightHeight > 0) {
+          // Linear interpolation between the two heights
+          const newHeight = leftHeight + (rightHeight - leftHeight) * progress
+          setInterpolatedHeight(newHeight)
+        } else {
+          // Use available height if only one is available
+          if (leftHeight !== null && leftHeight > 0) {
+            setInterpolatedHeight(leftHeight)
+          } else if (rightHeight !== null && rightHeight > 0) {
+            setInterpolatedHeight(rightHeight)
+          }
+        }
+      }
+    
+
       // Clear any existing timeout
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current)
@@ -115,20 +241,14 @@ export function SwipeableTabs({
           const { scrollLeft, clientWidth } = scrollContainerRef.current
           const newIndex = Math.round(scrollLeft / clientWidth)
           
-          // Only update if the index has changed and is within bounds
           if (newIndex !== activeTabIndex && newIndex >= 0 && newIndex < tabs.length) {
-            setActiveTabIndex(newIndex)
-            onChange?.(newIndex)
-            
-            // Snap to the nearest tab after scrolling stops
-            scrollContainerRef.current.scrollTo({
-              left: clientWidth * newIndex,
-              behavior: 'smooth'
-            })
+            changeTab(newIndex, 'scroll')
           }
         }
         setIsScrolling(false)
-      }, 150) // Debounce time
+        setIsProgrammaticScroll(false)
+        setInterpolatedHeight(null)
+      }, 150)
     }
   }
   
@@ -141,17 +261,24 @@ export function SwipeableTabs({
   // Scroll to active tab on mount or when active tab changes
   useEffect(() => {
     // Only scroll programmatically if we're not in the middle of a user-initiated scroll
-    if (scrollContainerRef.current && !isScrolling) {
+    if (scrollContainerRef.current && !isScrolling && !isProgrammaticScroll) {
       const containerWidth = scrollContainerRef.current.clientWidth
-      scrollContainerRef.current.scrollTo({
+
+      const targetEl = tabsContainerRef.current?.children[activeTabIndex]
+
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth' })
+      } else {
+        scrollContainerRef.current.scrollTo({
         left: containerWidth * activeTabIndex,
-        behavior: 'smooth'
-      })
+          behavior: 'smooth'
+        })
+      }
     }
     
     // Reset scroll position state when tab changes
     setScrollPositionByTab(prev => ({ ...prev, [activeTabIndex]: 'middle' }))
-  }, [activeTabIndex, isScrolling]);
+  }, [activeTabIndex, isScrolling, isProgrammaticScroll]);
 
   const [footerExtension, setFooterExtension] = useState<ReactNode | null>(null)
 
@@ -169,6 +296,20 @@ export function SwipeableTabs({
     }
   }, [activeTabIndex])
   
+  // Preload all tab heights
+  useEffect(() => {
+    if (!adaptiveHeight || allTabsPreloaded) return;
+
+    // Check if we have heights for all tabs
+    const allHeightsLoaded = tabs.every((_, index) => 
+      contentHeightByTab[index] !== undefined && contentHeightByTab[index] !== null
+    );
+
+    if (allHeightsLoaded) {
+      setAllTabsPreloaded(true);
+    }
+  }, [contentHeightByTab, tabs.length, adaptiveHeight, allTabsPreloaded]);
+  
   // Set up a single resize observer to watch all tab content elements
   useEffect(() => {
     if (!adaptiveHeight) return;
@@ -180,13 +321,22 @@ export function SwipeableTabs({
     
     // Create a single observer for all tabs
     resizeObserverRef.current = new ResizeObserver((entries) => {
+      let updatedHeights = false;
+      
       entries.forEach(entry => {
         // Find which tab this entry corresponds to
         const tabIndex = tabContentElementRefs.current.findIndex(el => el === entry.target);
         if (tabIndex !== -1) {
           // Update height for this specific tab
           const height = entry.target.scrollHeight;
-          setContentHeightByTab(prev => ({ ...prev, [tabIndex]: height }));
+          
+          // Only update if height is valid
+          if (height > 0) {
+            setContentHeightByTab(prev => {
+              updatedHeights = true;
+              return { ...prev, [tabIndex]: height };
+            });
+          }
           
           // Check if content is scrollable
           const isScrollable = entry.target.scrollHeight > entry.target.clientHeight;
@@ -198,6 +348,11 @@ export function SwipeableTabs({
           }
         }
       });
+      
+      // Mark initial heights as loaded if we've updated heights
+      if (updatedHeights && !initialHeightsLoaded) {
+        setInitialHeightsLoaded(true);
+      }
     });
     
     // Observe all rendered tab content elements
@@ -205,11 +360,6 @@ export function SwipeableTabs({
       if (ref && hasRendered[index]) {
         const contentElement = ref.firstElementChild as HTMLElement;
         if (contentElement) {
-          // const isScrollable = contentElement.scrollHeight > contentElement.clientHeight;
-          // if (isScrollable !== hasScrollableContentByTab[index]) {
-          //   setHasScrollableContentByTab(prev => ({ ...prev, [index]: isScrollable }));
-          // }
-
           // Store reference to the content element
           tabContentElementRefs.current[index] = contentElement;
           
@@ -239,7 +389,7 @@ export function SwipeableTabs({
         }
       });
     };
-  }, [adaptiveHeight, hasRendered]);
+  }, [adaptiveHeight, tabContentRefs]);
   
   // Handle window resize
   useEffect(() => {
@@ -248,10 +398,15 @@ export function SwipeableTabs({
       // Just ensure the scroll position is correct
       if (scrollContainerRef.current && !isScrolling) {
         const containerWidth = scrollContainerRef.current.clientWidth
-        scrollContainerRef.current.scrollTo({
-          left: containerWidth * activeTabIndex,
-          behavior: 'smooth'
-        })
+        const targetEl = tabsContainerRef.current?.children[activeTabIndex]
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: 'smooth' })
+        } else {
+          scrollContainerRef.current.scrollTo({
+            left: containerWidth * activeTabIndex,
+            behavior: 'smooth'
+          })
+        }
       }
     };
     
@@ -267,6 +422,7 @@ export function SwipeableTabs({
   
   // Render tab buttons
   const renderTabButtons = () => {
+    if (tabPosition === 'none') return null;
     return tabs.map((tab, index) => (
       <button
         key={tab.id}
@@ -288,6 +444,38 @@ export function SwipeableTabs({
   
   return (
     <div className={cn("flex flex-col overflow-hidden relative", className)}>
+      {/* Hidden container to preload all tab contents for height measurement */}
+      {/* {!allTabsPreloaded && adaptiveHeight && (
+        <div 
+          ref={preloadContainerRef}
+          className="absolute opacity-0 pointer-events-none overflow-hidden"
+          style={{ height: 0, width: '100%' }}
+        >
+          {tabs.map((tab, index) => (
+            <div key={`preload-${tab.id}`} className="w-full">
+              <div 
+                ref={(el) => {
+                  if (el && !tabContentElementRefs.current[index]) {
+                    const contentElement = el.firstElementChild as HTMLElement;
+                    if (contentElement) {
+                      tabContentElementRefs.current[index] = contentElement;
+                      
+                      // Measure height
+                      const height = contentElement.scrollHeight;
+                      if (height > 0 && contentHeightByTab[index] === undefined) {
+                        setContentHeightByTab(prev => ({ ...prev, [index]: height }));
+                      }
+                    }
+                  }
+                }}
+              >
+                {tab.content}
+              </div>
+            </div>
+          ))}
+        </div>
+      )} */}
+
       {/* Tab headers - conditionally rendered at top */}
       {tabPosition === 'top' && (
         <div className="relative">
@@ -305,15 +493,22 @@ export function SwipeableTabs({
         ref={scrollContainerRef}
         className={cn(
           "flex overflow-x-auto snap-x snap-mandatory scrollbar-hide overflow-y-hidden flex-grow",
+          isProgrammaticScroll ? 'overflow-x-visible' : 'overflow-x-auto',
           contentClassName,
           contentHeightByTab[activeTabIndex] && contentHeightByTab[activeTabIndex] > (scrollContainerRef.current?.clientHeight ?? 0) ? 'overflow-y-auto' : 'overflow-y-hidden',
           !!tabs[activeTabIndex]?.className ? tabs[activeTabIndex]?.className : ''
         )}
-        style={{ 
+        style={{
           scrollbarWidth: 'none', 
           msOverflowStyle: 'none',
-          height: adaptiveHeight && contentHeightByTab[activeTabIndex] ? `${contentHeightByTab[activeTabIndex]}px` : '0px',
-          transition: 'height 0.3s ease',
+          height: adaptiveHeight 
+            ? (isScrolling || isProgrammaticScroll) && interpolatedHeight !== null
+              ? `${interpolatedHeight}px` 
+              : contentHeightByTab[activeTabIndex] !== undefined && contentHeightByTab[activeTabIndex] !== null
+                ? `${contentHeightByTab[activeTabIndex]}px` 
+                : initialHeightsLoaded ? '0px' : '0px'
+              : '0px',
+          transition: isScrolling ? 'none' : 'height 0.3s ease',
           scrollBehavior: 'smooth',
         }}
         onScroll={handleScroll}
@@ -321,23 +516,27 @@ export function SwipeableTabs({
         {tabs.map((tab, index) => (
           <div 
             key={tab.id}
-            className="min-w-full w-full snap-center flex flex-col flex-grow animate-fadeIn overflow-hidden"
+            className={cn(
+              "min-w-full w-full snap-center",
+              "flex flex-col flex-grow",
+              "animate-fadeIn overflow-hidden",
+            )}
           >
             <div 
               className={cn(
                 'overflow-y-auto scrollbar-hide',
                 hasScrollableContentByTab[index] && 'scrollable-content-mask',
-                hasScrollableContentByTab[index] && scrollPositionByTab[index] === 'top' && 'scrollable-content-mask--at-top',
-                hasScrollableContentByTab[index] && scrollPositionByTab[index] === 'bottom' && 'scrollable-content-mask--at-bottom'
-              )}
+                hasScrollableContentByTab[index] && scrollPositionByTab[index] === 'top'
+                  && 'scrollable-content-mask--at-top',
+                hasScrollableContentByTab[index] && scrollPositionByTab[index] === 'bottom'
+                  && 'scrollable-content-mask--at-bottom'
+              )} 
               ref={(el) => {
                 tabContentRefs.current[index] = el;
               }}
               onScroll={(e) => handleContentScroll(e, index)}
             >
-              {index === activeTabIndex
-                || hasRendered[index]
-                ? tab.content : tab.skeleton}
+              {tab.content}
             </div>
           </div>
         ))}

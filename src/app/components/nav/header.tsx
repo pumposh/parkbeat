@@ -1,9 +1,11 @@
+'use server'
+
 import Link from "next/link"
 import { Logo } from "../ui/logo"
 import { cn } from "@/lib/utils"
 import { DebugControl } from "../dev/debug-control"
 
-export const Header = () => {
+export async function Header() {
   return (
     <header className="fixed top-0 left-0 right-0 parkbeat-header" style={{ zIndex: 'var(--z-header)' }}>
       <div className="header-content mx-auto px-3 py-1.5">

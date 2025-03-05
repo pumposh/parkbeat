@@ -13,12 +13,10 @@ import { useAdminSettings } from '@/app/state/use-app-settings';
 import { usePersistentState } from '@/hooks/use-persistence';
 
 // Register the Draggable plugin
-if (typeof window !== 'undefined') {
-  gsap.registerPlugin(Draggable);
-}
+gsap.registerPlugin(Draggable);
 
 // Generate a unique ID for this component instance
-const COMPONENT_ID = 'floating-debug-control-' + generateId();
+const COMPONENT_ID = 'floating-debug-control';
 
 // Physics constants
 const EDGE_MAGNETIC_THRESHOLD = 100; // Distance in pixels where edge magnetism starts
@@ -94,8 +92,6 @@ export function FloatingDebugControl() {
 
   // Clean up any existing instances on mount and handle cleanup on unmount
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
     // Clean up any existing instances with the same class but different ID
     const cleanup = () => {
       const existingControls = document.querySelectorAll('.floating-debug-control');
@@ -460,18 +456,29 @@ export function FloatingDebugControl() {
 
   // Initialize GSAP Draggable
   useEffect(() => {
-    if (!controlRef.current || typeof window === 'undefined') return;
+    if (!controlRef.current) return;
     if (!isInitialized) return;
 
     let coords = { x: 0, y: 0 };
-    if (lastPosition.x || lastPosition.y) {
+    
+    // Check if we have a saved position from previous sessions
+    if (lastPosition.x !== 0 || lastPosition.y !== 0) {
       coords = { x: lastPosition.x || 0, y: lastPosition.y || 0 };
     } else {
-      coords = { x: 0, y: 0 };
+      // Set initial position to horizontal center and 12px from top
+      const controlWidth = controlRef.current.offsetWidth;
+      const windowWidth = windowSize.current.width;
+      coords = { 
+        x: (windowWidth / 2) - (controlWidth / 2), 
+        y: 12 
+      };
     }
 
     setLastPosition(coords);
     updateEdgeState(coords.x, coords.y);
+
+    // Set the initial position using GSAP
+    gsap.set(controlRef.current, { x: coords.x, y: coords.y });
 
     // Kill any existing draggable instance
     if (draggableRef.current) {
@@ -690,10 +697,7 @@ export function FloatingDebugControl() {
         animationFrameId.current = null;
       }
     };
-  }, [isDialogOpen]);
-
-
-
+  }, [isDialogOpen, isInitialized]);
 
   // Handle direct click on the control
   const handleClick = () => {
@@ -730,9 +734,9 @@ export function FloatingDebugControl() {
         )}`}
         style={{
           position: 'absolute',
-          top: '13px',
-          left: '50dvw',
-          transform: 'translateX(-50%)',
+          top: '0',
+          left: '0',
+          transform: 'translateX(0)',
           touchAction: 'none',
           pointerEvents: isEnabled ? 'auto' : 'none', // Control pointer events based on enabled state
           zIndex: 10000, // Use a very high z-index to ensure it's above portals
@@ -748,13 +752,13 @@ export function FloatingDebugControl() {
         
         {/* Hook count */}
         <div className="flex items-center gap-1 text-xs text-zinc-800 dark:text-white">
-          <i className="fa-solid fa-plug text-zinc-500 dark:text-zinc-400" />
+          <i className="fa-solid fa-plug text-zinc-500 dark:text-zinc-400" aria-hidden="true" />
           <span>{hookCount}</span>
         </div>
         
         {/* Subscription count */}
         <div className="flex items-center gap-1 text-xs text-zinc-800 dark:text-white">
-          <i className="fa-solid fa-satellite-dish text-zinc-500 dark:text-zinc-400" />
+          <i className="fa-solid fa-satellite-dish text-zinc-500 dark:text-zinc-400" aria-hidden="true" />
           <span>{activeSubscriptions.length}</span>
         </div>
       </div>
