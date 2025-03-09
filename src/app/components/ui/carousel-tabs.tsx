@@ -4,6 +4,8 @@ import { useState, useRef, useEffect, ReactNode, useMemo, useCallback } from 're
 import { cn } from '@/lib/utils'
 import styles from './carousel-tabs.module.css'
 import { isNullish } from '@/lib/nullable'
+import { SignInButton } from '@clerk/nextjs'
+import { useRouter } from 'next/navigation'
 
 export interface Tab {
   id: string
@@ -25,6 +27,12 @@ interface CarouselTabsProps {
   currentTabIndex?: number
   adaptiveHeight?: boolean
   tabPosition?: 'top' | 'bottom' | 'none'
+
+  // Guided Carousel Tabs
+  completionNavigateTo?: string
+  dotNavigators?: boolean
+  showControls?: boolean
+  actionComponent?: ReactNode
 }
 
 export function CarouselTabs({
@@ -36,7 +44,15 @@ export function CarouselTabs({
   currentTabIndex,
   adaptiveHeight = true,
   tabPosition = 'top',
+
+  // Guided Carousel Tabs
+  completionNavigateTo,
+  dotNavigators,
+  showControls,
+  actionComponent,
 }: CarouselTabsProps) {
+  const router = useRouter()
+
   const [activeTabIndex, setActiveTabIndex] = useState(currentTabIndex ?? 0)
   const [hasScrollableContent, setHasScrollableContent] = useState<Record<number, boolean>>({})
   const [scrollPosition, setScrollPosition] = useState<Record<number, 'middle' | 'top' | 'bottom'>>({})
@@ -48,7 +64,9 @@ export function CarouselTabs({
   const [interpolatedHeight, setInterpolatedHeight] = useState<number | null>(null)
   const [isScrolling, setIsScrolling] = useState(false)
   const [viewportHeight, setViewportHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 0)
-  const [maxPossibleHeight, setMaxPossibleHeight] = useState(typeof window !== 'undefined' ? window.innerHeight * 0.8 : 500)
+  const [maxPossibleHeight, setMaxPossibleHeight] = useState(500)
+  const [isMounted, setIsMounted] = useState(false)
+  const [hasContentHeights, setHasContentHeights] = useState(false)
   const scrollingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
   // References
@@ -61,7 +79,8 @@ export function CarouselTabs({
   
   // Handle tab click
   const handleTabClick = (index: number) => {
-    setActiveTabIndex(index)
+    setIsScrolling(true)
+    setInterpolatedHeight(contentHeights[activeTabIndex] ?? 0)
     onChange?.(index)
     
     // Scroll to tab
@@ -69,6 +88,24 @@ export function CarouselTabs({
       const tabElement = contentRefs.current[index]
       tabElement?.scrollIntoView({ behavior: 'smooth', inline: 'start' })
     }
+    
+    
+    // Set a timeout to handle the end of scrolling
+    scrollingTimeoutRef.current = setTimeout(() => {
+      setIsScrolling(false)
+      setInterpolatedHeight(null) // Clear interpolated height to use the actual tab height
+      setActiveTabIndex(index)
+      
+      if (carouselRef.current) {
+        const { scrollLeft, clientWidth } = carouselRef.current
+        // Update active tab if it changed
+        const newIndex = Math.round(scrollLeft / clientWidth)
+        if (newIndex !== activeTabIndex && newIndex >= 0 && newIndex < tabs.length) {
+          setActiveTabIndex(newIndex)
+          onChange?.(newIndex)
+        }
+      }
+    }, 500)
   }
   
     
@@ -100,10 +137,15 @@ export function CarouselTabs({
     // Update viewport height and max height on mount
     if (typeof window !== 'undefined') {
       setViewportHeight(window.innerHeight)
-      // Small delay to ensure DOM is fully rendered
+      
+      // Calculate initial height immediately
+      const initialHeight = calculateMaxHeight(window.innerHeight)
+      setMaxPossibleHeight(initialHeight)
+      
+      // Small delay to ensure DOM is fully rendered before enabling transitions
       setTimeout(() => {
-        setMaxPossibleHeight(calculateMaxHeight(window.innerHeight))
-      }, 50)
+        setIsMounted(true) // Set mounted to true after initial calculations
+      }, 10) // Reduced timeout for faster initialization
     }
   }, [calculateMaxHeight])
   
@@ -240,7 +282,17 @@ export function CarouselTabs({
       
       // Update heights if we have any
       if (Object.keys(heightUpdates).length > 0) {
-        setContentHeights(prev => ({ ...prev, ...heightUpdates }))
+        setContentHeights(prev => {
+          const newHeights = { ...prev, ...heightUpdates };
+          // If we have a height for the active tab, mark that we have content heights
+          if (newHeights[activeTabIndex] && newHeights[activeTabIndex] > 0) {
+            // Small delay before enabling animations to ensure everything is rendered
+            setTimeout(() => {
+              setHasContentHeights(true);
+            }, 50);
+          }
+          return newHeights;
+        })
       }
     })
     
@@ -265,7 +317,7 @@ export function CarouselTabs({
         clearTimeout(scrollingTimeoutRef.current)
       }
     }
-  }, [adaptiveHeight, tabs.length])
+  }, [adaptiveHeight, tabs.length, activeTabIndex])
   
   // Add window resize handler to recalculate height constraints
   useEffect(() => {
@@ -399,7 +451,8 @@ export function CarouselTabs({
         ref={heightContainerRef}
         className={cn(
           styles.heightContainer,
-          isScrolling && styles.heightContainerScrolling
+          (isMounted && hasContentHeights && !isScrolling) && styles.heightContainerReady,
+          (!isMounted || !hasContentHeights || isScrolling) && styles.heightContainerScrolling
         )}
         style={{ 
           height: getContainerHeight(),
@@ -420,6 +473,7 @@ export function CarouselTabs({
               ref={el => {contentRefs.current[index] = el}}
               className={cn(
                 styles.carouselItem,
+                (isMounted && hasContentHeights) && styles.carouselItemAnimated,
                 tab.className
               )}
               style={{ 
@@ -447,7 +501,41 @@ export function CarouselTabs({
           ))}
         </div>
       </div>
+
+      {dotNavigators && (
+        <div className="flex justify-center space-x-1 mb-4">
+          {tabs.map((_, index) => (
+            <div 
+              key={index}
+              className={cn(
+                "h-1 rounded-full transition-all duration-300 cursor-pointer",
+                index === activeTabIndex 
+                  ? "w-8 bg-zinc-900 dark:bg-zinc-200" 
+                  : "w-2 bg-zinc-300 dark:bg-zinc-400"
+              )}
+              
+              onClick={() => handleTabClick(index)}
+            />
+          ))}
+        </div>
+      )}
       
+      {showControls && (
+        <GuideButtons
+          prevStep={() => handleTabClick(activeTabIndex - 1)}
+          nextStep={() => {
+            if (activeTabIndex < tabs.length - 1) {
+              handleTabClick(activeTabIndex + 1)
+            } else if (completionNavigateTo) {
+              router.push(completionNavigateTo)
+            }
+          }}
+          currentStep={activeTabIndex}
+          steps={tabs}
+          actionComponent={actionComponent}
+        />
+      )}
+
       {/* Tab headers - bottom position */}
       {tabPosition === 'bottom' && (
         <div className="relative mt-auto max-w-full">
@@ -476,3 +564,63 @@ export function CarouselTabs({
     </div>
   )
 } 
+
+interface GuideButtonsProps {
+  prevStep: () => void
+  nextStep: () => void
+  currentStep: number
+  steps: Tab[]
+  actionComponent?: ReactNode
+}
+
+function GuideButtons({
+  prevStep,
+  nextStep,
+  currentStep,
+  steps,
+  actionComponent,
+}: GuideButtonsProps) {
+  return (
+    <div className="flex justify-between w-full gap-3 px-6">
+      {(
+        <button 
+          type="button"
+          onClick={prevStep}
+          disabled={currentStep === 0}
+          className={cn(
+            "min-w-[100px] rounded-2xl",
+            "focus-visible:outline-none focus-visible:ring-zinc-300",
+            "dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100",
+            "h-12 flex items-center justify-center text-zinc-800 dark:text-zinc-100 text-xl",
+            "disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-transparent disabled:ring-0 disabled:hover:ring-0 disabled:hover:bg-transparent"
+          )}
+          aria-label="Back"
+        >
+          <i className="fa-solid fa-arrow-left transition-opacity" aria-hidden="true" />
+        </button>
+      )}
+      
+      {currentStep === steps.length - 1 && actionComponent ? (
+        actionComponent
+      ) : (
+        <button 
+          type="button"
+          onClick={nextStep}
+          className={cn(
+            "min-w-[100px] rounded-2xl bg-emerald-500 hover:bg-emerald-500",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2",
+            "h-12 flex items-center justify-center text-white text-xl",
+            "opacity-90 hover:opacity-100 focus-visible:opacity-100 focus:opacity-100"
+          )}
+          aria-label="Continue"
+        >
+          {currentStep === steps.length - 1 ? (
+            <i className="fa-solid fa-check transition-opacity" aria-hidden="true" />
+          ) : (
+            <i className="fa-solid fa-arrow-right transition-opacity" aria-hidden="true" />
+          )}
+        </button>
+      )}
+    </div>
+  )
+}

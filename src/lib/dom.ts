@@ -8,61 +8,45 @@ import ReactDOM from 'react-dom/client'
  * @returns The auto-size of the element
  */
 export const getElementAutoSize = (element: HTMLElement) => {
-  console.group('getElementAutoSize')
-  console.log('Input element:', element)
-  console.log('Element children:', element.children)
-
   const parent = window.document.body ?? element.parentElement;
   if (!parent) {
-    console.warn('No parent element found')
-    console.groupEnd()
     return { width: 0, height: 0 }
   }
 
-  // Create a container for the clone
+  // Create a container to measure the element
   const container = document.createElement('div')
   container.style.position = 'absolute'
-  container.style.left = '-9999px'
-  container.style.width = 'auto'
-  container.style.minWidth = 'fit-content'
-  container.style.height = 'auto'
-  container.style.minHeight = 'fit-content'
-  container.style.opacity = '0'
-  container.style.pointerEvents = 'none'
   container.style.visibility = 'hidden'
-  
-  // Clone the element and update React keys
-  console.log('Creating root in container:', container)
-  const root = ReactDOM.createRoot(container)
-  const content = element.firstElementChild
-  console.log('First element child:', content)
+  container.style.pointerEvents = 'none'
+  container.style.top = '0'
+  container.style.left = '0'
+  container.style.width = 'auto'
+  container.style.height = 'auto'
+  container.style.maxWidth = 'none'
+  container.style.maxHeight = 'none'
+  container.style.overflow = 'visible'
+  container.style.display = 'inline-block'
 
-  if (content) {
-    console.log('Converting to React element and updating keys')
-    const reactElement = content as unknown as ReactElement
+  // Clone the element's content
+  const contentElement = element.querySelector('[data-content]')
+  const root = ReactDOM.createRoot(container)
+
+  if (contentElement) {
+    const reactElement = (contentElement as any)._reactRootContainer?._internalRoot?.current?.child?.memoizedProps?.children
     
-    // Create a wrapper element with a unique key to ensure no conflicts
-    const wrapperKey = `autosize-wrapper-${generateId()}`
-    console.log('Created wrapper key:', wrapperKey)
-    
+    // Wrap the content in a div with the same styles as the original element
     const wrappedContent = createElement('div', {
-      key: wrapperKey,
       style: { position: 'static', visibility: 'visible' }
     }, updateChildrenKeys(reactElement))
     
-    console.log('Wrapped content:', wrappedContent)
     root.render(wrappedContent)
-  } else {
-    console.warn('No content element found to clone')
   }
 
   parent.appendChild(container)
   const { width, height } = container.getBoundingClientRect()
-  console.log('Measured dimensions:', { width, height })
   parent.removeChild(container)
   root.unmount()
 
-  console.groupEnd()
   return { width, height }
 }
 
@@ -72,18 +56,14 @@ export const getElementAutoSize = (element: HTMLElement) => {
  * @returns The children with updated keys
  */
 export const updateChildrenKeys = (children: ReactNode): ReactNode => {
-  console.group('updateChildrenKeys')
-  console.log('Input children:', children)
-
-  const result = Children.map(children, child => {
+  // Remove console logging to prevent potential infinite recursion with logger
+  return Children.map(children, child => {
     if (!isValidElement(child)) {
-      console.log('Not a valid element, returning as is:', child)
       return child
     }
     
     // Generate a unique key for this element
     const uniqueKey = `autosize-${generateId()}`
-    console.log('Generated key:', uniqueKey, 'for element:', child)
     
     // Clone with new key and recursively update children
     const element = child as ReactElement<{ children?: ReactNode }>
@@ -92,12 +72,7 @@ export const updateChildrenKeys = (children: ReactNode): ReactNode => {
       ...element.props,
       children: updateChildrenKeys(element.props.children)
     })
-    console.log('Cloned element:', cloned)
     return cloned
   })
-
-  console.log('Result:', result)
-  console.groupEnd()
-  return result
 }
   

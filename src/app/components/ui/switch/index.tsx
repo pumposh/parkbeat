@@ -34,6 +34,10 @@ export const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
     const dedupeKey = useMemo(() => {
       return `${generateId()}`;
     }, []);
+    
+    const dedupe = useMemo(() => {
+      return DedupeThing.getInstance()
+    }, []);
 
     // Use the provided gradient or fall back to the default primary gradient
     const activeGradient = gradientClass || gradients.primary;
@@ -52,6 +56,7 @@ export const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
       setTimeout(() => {
         setIsAnimating(false);
         setAnimationDirection(null);
+        dedupe.kill(dedupeKey)
       }, 350); // Animation duration + a small buffer
       
       await asyncTimeout(0);
@@ -59,6 +64,7 @@ export const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
     };
 
     const toggleCheckbox = async () => {
+      if (!(await dedupe.dedupe(dedupeKey))) return;
       _setCheckboxProxy(prev => {
         handleChange(!prev);
         return !prev;

@@ -35,27 +35,26 @@ export class WebSocketLogger {
     }
   
     private flushLogs() {
-      if (this.logBuffer.length === 0) return
+      if (this.logBuffer.length > 0) {
+        const groupedLogs = this.logBuffer.reduce((acc, log) => {
+          const logs = acc[log.type] || []
+          acc[log.type] = [...logs, log]
+          return acc
+        }, {} as Record<string, typeof this.logBuffer>)
   
-      const groupedLogs = this.logBuffer.reduce((acc, log) => {
-        const logs = acc[log.type] || []
-        acc[log.type] = [...logs, log]
-        return acc
-      }, {} as Record<string, typeof this.logBuffer>)
-  
-      console.group(`WebSocket Logs (Active Handlers: ${this.activeHandlers.size})`)
-      
-      Object.entries(groupedLogs).forEach(([type, logs]) => {
-        console.group(type.toUpperCase())
-        logs.forEach(log => {
-          const time = log.timestamp.toISOString().split('T')[1]?.slice(0, -1)
-          console.log(`[${time}] ${log.message}`)
+        // Use a simpler logging approach to avoid potential infinite recursion
+        console.log(`WebSocket Logs (Active Handlers: ${this.activeHandlers.size})`)
+        
+        Object.entries(groupedLogs).forEach(([type, logs]) => {
+          console.log(`${type.toUpperCase()}:`)
+          logs.forEach(log => {
+            const time = log.timestamp.toISOString().split('T')[1]?.slice(0, -1)
+            console.log(`  [${time}] ${log.message}`)
+          })
         })
-        console.groupEnd()
-      })
-      
-      console.groupEnd()
-      this.logBuffer = []
+        
+        this.logBuffer = []
+      }
     }
   
     cleanup() {

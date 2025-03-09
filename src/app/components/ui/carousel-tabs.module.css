@@ -23,8 +23,12 @@
   scroll-snap-align: start;
   display: flex;
   flex-direction: column;
-  animation: fadeIn 0.3s ease-in-out;
   overflow: hidden;
+}
+
+/* Animated carousel item - only applied when ready */
+.carouselItemAnimated {
+  animation: fadeIn 0.3s ease-in-out;
 }
 
 /* Tab buttons container */
@@ -56,35 +60,33 @@
 }
 
 .tabButtonActive {
-  color: rgb(82 82 91); /* zinc-600 */
-  background-color: rgb(212 212 216 / 0.5); /* zinc-300/50 */
+  @apply text-zinc-600 bg-zinc-300/50;
 }
 
 /* Dark mode for tab button active */
 @media (prefers-color-scheme: dark) {
   .tabButtonActive {
-    color: rgb(212 212 216); /* dark:text-zinc-300 */
-    background-color: rgb(39 39 42 / 0.5); /* dark:bg-zinc-800/50 */
+    @apply text-zinc-300 bg-zinc-800/50;
   }
 }
 
 /* Tab button inactive */
 .tabButtonInactive {
-  color: rgb(63 63 70); /* zinc-700 */
+  @apply text-zinc-700;
 }
 
 .tabButtonInactive:hover {
-  color: rgb(82 82 91); /* zinc-600 */
+  @apply text-zinc-600;
 }
 
 /* Dark mode for tab button inactive */
 @media (prefers-color-scheme: dark) {
   .tabButtonInactive {
-    color: rgb(244 244 245); /* dark:text-zinc-100 */
+    @apply text-zinc-100;
   }
   
   .tabButtonInactive:hover {
-    color: rgb(212 212 216); /* dark:hover:text-zinc-300 */
+    @apply text-zinc-300;
   }
 }
 
@@ -119,6 +121,7 @@
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  padding-bottom: 32px;
 }
 
 .scrollableContent::-webkit-scrollbar {
@@ -140,12 +143,17 @@
 
 /* Height transition container */
 .heightContainer {
-  transition: height 0.3s ease-out;
   overflow: hidden;
+  /* No transition by default */
+}
+
+/* Only apply transition when content is ready */
+.heightContainerReady {
+  transition: height 0.3s ease-out;
 }
 
 .heightContainerScrolling {
-  transition: none; /* Disable transition during active scrolling for smoother animation */
+  transition: none !important; /* Disable transition during initial mount and active scrolling */
 }
 
 /* Animations */

@@ -16,8 +16,8 @@ type FooterAction = {
 const footerActions: FooterAction[] = [
   {
     href: "/posts",
-    icon: "fa-solid fa-comments",
-    label: "Posts"
+    icon: "fa-solid fa-house",
+    label: "Home"
   },
   {
     href: "/projects",
@@ -25,7 +25,7 @@ const footerActions: FooterAction[] = [
     label: "Projects",
   },
   {
-    href: "/notifications",
+    href: "/updates",
     icon: "fa-solid fa-bell",
     label: "Updates"
   },

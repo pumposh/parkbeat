@@ -40,8 +40,9 @@ export function LoggerProvider({
   defaultLogLevel = 'debug',
   defaultEnabled = process.env.NODE_ENV !== 'production',
 }: LoggerProviderProps) {
-  // Get the logger instance
-  const logger = getLogger(overrideConsole);
+  // Get the logger instance but don't override console immediately
+  // This prevents recursive logging during initialization
+  const logger = React.useMemo(() => getLogger(false), []);
   
   // Initialize state
   const [isEnabled, setIsEnabled] = useState(defaultEnabled);
@@ -53,13 +54,21 @@ export function LoggerProvider({
     logger.setEnabled(isEnabled);
     logger.setLogLevel(logLevel);
     
-    // Log initialization
-    console.info('[Logger] Logger initialized');
-    console.info('[Logger] App version:', process.env.NEXT_PUBLIC_APP_VERSION || 'unknown');
-    console.info('[Logger] Environment:', process.env.NODE_ENV);
+    // Log initialization using direct console methods to avoid recursion
+    const originalConsole = {
+      log: window.console.log.bind(console),
+      info: window.console.info.bind(console),
+      warn: window.console.warn.bind(console),
+      error: window.console.error.bind(console),
+      debug: window.console.debug?.bind(console) || window.console.log.bind(console),
+    };
+    
+    originalConsole.info('[Logger] Logger initialized');
+    originalConsole.info('[Logger] App version:', process.env.NEXT_PUBLIC_APP_VERSION || 'unknown');
+    originalConsole.info('[Logger] Environment:', process.env.NODE_ENV);
     
     if (typeof window !== 'undefined') {
-      console.info('[Logger] User agent:', navigator.userAgent);
+      originalConsole.info('[Logger] User agent:', navigator.userAgent);
       
       // Add a global window property for debugging
       (window as any).__logger = {
@@ -68,6 +77,21 @@ export function LoggerProvider({
         disable: () => logger.setEnabled(false),
         setLevel: (level: ParkbeatLogger.LogLevel) => logger.setLogLevel(level),
       };
+    }
+    
+    // Only override console after initialization if requested
+    if (overrideConsole) {
+      // Small delay to ensure initialization logs are complete
+      setTimeout(() => {
+        // Call a method that will trigger the console override
+        // We need to do this because we initialized with overrideConsole=false
+        logger.setEnabled(isEnabled);
+        
+        // Force override console methods
+        (logger as any).overrideConsoleMethods?.();
+        
+        originalConsole.info('[Logger] Console methods overridden');
+      }, 100);
     }
     
     // Clean up on unmount

@@ -148,13 +148,9 @@ export function StepFormDialog({
           const availableHeight = window.innerHeight - headerHeight - footerHeight - paddingPx
           
           // If content is taller than available space, constrain it
-          console.log('[step-form-dialog] height', height)
-          console.log('[step-form-dialog] availableHeight', availableHeight)
           if (height > availableHeight) {
             height = availableHeight
           }
-
-          console.log('[step-form-dialog] new height', height)
 
           setContentHeight(height)
           setIsHeightTransitioning(true)

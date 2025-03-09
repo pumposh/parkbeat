@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { cn } from '@/lib/utils'
+import { useRef } from 'react'
 import { Logo } from '../ui/logo'
 import { useRouter } from 'next/navigation'
 import { SignInButton, useUser } from '@clerk/nextjs'
-import { CarouselTabs, Tab } from '../ui/carousel-tabs'
+import { Tab } from '../ui/carousel-tabs'
+import { CarouselTabs } from '../ui/carousel-tabs'  
+import { cn } from '@/lib/utils'
 
 type Step = {
   title: string
@@ -53,33 +54,11 @@ const steps: Step[] = [
 ]
 
 export function WelcomeGuide({ allowSkip = true }: { allowSkip?: boolean }) {
-  const [currentStep, setCurrentStep] = useState(0)
   const router = useRouter()
   const tabsRef = useRef<HTMLDivElement>(null)
   const { user } = useUser()
   
-  const [requestedStep, setRequestedStep] = useState<number | null>(null)
-  const nextStep = () => {
-    if (currentStep < steps.length - 1) {
-      setRequestedStep(currentStep + 1)
-      setCurrentStep(currentStep + 1)
-    } else if (user) {
-      router.push('/projects')
-    }
-  }
-  
-  const prevStep = () => {
-    if (currentStep > 0) {
-      setRequestedStep(currentStep - 1)
-      setCurrentStep(currentStep - 1)
-    }
-  }
-  
-  const skipToExplore = () => {
-    router.push('/sign-in')
-  }
-  
-  // Create tabs for SwipeableTabs component
+  // Create tabs for GuidedCarouselTabs component
   const tabs: Tab[] = steps.map((step, index) => ({
     id: `step-${index}`,
     label: `Step ${index + 1}`,
@@ -109,7 +88,43 @@ export function WelcomeGuide({ allowSkip = true }: { allowSkip?: boolean }) {
     className: "welcome-tab-content"
   }))
   
-  // Handle tab change
+  // Create action component for final step if user isn't signed in
+  const actionComponent = user ? undefined : (
+    <SignInButton forceRedirectUrl="/projects">
+      <button 
+        type="button"
+        className={cn(
+          "min-w-[100px] rounded-2xl bg-emerald-500 hover:bg-emerald-500",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2",
+          "h-12 flex items-center justify-center text-white text-xl",
+          "opacity-90 hover:opacity-100 focus-visible:opacity-100 focus:opacity-100"
+        )}
+        aria-label="Get Started"
+      >
+        <i className="fa-solid fa-check transition-opacity" aria-hidden="true" />
+      </button>
+    </SignInButton>
+  )
+  
+  return (
+    <div className="frosted-glass p-6 px-0 relative shadow-lg w-full">
+      <CarouselTabs
+        tabs={tabs}
+        tabPosition="none"
+        className="min-h-[200px] pt-6"
+        contentClassName="welcome-tabs-container"
+        adaptiveHeight={true}
+        completionNavigateTo={user ? "/projects" : undefined}
+        dotNavigators={true}
+        showControls={true}
+        actionComponent={actionComponent}
+      />
+    </div>
+  )
+} 
+
+/**
+ *   // Handle tab change
   const handleTabChange = (index: number) => {
     console.log('handleTabChange', index, requestedStep)
     if (index === requestedStep || requestedStep === null) {
@@ -223,5 +238,5 @@ export function WelcomeGuide({ allowSkip = true }: { allowSkip?: boolean }) {
           </div>
         </div>
       </div>
-  )
-} 
+
+ */

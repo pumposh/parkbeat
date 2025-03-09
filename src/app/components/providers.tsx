@@ -26,11 +26,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       >
           <UserAvatarCacheProvider>
             <ToastProvider>
-              {/* <RemoteLoggerProvider> */}
-                <div id="providers-children">
-                  {children}
-                </div>
-              {/* </RemoteLoggerProvider> */}
+              <div id="providers-children">
+                {children}
+              </div>
             </ToastProvider>
           </UserAvatarCacheProvider>
       </ThemeProvider>

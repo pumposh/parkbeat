@@ -24,6 +24,15 @@ export class DedupeThing {
       }
     })
   }
+
+  public kill(...args: any[]) {
+    const key = hash(args)
+    this.argMap.delete(key)
+  }
+  /**
+   * Dedupe a function call
+   * if false, the function call will be skipped
+   */
   async dedupe(...args: any[]) {
     const key = hash(args)
     

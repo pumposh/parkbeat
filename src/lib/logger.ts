@@ -225,7 +225,11 @@ export namespace ParkbeatLogger {
     /**
      * Override the console methods to use our logger
      */
-    private overrideConsoleMethods(): void {
+    public overrideConsoleMethods(): void {
+      if (this.consoleOverridden) {
+        return; // Already overridden
+      }
+      
       // Override standard console methods
       console.log = this.createConsoleMethod('log');
       console.info = this.createConsoleMethod('info');
@@ -275,10 +279,22 @@ export namespace ParkbeatLogger {
     private createConsoleMethod(level: LogLevel): ConsoleMethod {
       const self = this;
       return function(...args: any[]) {
-        self.handler(level, ...args);
-        // Also call the original method for immediate output
-        if (self.originalConsole[level]) {
-          self.originalConsole[level].apply(console, args);
+        // Prevent recursive logging
+        if (self.isLogging) {
+          // Only call the original console method to avoid recursion
+          if (self.originalConsole[level]) {
+            self.originalConsole[level].apply(console, args);
+          }
+          return;
+        }
+        
+        // Set the flag before calling handler
+        self.isLogging = true;
+        try {
+          self.handler(level, ...args);
+          // Don't call the original method here, as handler will do it if needed
+        } finally {
+          self.isLogging = false;
         }
       };
     }
@@ -414,12 +430,10 @@ export namespace ParkbeatLogger {
     private handler = (logMethod: LogLevel, ...args: Parameters<typeof console[LogLevel]>) => {
       if (!this._isEnabled) return;
       
-      // Prevent recursive logging
-      if (this.isLogging) return;
+      // We don't need to check isLogging here anymore as it's handled in createConsoleMethod
+      // The flag is already set before this method is called
       
       try {
-        this.isLogging = true;
-        
         // Extract group title from message if possible
         const maybeExtractGroupTitle = (param: typeof args[0]) => {
           if (typeof param === 'string' && param.startsWith('[')) {
@@ -458,11 +472,14 @@ export namespace ParkbeatLogger {
         
         // If console is not overridden, log to console
         if (!this.consoleOverridden) {
-          this.originalConsole[logMethod](this.consoleOverridden, ...args);
+          this.originalConsole[logMethod](...args);
         }
-      } finally {
-        this.isLogging = false;
+      } catch (error) {
+        // If there's an error in our logging logic, log it with the original console
+        // to avoid infinite recursion
+        this.originalConsole.error('[Logger] Error in handler:', error);
       }
+      // No need for finally block to reset isLogging as it's handled in createConsoleMethod
     };
     
     /**
