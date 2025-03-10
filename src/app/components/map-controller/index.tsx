@@ -67,13 +67,17 @@ export const MapController = ({
   useEffect(() => {
     const calculatePosition = () => {
       const header = document.querySelector('.parkbeat-header')
-      
-      if (header) {
-        const headerRect = header.getBoundingClientRect()
-        setPosition({
-          top: headerRect.top + headerRect.height,
-          left: 0
-        })
+      const headerRect = header?.getBoundingClientRect()
+      const newPosition = {
+        top: (headerRect?.top ?? 0) + (headerRect?.height ?? 0),
+        left: 0
+      }
+
+      if (header && (
+        newPosition.top !== position.top ||
+        newPosition.left !== position.left
+      )) {
+        setPosition(newPosition)
       }
     }
 
@@ -87,8 +91,7 @@ export const MapController = ({
     
     // Observe the entire document for structural changes
     observer.observe(document.body, { 
-      childList: true, 
-      subtree: true,
+      childList: true,
       attributes: true,
       attributeFilter: ['style', 'class']
     })

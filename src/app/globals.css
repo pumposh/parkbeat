@@ -601,13 +601,13 @@
     outline: none;
   }
 
-  .input, input, textarea {
+  .input, input, textarea, select {
     padding: 0.25rem 0.5rem;
     border-radius: 10px;
     color: var(--foreground);
     font-weight: 500;
-    border: 1px solid color-mix(in srgb, var(--foreground) 20%, transparent) !important;
-    background-color: color-mix(in srgb, var(--background) 40%, transparent) !important;
+    border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent) !important;
+    background-color: color-mix(in srgb, var(--background) 10%, transparent) !important;
   }
 
   .input:focus-visible {

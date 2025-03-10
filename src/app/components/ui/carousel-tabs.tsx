@@ -6,6 +6,7 @@ import styles from './carousel-tabs.module.css'
 import { isNullish } from '@/lib/nullable'
 import { SignInButton } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
+import { getLogger } from '@/lib/logger'
 
 export interface Tab {
   id: string
@@ -247,6 +248,21 @@ export function CarouselTabs({
       setScrollPosition(prev => ({ ...prev, [tabIndex]: 'top' }))
     }
   }
+
+  const validateAndUpdateHeights = useCallback((heightUpdates: Record<number, number>) => {
+    // Update heights if we have any
+    setContentHeights(prev => {
+      const newHeights = { ...prev, ...heightUpdates };
+      // If we have a height for the active tab, mark that we have content heights
+      if (newHeights[activeTabIndex] && newHeights[activeTabIndex] > 0) {
+        // Small delay before enabling animations to ensure everything is rendered
+        setTimeout(() => {
+          setHasContentHeights(true);
+        }, 50);
+      }
+      return newHeights;
+    })
+  }, [activeTabIndex, contentElementRefs])
   
   // Set up resize observer to measure content heights and detect scrollable content
   useEffect(() => {
@@ -279,22 +295,18 @@ export function CarouselTabs({
           }
         }
       })
+
+      validateAndUpdateHeights(heightUpdates)
+
+      // Update viewport height
+      const newViewportHeight = window.innerHeight
+      setViewportHeight(newViewportHeight)
       
-      // Update heights if we have any
-      if (Object.keys(heightUpdates).length > 0) {
-        setContentHeights(prev => {
-          const newHeights = { ...prev, ...heightUpdates };
-          // If we have a height for the active tab, mark that we have content heights
-          if (newHeights[activeTabIndex] && newHeights[activeTabIndex] > 0) {
-            // Small delay before enabling animations to ensure everything is rendered
-            setTimeout(() => {
-              setHasContentHeights(true);
-            }, 50);
-          }
-          return newHeights;
-        })
-      }
+      // Update max possible height
+      setMaxPossibleHeight(calculateMaxHeight(newViewportHeight))
     })
+
+    validateAndUpdateHeights({})
     
     // Observe content elements
     contentRefs.current.forEach((ref, index) => {
@@ -427,9 +439,14 @@ export function CarouselTabs({
     // Fallback height if nothing is available
     return `${maxPossibleHeight}px`
   }, [adaptiveHeight, isScrolling, interpolatedHeight, contentHeights, activeTabIndex, maxPossibleHeight])
-  
+
   return (
-    <div className={cn("flex flex-col overflow-hidden relative", className)}>
+    <div className={cn(
+      "flex flex-col overflow-hidden relative transition-opacity duration-150 delay-150",
+      isMounted && "opacity-100",
+      !isMounted && "opacity-0 invisible",
+      className
+    )}>
       {/* Tab headers - top position */}
       {tabPosition === 'top' && (
         <div className="relative">
@@ -482,7 +499,7 @@ export function CarouselTabs({
               role="tabpanel"
               aria-labelledby={tab.id}
             >
-              <div 
+              <div
                 className={cn(
                   styles.scrollableContent,
                   hasScrollableContent[index] && styles.scrollableMask,
@@ -491,9 +508,13 @@ export function CarouselTabs({
                     && styles.scrollableMaskTop,
                   hasScrollableContent[index] && scrollPosition[index] === 'bottom'
                     && styles.scrollableMaskBottom
-                  // hasScrollableContent[index] && "overflow-y-auto max-h-full"
                 )}
                 onScroll={(e) => handleContentScroll(e, index)}
+                ref={el => {
+                  if (!el) return
+                  contentElementRefs.current[index] = el
+                  resizeObserverRef.current?.observe(el)
+                }}
               >
                 {tab.content}
               </div>

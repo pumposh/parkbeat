@@ -13,12 +13,12 @@ export function ProjectShareSkeleton({ className }: { className?: string }) {
   return (
     <div className={cn("space-y-4", className)}>
       <div className="flex flex-col items-center justify-center gap-4">
-        <div className="w-[220px] h-[220px] animate-pulse bg-gray-200/50 dark:bg-black/20 rounded"></div>
-        <div className="animate-pulse bg-gray-200/50 dark:bg-black/20 h-6 w-1/2 rounded mb-4"></div>
+        <div className="w-[220px] h-[220px] animate-pulse bg-gray-200 dark:bg-black/20 rounded"></div>
+        <div className="animate-pulse bg-gray-200 dark:bg-black/20 h-6 w-1/2 rounded mb-4"></div>
       </div>
       <div className="flex gap-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="flex-1 animate-pulse bg-gray-200/50 dark:bg-black/20 h-10 rounded"></div>
+          <div key={i} className="flex-1 animate-pulse bg-gray-200 dark:bg-black/20 h-10 rounded"></div>
         ))}
       </div>
     </div>

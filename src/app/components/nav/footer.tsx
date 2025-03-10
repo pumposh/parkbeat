@@ -1,9 +1,9 @@
-'use server'
+'use client'
 
-import { currentUser } from "@clerk/nextjs/server"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { SettingsDialog } from "../settings-dialog"
+import { useUser } from "@clerk/nextjs"
 
 type FooterAction = {
   href?: string
@@ -38,18 +38,16 @@ const footerActions: FooterAction[] = [
 ]
 
 // Using memo to prevent unnecessary re-renders
-export default async function FooterMenu({ pathname }: { pathname: string }) {
-  const user = await currentUser()
+export default function FooterMenu({ pathname }: { pathname: string }) {
+  const user = useUser()
 
-  console.log(user);
   const isAdmin = false;
-  // const isAdmin = user?.publicMetadata.some(
-  //   (membership) => membership.role === "org:admin"
-  // )
 
   const visibleActions = footerActions.filter(action => 
     !action.adminOnly || (action.adminOnly && isAdmin)
   )
+
+  console.log('[Footer] pathname', pathname, visibleActions.map(action => action.href))
 
   return (
     <div id="footer" className="parkbeat-footer" style={{ zIndex: 'var(--z-header)' }}>
@@ -75,7 +73,7 @@ export default async function FooterMenu({ pathname }: { pathname: string }) {
                   className={cn(
                     "flex flex-col items-center gap-1 px-3 py-1 rounded-lg transition-colors",
                     "hover:text-zinc-600 dark:hover:text-zinc-300",
-                    pathname === action.href 
+                    pathname.includes(action.href!)
                       ? "text-black/80 dark:text-white/80 bg-white/30 dark:bg-black/30 shadow-xl" 
                       : "text-zinc-600 dark:text-zinc-100"
                   )}

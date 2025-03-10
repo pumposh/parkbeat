@@ -39,18 +39,18 @@ export function ProjectDetailsSkeleton() {
       {/* Image Carousel Skeleton */}
       <div className="relative w-full mb-4">
         <div className="relative w-full pb-[100%] rounded-lg overflow-hidden">
-          <div className="absolute inset-0 bg-black/10 dark:bg-black/20 animate-pulse" />
+          <div className="absolute inset-0 bg-gray-200 dark:bg-black/20 animate-pulse" />
         </div>
       </div>
 
       {/* Category Skeleton */}
       <div className="w-full pb-6">
-        <div className="w-full rounded-xl bg-black/10 dark:bg-black/20 animate-pulse h-10" />
+        <div className="w-full rounded-xl bg-gray-200 dark:bg-black/20 animate-pulse h-10" />
       </div>
 
       {/* Title Skeleton */}
       <div className="pb-2">
-        <div className="h-8 w-3/4 bg-black/10 dark:bg-black/20 rounded animate-pulse" />
+        <div className="h-8 w-3/4 bg-gray-200 dark:bg-black/20 rounded animate-pulse" />
       </div>
     </div>
   )

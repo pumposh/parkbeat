@@ -211,7 +211,7 @@ export namespace ParkbeatLogger {
       }
 
       if (overrideConsole && !this.consoleOverridden) {
-        this.overrideConsoleMethods();
+        // this.overrideConsoleMethods();
       }
 
       // Initialize plugins
