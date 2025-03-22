@@ -41,7 +41,7 @@ export class DedupeThing {
     const lastCall = this.argMap.get(key)
     if (lastCall && lastCall > (Date.now() - 1000)) {
       console.log('[DedupeThing] Subsequent call, skipping')
-      this.die()
+      this.kill(...args)
       return false;
     }
     this.argMap.set(key, Date.now())

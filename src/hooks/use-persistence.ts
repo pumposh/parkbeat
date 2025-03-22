@@ -224,7 +224,7 @@ export const usePersistentState = <T = any>(
     return [defaultValue, () => {}, false, () => {}];
   }
 
-  const [isInitialized, setIsInitialized] = useState(false);
+  let initialized = false;
 
   // Initialize state with a function to load from IndexedDB
   const [value, setValueInternal] = useState<T>(() => {
@@ -232,7 +232,7 @@ export const usePersistentState = <T = any>(
     // approach first and update it later if needed
     const setValue = (newValue: T) => {
       setValueInternal(newValue);
-      if (!isInitialized) return;
+      if (!initialized) return;
       // Prevent blocking UI
       asyncClearedObstruction({
         maxTime: 1000,
@@ -255,11 +255,13 @@ export const usePersistentState = <T = any>(
         setValue(defaultValue);
       })
       .finally(() => {
-        setIsInitialized(true);
+        initialized = true;
       });
 
     return defaultValue;
   });
+
+  const [isInitialized] = useState(initialized);
 
   // Create a wrapped setter function that syncs with IndexedDB
   const setValue: React.Dispatch<React.SetStateAction<T>> = newValue => {

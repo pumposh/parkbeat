@@ -8,12 +8,15 @@ type ToastProps = {
   persistent?: boolean
   position?: 'top' | 'bottom'
   onClose: () => void
+  actionLabel?: string
+  onAction?: () => Promise<any> | void
 }
 
-export function Toast({ message, type = 'info', duration = 3000, persistent = false, position = 'bottom', onClose }: ToastProps) {
+export function Toast({ message, type = 'info', duration = 3000, persistent = false, position = 'bottom', onClose, actionLabel, onAction }: ToastProps) {
   const [isVisible, setIsVisible] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
   const [offset, setOffset] = useState(16) // default 16px
+  const [isActionLoading, setIsActionLoading] = useState(false)
 
   useEffect(() => {
     setIsMounted(true)
@@ -83,19 +86,60 @@ export function Toast({ message, type = 'info', duration = 3000, persistent = fa
         ...(position === 'bottom' ? { bottom: `${offset}px` } : { top: `${offset}px` })
       }}
     >
-      <div className="rounded-lg shadow-lg flex items-center gap-3 px-4 py-3 min-w-[320px] max-w-md">
-        <i className={`fa-solid fa-${icon} text-lg ${colorClass}`} aria-hidden="true" />
-        <p className="text-sm text-zinc-800 dark:text-zinc-200">{message}</p>
-        {persistent && (
+      <div className="rounded-lg shadow-lg px-4 py-3 min-w-[320px] max-w-md">
+        <div className="flex items-center gap-3 mb-2">
+          <i className={`fa-solid fa-${icon} text-lg ${colorClass}`} aria-hidden="true" />
+          <p className="text-sm text-zinc-800 dark:text-zinc-200 flex-1">{message}</p>
+          
+          {persistent && !isActionLoading && (
+            <button
+              onClick={() => {
+                setIsVisible(false)
+                setTimeout(onClose, 300)
+              }}
+              className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 ml-1"
+              aria-label="Close"
+              disabled={isActionLoading}
+            >
+              <i className="fa-solid fa-xmark" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        
+        {actionLabel && onAction && (
           <button
-            onClick={() => {
-              setIsVisible(false)
-              setTimeout(onClose, 300)
+            onClick={async () => {
+              setIsActionLoading(true)
+              
+              try {
+                // Handle the action, whether it returns a Promise or not
+                await onAction();
+                
+                // Only dismiss if not persistent
+                if (!persistent) {
+                  setIsVisible(false)
+                  setTimeout(onClose, 300)
+                }
+              } catch (error) {
+                console.error('Action failed:', error);
+                // Don't dismiss on error
+              } finally {
+                setIsVisible(false)
+                setTimeout(onClose, 300)
+                setIsActionLoading(false)
+              }
             }}
-            className="ml-auto text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-            aria-label="Close"
+            disabled={isActionLoading}
+            className="w-full py-1.5 mt-1 text-xs font-medium bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 rounded-md text-zinc-800 dark:text-zinc-200 transition-colors flex items-center justify-center"
           >
-            <i className="fa-solid fa-xmark" aria-hidden="true" />
+            {isActionLoading ? (
+              <>
+                <i className="fa-solid fa-circle-notch fa-spin mr-2" aria-hidden="true" />
+                <span>Loading...</span>
+              </>
+            ) : (
+              actionLabel
+            )}
           </button>
         )}
       </div>

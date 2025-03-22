@@ -15,6 +15,7 @@ import { ImageGenerationAgent } from "../ai-helpers/leonardo-agent";
 import { calculateProjectCosts } from "@/lib/cost";
 import { DedupeThing } from "@/lib/promise";
 import { ParkbeatLogger } from "@/lib/logger";
+import { AISocket, AIIO } from "./types";
 
 type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
@@ -129,10 +130,6 @@ const clientEvents = z.object(aiClientEvents)
 const serverEvents = z.object(aiServerEvents)
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
 type ProcedureEnv = ContextWithSuperJSON<JStackEnv>
-
-type LocalProcedure = Procedure<JStackEnv, ProcedureContext, void, typeof clientEvents, typeof serverEvents>
-type AISocket = Parameters<NonNullable<Awaited<ReturnType<Parameters<LocalProcedure["ws"]>[0]>>['onConnect']>>[0]['socket']
-type AIIO = Parameters<Parameters<LocalProcedure["ws"]>[0]>[0]['io']
 
 export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AIIO, c: ProcedureEnv, logger: Logger) => {
   const db = ctx.db;

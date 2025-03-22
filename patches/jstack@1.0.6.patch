@@ -1,0 +1,66 @@
+diff --git a/dist/server/index.cjs b/dist/server/index.cjs
+index 4502399381d021a063b38c4f368f99af502d1667..c1a3ed3607d91ef33ce42ee79c5552801266c992 100644
+--- a/dist/server/index.cjs
++++ b/dist/server/index.cjs
+@@ -5602,13 +5602,13 @@ var JStack = class {
+          * CORS middleware configuration with default settings for API endpoints.
+          *
+          * @default
+-         * - Allows 'x-is-superjson' in headers
++         * - Allows 'x-is-superjson' and 'Content-Type' in headers
+          * - Exposes 'x-is-superjson' in headers
+          * - Accepts all origins
+          * - Enables credentials
+          */
+         cors: (0, import_cors.cors)({
+-          allowHeaders: ["x-is-superjson"],
++          allowHeaders: ["x-is-superjson", "Content-Type"],
+           exposeHeaders: ["x-is-superjson"],
+           origin: (origin) => origin,
+           credentials: true
+diff --git a/dist/server/index.d.cts b/dist/server/index.d.cts
+index 3df509ac82459fb381e8904fe615c5fd8256c3e6..b5bfeed2749fd89fa5e863d648b6954cee053f3b 100644
+--- a/dist/server/index.d.cts
++++ b/dist/server/index.d.cts
+@@ -318,7 +318,7 @@ declare class JStack {
+              * CORS middleware configuration with default settings for API endpoints.
+              *
+              * @default
+-             * - Allows 'x-is-superjson' in headers
++             * - Allows 'x-is-superjson' and 'Content-Type' in headers
+              * - Exposes 'x-is-superjson' in headers
+              * - Accepts all origins
+              * - Enables credentials
+diff --git a/dist/server/index.d.ts b/dist/server/index.d.ts
+index 3df509ac82459fb381e8904fe615c5fd8256c3e6..b5bfeed2749fd89fa5e863d648b6954cee053f3b 100644
+--- a/dist/server/index.d.ts
++++ b/dist/server/index.d.ts
+@@ -318,7 +318,7 @@ declare class JStack {
+              * CORS middleware configuration with default settings for API endpoints.
+              *
+              * @default
+-             * - Allows 'x-is-superjson' in headers
++             * - Allows 'x-is-superjson' and 'Content-Type' in headers
+              * - Exposes 'x-is-superjson' in headers
+              * - Accepts all origins
+              * - Enables credentials
+diff --git a/dist/server/index.js b/dist/server/index.js
+index f44fbfdf442894b7f75cd1013a7bc6eac3ff286e..d50dfd69481a4f2eac047cc58426871d46e65c91 100644
+--- a/dist/server/index.js
++++ b/dist/server/index.js
+@@ -5590,13 +5590,13 @@ var JStack = class {
+          * CORS middleware configuration with default settings for API endpoints.
+          *
+          * @default
+-         * - Allows 'x-is-superjson' in headers
++         * - Allows 'x-is-superjson' and 'Content-Type' in headers
+          * - Exposes 'x-is-superjson' in headers
+          * - Accepts all origins
+          * - Enables credentials
+          */
+         cors: cors({
+-          allowHeaders: ["x-is-superjson"],
++          allowHeaders: ["x-is-superjson", "Content-Type"],
+           exposeHeaders: ["x-is-superjson"],
+           origin: (origin) => origin,
+           credentials: true

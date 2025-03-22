@@ -15,6 +15,8 @@ import { getMapStyle, getIpLocation } from './utils'
 import type { MapControllerProps, IpLocation } from '@/types/types'
 import { boundsToGeohash } from '@/lib/geo/geohash'
 import { useNavigationState } from '@/hooks/use-nav-state'
+import { usePersistentState } from '@/hooks/use-persistence'
+import { useToast } from '@/app/components/toast'
 
 export const MapController = ({
   initialCenter = {
@@ -48,7 +50,10 @@ export const MapController = ({
   const updateTimeout = useRef<NodeJS.Timeout | undefined>(undefined)
   const [isMarkerNearCenter, setIsMarkerNearCenter] = useState(false)
   const [isControlsExpanded, setIsControlsExpanded] = useState(false)
-  const collapseTimeout = useRef<NodeJS.Timeout>(null)
+  const collapseTimeout = useRef<NodeJS.Timeout | null>(null)
+  const [hasLocationPermission, setHasLocationPermission, isInitialized] = usePersistentState<boolean>('location-permission', false)
+  const [isLocationToastVisible, setIsLocationToastVisible] = useState(false)
+  const toast = useToast()
 
       
   const getCreatedAt = (project: Project) => {
@@ -105,10 +110,247 @@ export const MapController = ({
     }
   }, [])
 
-  // Get IP location on mount
+  // Initialize location - prioritize precise location, fallback to IP-based
   useEffect(() => {
-    getIpLocation(initialCenter).then(setLocation)
-  }, [])
+    // Function to get user's precise location
+    const initializePreciseLocation = () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const newLocation = {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+              city: location?.city || 'Current Location'
+            }
+            
+            setLocation(newLocation)
+            setHasLocationPermission(true)
+            setIsLocationToastVisible(false)
+            
+            // If map is already initialized, fly to the new location
+            if (map.current) {
+              map.current.flyTo({
+                center: [newLocation.longitude, newLocation.latitude],
+                zoom: initialZoom,
+                duration: 1500,
+                essential: true
+              })
+            }
+          },
+          (error) => {
+            console.warn('Failed to get precise location during initialization:', error)
+            // Fallback to IP-based location
+            getIpLocation(initialCenter).then(ipLocation => {
+              setLocation(ipLocation)
+              setHasLocationPermission(false)
+              setIsLocationToastVisible(true)
+            })
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 60000 // Allow locations up to a minute old for faster initialization
+          }
+        )
+      } else {
+        // Geolocation not supported, fallback to IP-based location
+        getIpLocation(initialCenter).then(ipLocation => {
+          setLocation(ipLocation)
+          setHasLocationPermission(false)
+          setIsLocationToastVisible(true)
+        })
+      }
+    }
+    
+    // Check for location permission and set up periodic rechecking
+    const checkPermission = () => {
+      navigator.permissions?.query({ name: 'geolocation' })
+        .then(permissionStatus => {
+          const granted = permissionStatus.state === 'granted'
+          const previousValue = hasLocationPermission
+          setHasLocationPermission(granted)
+          
+          // If permission is granted, get precise location
+          if (granted) {
+            setIsLocationToastVisible(false)
+            // Only initialize if we don't already have a precise location
+            if (!location || !previousValue) {
+              initializePreciseLocation()
+            }
+          } else {
+            // If permission denied or prompt, show indicator and fallback to IP if needed
+            setIsLocationToastVisible(true)
+            
+            // If no location at all yet, get IP location
+            if (!location) {
+              getIpLocation(initialCenter).then(setLocation)
+            }
+            
+            // If in prompt state, show guidance
+            if (permissionStatus.state === 'prompt') {
+              toast.show({
+                message: 'When prompted, please allow location access to see exact positions 🗺️',
+                type: 'info',
+                duration: 5000
+              })
+            }
+          }
+          
+          // Listen for permission changes
+          permissionStatus.onchange = () => {
+            const newGranted = permissionStatus.state === 'granted'
+            setHasLocationPermission(newGranted)
+            if (newGranted) {
+              setIsLocationToastVisible(false)
+              getUserLocation()
+              toast.show({
+                message: 'Thanks for enabling location! Now showing your exact position 📍',
+                type: 'success',
+                duration: 3000
+              })
+            } else {
+              setIsLocationToastVisible(true)
+            }
+          }
+        })
+        .catch(err => {
+          console.warn('Unable to query location permission:', err)
+          
+          // Permissions API not supported, try geolocation directly
+          initializePreciseLocation()
+          
+          // If that fails silently, we'll show location card
+          setIsLocationToastVisible(true)
+        })
+    }
+    
+    // Initial permission check and location initialization
+    checkPermission()
+    
+    // Set up periodic permission rechecking
+    const permissionCheckInterval = setInterval(checkPermission, 30000)
+    
+    return () => {
+      clearInterval(permissionCheckInterval)
+    }
+  }, [hasLocationPermission, initialCenter, initialZoom])
+  
+  // Get user's precise location
+  const getUserLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setHasLocationPermission(true)
+          setIsLocationToastVisible(false)
+          
+          const newLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            city: location?.city || 'Current Location'
+          }
+          
+          setLocation(newLocation)
+          
+          // Fly to the new location
+          if (map.current) {
+            map.current.flyTo({
+              center: [newLocation.longitude, newLocation.latitude],
+              zoom: initialZoom,
+              duration: 1500,
+              essential: true
+            })
+          }
+          
+          toast.show({
+            message: 'Great! Now using your exact location 📍',
+            type: 'success',
+            duration: 3000
+          })
+        },
+        (error) => {
+          console.warn('Error getting user location:', error)
+          setHasLocationPermission(false)
+          setIsLocationToastVisible(true)
+          
+          // Handle different error types
+          switch(error.code) {
+            case error.PERMISSION_DENIED:
+              toast.show({
+                message: 'We need permission to find your exact location. Enable location services and click "Try Again" ✨',
+                type: 'info',
+                duration: 0, // Make it persistent
+                persistent: true,
+                position: 'bottom',
+                actionLabel: 'Try Again',
+                onAction: recheckLocationPermission
+              })
+              break
+              
+            case error.POSITION_UNAVAILABLE:
+              toast.show({
+                message: 'Hmm, we couldn\'t pinpoint your location. Using an approximate location for now 🌍',
+                type: 'info',
+                duration: 4000
+              })
+              break
+              
+            case error.TIMEOUT:
+              toast.show({
+                message: 'It\'s taking a while to find your location. Using an approximate position for now 🌎',
+                type: 'info',
+                duration: 4000,
+                actionLabel: 'Try Again',
+                onAction: recheckLocationPermission
+              })
+              break
+              
+            default:
+              toast.show({
+                message: 'We couldn\'t find your exact location. Using our best guess for now 🗺️',
+                type: 'info',
+                duration: 4000,
+                actionLabel: 'Try Again',
+                onAction: recheckLocationPermission
+              })
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      )
+    } else {
+      // Browser doesn't support geolocation
+      toast.show({
+        message: 'Your browser doesn\'t support location services. We\'re showing an approximate area instead 🌐',
+        type: 'info',
+        duration: 4000
+      })
+    }
+  }
+
+  // Function to manually recheck location permission
+  const recheckLocationPermission = () => {
+    navigator.permissions?.query({ name: 'geolocation' })
+      .then(permissionStatus => {
+        if (permissionStatus.state === 'granted') {
+          getUserLocation()
+          toast.show({
+            message: 'Thanks! Now using your precise location 📍',
+            type: 'success',
+            duration: 3000
+          })
+        } else {
+          // Try getting location directly which will trigger the browser's permission dialog
+          getUserLocation()
+        }
+      })
+      .catch(() => {
+        // Permissions API not supported, try direct geolocation request
+        getUserLocation()
+      })
+  }
 
   const openTreeDialog = () => {
     const id = generateId()
@@ -586,6 +828,10 @@ export const MapController = ({
                 aria-label="Toggle controls"
               >
                 <i className="fa-solid fa-chevron-down" aria-hidden="true" />
+                <div className={cn(
+                  "location-badge",
+                  (!isControlsExpanded && isLocationToastVisible) && "visible"
+                )}></div>
               </button>
 
               <button
@@ -620,6 +866,38 @@ export const MapController = ({
               >
                 <i className="fa-solid fa-location-crosshairs" aria-hidden="true" />
               </button>
+              
+              {/* Location Accuracy Card */}
+              <div 
+                className={cn(
+                  "location-accuracy-card",
+                  (isMapLoaded && isLocationToastVisible && isControlsExpanded) && "visible"
+                )}
+              >
+                <button
+                  className="location-accuracy-card-inner frosted-glass py-2 pl-3 pr-3"
+                  onClick={() => {
+                    handleControlInteraction(); // Keep controls open during action
+                    getUserLocation();
+                  }}
+                  role="button"
+                  aria-label="Use precise location"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      getUserLocation()
+                    }
+                  }}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <i className="fa-solid fa-location-crosshairs text-orange-400 opacity-80 text-[9px]" aria-hidden="true" />
+                    <p className="text-[10px] font-medium opacity-90">Approximate</p>
+                  </div>
+                  <div className="flex items-center mt-1 text-[9px] text-center opacity-70">
+                    <span>Tap for precise location</span>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
 

@@ -84,6 +84,77 @@
     right: 1rem;
   }
 
+  /* Location accuracy card styles */
+  .location-accuracy-card {
+    @apply transition-all duration-300;
+    position: absolute;
+    right: 3.5rem; /* Position to the left of control buttons */
+    width: 150px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s ease;
+    pointer-events: auto;
+    top: 0;
+  }
+
+  .location-accuracy-card.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  .location-accuracy-card-inner {
+    @apply rounded-xl p-2 text-xs cursor-pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .location-accuracy-card-inner:hover {
+    @apply bg-white/15 dark:bg-black/15;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+  }
+  
+  .location-accuracy-card-inner:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  }
+  
+  /* Location accuracy indicator badge */
+  .location-badge {
+    @apply absolute bg-orange-400 rounded-full;
+    width: 12px;
+    height: 12px;
+    top: -3px;
+    right: -3px;
+    z-index: 1;
+    opacity: 0;
+    transform: scale(0);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+  
+  .location-badge.visible {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  @keyframes pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.5);
+    }
+    70% {
+      box-shadow: 0 0 0 6px rgba(249, 115, 22, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(249, 115, 22, 0);
+    }
+  }
+
   .map-controls-inner {
     @apply relative flex flex-col gap-3;
     height: 2.5rem; /* Initial collapsed height */

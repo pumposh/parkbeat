@@ -35,7 +35,7 @@
     "gsap": "^3.12.7",
     "hono": "^4.6.19",
     "jstack": "^1.0.6",
-    "jstack-shared": "^0.0.2",
+    "jstack-shared": "0.0.2",
     "maplibre-gl": "^5.1.0",
     "next": "^15.1.6",
     "next-themes": "^0.4.4",
@@ -75,6 +75,7 @@
     "ws": "^8.18.0"
   },
   "patchedDependencies": {
-    "jstack-shared@0.0.2": "patches/jstack-shared@0.0.2.patch"
+    "jstack-shared@0.0.2": "patches/jstack-shared@0.0.2.patch",
+    "jstack@1.0.6": "patches/jstack@1.0.6.patch"
   }
 }

@@ -38,7 +38,7 @@ type RoomSubscriptionData = {
   heartbeatHook?: Hook<"heartbeat">;
   status: SubscriptionStatus;
   logger: ParkbeatLogger.GroupLogger | typeof console;
-  removalTimeout?: NodeJS.Timeout;
+  removalTimeout?: ReturnType<typeof setTimeout>;
   unsubscribeTime?: number; // Time when the room was marked for unsubscription
 };
 
@@ -82,7 +82,7 @@ export class WebSocketManager {
   private connectionState: ConnectionState = 'disconnected';
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private eventBuffer: Array<{
     event: keyof ClientEvents;
     data: ExpectedArgument<keyof ClientEvents>;

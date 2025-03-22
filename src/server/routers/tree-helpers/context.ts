@@ -8,12 +8,15 @@ import type { ProjectStatus } from "@/server/types/shared"
 import { ContextWithSuperJSON } from "jstack"
 import { Env as JstackEnv } from "../../jstack"
 import { ParkbeatLogger } from "@/lib/logger"
+import { AIIO as IO } from "../socket/types"
+
 
 // Use the GroupLogger type from our logger
 type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
 type ProcedureEnv = ContextWithSuperJSON<JstackEnv>
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
+// type IO = Parameters<Parameters<LocalProcedure["ws"]>[0]>[0]['io']
 
 export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger: Logger }) => {
   // Helper function to get Redis key for geohash subscriptions
@@ -592,7 +595,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     }
   }
 
-  type IO = Parameters<Parameters<ServerProcedure["ws"]>[0]>[0]['io']
+  // type IO = Parameters<Parameters<ServerProcedure["ws"]>[0]>[0]['io']
   // Helper function to notify all project subscribers of updates
   const notifyProjectSubscribers = async (projectId: string, socketId: string | null, io: IO) => {
     logger.debug(`Notifying subscribers of updates to project: ${projectId}`)
