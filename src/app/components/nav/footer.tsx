@@ -3,7 +3,6 @@
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { SettingsDialog } from "../settings-dialog"
-import { useUser } from "@clerk/nextjs"
 
 type FooterAction = {
   href?: string
@@ -39,8 +38,6 @@ const footerActions: FooterAction[] = [
 
 // Using memo to prevent unnecessary re-renders
 export default function FooterMenu({ pathname }: { pathname: string }) {
-  const user = useUser()
-
   const isAdmin = false;
 
   const visibleActions = footerActions.filter(action => 

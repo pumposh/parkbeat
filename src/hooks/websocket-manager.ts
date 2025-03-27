@@ -37,7 +37,7 @@ type RoomSubscriptionData = {
   lastPingTime: number;
   heartbeatHook?: Hook<"heartbeat">;
   status: SubscriptionStatus;
-  logger: ParkbeatLogger.GroupLogger | typeof console;
+  // logger: ParkbeatLogger.GroupLogger | typeof console;
   removalTimeout?: ReturnType<typeof setTimeout>;
   unsubscribeTime?: number; // Time when the room was marked for unsubscription
 };
@@ -751,8 +751,7 @@ export class WebSocketManager {
     const self = WebSocketManager.getInstance();
 
     const { room, lastPingTime } = arg;
-    const logger = self.roomSubscriptions?.get(room)?.logger
-      || getLogger().group(room, room, false, false)
+    const logger = getLogger().group(room, room, false, false)
       || self.console;
     logger.info('Received heartbeat event from server:', arg);
     if (!room || !lastPingTime) {
@@ -764,8 +763,7 @@ export class WebSocketManager {
   };
 
   setLastPingTime(room: string, lastPingTime: number) {
-    const logger = this.roomSubscriptions?.get(room)?.logger
-      || getLogger().group(room, room, false, false)
+    const logger = getLogger().group(room, room, false, false)
       || this.console;
     const existingData = this.roomSubscriptions?.get(room);
     if (!existingData) return;
@@ -785,8 +783,7 @@ export class WebSocketManager {
 
   subscribeToRoom(itemId: string, prefix = 'geohash') {
     const roomKey = `${prefix}:${itemId}`;
-    const logger = this.roomSubscriptions.get(roomKey)?.logger
-      || getLogger().group(roomKey, roomKey, false, false)
+    const logger = getLogger().group(roomKey, roomKey, false, false)
       || this.console;
 
     logger.info(`Subscribing to room: ${roomKey}`);
@@ -811,7 +808,6 @@ export class WebSocketManager {
         this.roomSubscriptions.set(roomKey, {
           ...existingRoom,
           status: 'active',
-          logger,
           removalTimeout: undefined,
           lastPingTime: Date.now() // Reset ping time
         });
@@ -861,7 +857,6 @@ export class WebSocketManager {
     this.roomSubscriptions.set(roomKey, { 
       lastPingTime: Date.now(),
       status: 'active',
-      logger,
       removalTimeout: undefined,
       unsubscribeTime: undefined
     });

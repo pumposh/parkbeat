@@ -38,6 +38,68 @@ export type ProjectGroup = {
   state: string
 }
 
+// Global object to track active project subscriptions across components
+const activeProjectSubscriptions = new Map<string, {
+  refCount: number;
+  subscribers: Set<string>;
+}>();
+
+// Debug flag to enable/disable detailed subscription logging
+let DEBUG_PROJECT_SUBSCRIPTIONS = false;
+
+// Utility logging function
+const logSubscription = (message: string, ...args: any[]) => {
+  if (DEBUG_PROJECT_SUBSCRIPTIONS) {
+    console.log(`[ProjectSubscription] ${message}`, ...args);
+  }
+};
+
+// Utility function to get debug information about current subscriptions
+export function getActiveProjectSubscriptionsDebugInfo() {
+  const info = {
+    activeSubscriptions: [] as Array<{
+      projectId: string;
+      refCount: number;
+      subscriberCount: number;
+      subscribers: string[];
+    }>
+  };
+  
+  activeProjectSubscriptions.forEach((data, projectId) => {
+    info.activeSubscriptions.push({
+      projectId,
+      refCount: data.refCount,
+      subscriberCount: data.subscribers.size,
+      subscribers: Array.from(data.subscribers)
+    });
+  });
+  
+  return info;
+}
+
+/**
+ * Toggle debug mode for project subscriptions
+ * @param enable Optional boolean to explicitly enable or disable. If not provided, toggles current state.
+ * @returns The new debug state
+ */
+export function toggleProjectSubscriptionDebug(enable?: boolean): boolean {
+  if (enable !== undefined) {
+    DEBUG_PROJECT_SUBSCRIPTIONS = enable;
+  } else {
+    DEBUG_PROJECT_SUBSCRIPTIONS = !DEBUG_PROJECT_SUBSCRIPTIONS;
+  }
+  
+  console.log(`Project subscription debugging: ${DEBUG_PROJECT_SUBSCRIPTIONS ? 'ENABLED' : 'DISABLED'}`);
+  
+  // Log current subscriptions if enabling debug mode
+  if (DEBUG_PROJECT_SUBSCRIPTIONS) {
+    const info = getActiveProjectSubscriptionsDebugInfo();
+    console.log('Current project subscriptions:', info);
+  }
+  
+  return DEBUG_PROJECT_SUBSCRIPTIONS;
+}
+
 // Update useLiveTrees hook to use the WebSocketManager
 export function useLiveTrees() {
   const handlerId = useRef(`handler_${generateId()}`);
@@ -371,6 +433,7 @@ export function useLiveTrees() {
 export function useProjectData(projectId: string) {
   const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
   const currentProjectId = useRef<string | null>(null);
+  const subscriberId = useRef<string>(generateId());
 
   const [projectData, setProjectData] = useServerEvent.projectData({
     projectId,
@@ -384,33 +447,112 @@ export function useProjectData(projectId: string) {
   useEffect(() => {
     if (currentProjectId.current === projectId) return;
 
+    // Unsubscribe from previous project if needed
     if (currentProjectId.current) {
-      console.log('[useProjectData] unsubscribing from project', currentProjectId.current)
-      wsManager.unsubscribeFromRoom(currentProjectId.current, 'project');
+      logSubscription(`releasing subscription for project ${currentProjectId.current}`);
+      
+      const subscription = activeProjectSubscriptions.get(currentProjectId.current);
+      if (subscription) {
+        // Remove this subscriber
+        subscription.subscribers.delete(subscriberId.current);
+        subscription.refCount--;
+        
+        // If this was the last subscriber, unsubscribe from the room
+        if (subscription.refCount <= 0) {
+          logSubscription(`last subscriber, unsubscribing from project ${currentProjectId.current}`);
+          wsManager.unsubscribeFromRoom(currentProjectId.current, 'project');
+          activeProjectSubscriptions.delete(currentProjectId.current);
+        } else {
+          logSubscription(`other subscribers remain, keeping subscription active for ${currentProjectId.current}`, 
+            `(${subscription.refCount} refs, ${subscription.subscribers.size} subscribers)`);
+        }
+      } else {
+        // Failsafe - should not happen
+        wsManager.unsubscribeFromRoom(currentProjectId.current, 'project');
+      }
+      
       currentProjectId.current = null;
     }
 
+    // Subscribe to new project
     if (projectId) {
-      console.log('[useProjectData] subscribing to project', projectId)
-      wsManager.subscribeToRoom(projectId, 'project');
+      logSubscription(`requested subscription for project ${projectId}`);
+      
+      // Check if already subscribed
+      let subscription = activeProjectSubscriptions.get(projectId);
+      
+      if (subscription) {
+        // Add this subscriber to existing subscription
+        subscription.refCount++;
+        subscription.subscribers.add(subscriberId.current);
+        logSubscription(`adding to existing subscription for ${projectId}`, 
+          `(${subscription.refCount} refs, ${subscription.subscribers.size} subscribers)`);
+      } else {
+        // Create new subscription entry
+        subscription = {
+          refCount: 1,
+          subscribers: new Set([subscriberId.current])
+        };
+        activeProjectSubscriptions.set(projectId, subscription);
+        
+        // Actually subscribe via WebSocket
+        logSubscription(`creating new subscription for project ${projectId}`);
+        wsManager.subscribeToRoom(projectId, 'project');
+      }
+      
       currentProjectId.current = projectId;
     }
   }, [projectId, wsManager]);
 
+  // Enhanced cleanup to properly track subscription references
+  const disconnect = () => {
+    if (!currentProjectId.current) return;
+    
+    const projectId = currentProjectId.current;
+    logSubscription(`disconnect called for project ${projectId}`);
+    
+    const subscription = activeProjectSubscriptions.get(projectId);
+    if (subscription) {
+      // Remove this subscriber
+      subscription.subscribers.delete(subscriberId.current);
+      subscription.refCount--;
+      
+      // If this was the last subscriber, unsubscribe from the room
+      if (subscription.refCount <= 0) {
+        logSubscription(`disconnect: last subscriber, unsubscribing from project ${projectId}`);
+        wsManager.unsubscribeFromRoom(projectId, 'project');
+        activeProjectSubscriptions.delete(projectId);
+      } else {
+        logSubscription(`disconnect: other subscribers remain, keeping subscription active for ${projectId}`, 
+          `(${subscription.refCount} refs, ${subscription.subscribers.size} subscribers)`);
+      }
+    } else {
+      // Failsafe - should not happen
+      wsManager.unsubscribeFromRoom(projectId, 'project');
+    }
+    
+    // Reset projectData
+    setProjectData({
+      projectId,
+      data: {
+        project: {} as ProjectPayload,
+        images: [],
+        suggestions: []
+      }
+    });
+    
+    currentProjectId.current = null;
+  };
+
+  // Ensure cleanup on unmount
+  useEffect(() => {
+    return () => {
+      disconnect();
+    };
+  }, []);
+
   return {
     projectData,
-    disconnect: () => {
-      if (!currentProjectId.current) return;
-      wsManager.unsubscribeFromRoom(currentProjectId.current, 'project');
-      setProjectData({
-        projectId,
-        data: {
-          project: {} as ProjectPayload,
-          images: [],
-          suggestions: []
-        }
-      });
-      currentProjectId.current = null;
-    }
+    disconnect
   };
 }

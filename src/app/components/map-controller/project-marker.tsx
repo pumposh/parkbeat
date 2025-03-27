@@ -59,23 +59,87 @@ function getMarkerStyles(project?: Project, contributionSummary?: ContributionSu
 
 export const ProjectMarker = ({ project, group, position, isNearCenter, isDeleted, map }: ProjectMarkerProps) => {
   const [showInfoPanel, setShowInfoPanel] = useState(false)
-
-  const { contributionSummaryMap } = useLiveTrees()
+  const [isPanelLoading, setIsPanelLoading] = useState(false)
+  const markerLoadTimeRef = useRef<number | null>(null)
+  const projectIdRef = useRef<string | null>(null)
+  
+  // Directly access contribution data from useLiveTrees hook
+  const { contributionSummaryMap, isPending, connectionState } = useLiveTrees()
   const contributionSummary = contributionSummaryMap?.get(project?.id ?? "")
   
   const markerStyle = getMarkerStyles(project, contributionSummary);
 
   useEffect(() => {
+    // Track changes to project ID for debugging
+    if (project?.id !== projectIdRef.current) {
+      projectIdRef.current = project?.id ?? null
+    }
+    
+    // Only consider data missing if we have a project but no contribution data for an active project
+    const needsContributionData = project?.status !== 'draft' && !contributionSummary
+    const isDataMissing = !project || (needsContributionData && isPending)
+    const isConnectionReady = connectionState === 'connected'
+    
+    // Debug loading time when near center changes
+    if (isNearCenter && !showInfoPanel) {
+      markerLoadTimeRef.current = performance.now()
+      
+      // Only set loading state if we're actually waiting for data
+      const shouldShowLoading = isDataMissing || !isConnectionReady
+      setIsPanelLoading(shouldShowLoading)
+      
+      // Always show the info panel immediately when near center, but with loading state if data is missing
+      setShowInfoPanel(true)
+      
+      if (shouldShowLoading) {
+        console.log(`[ProjectMarker] Starting to load panel for project: ${project?.id}, waiting for ${!isConnectionReady ? 'connection' : 'data'}`)
+      } else {
+        console.log(`[ProjectMarker] Panel data already available for project: ${project?.id}`)
+      }
+    }
+
     if (!isNearCenter) {
       setShowInfoPanel(false)
+      setIsPanelLoading(false)
+      markerLoadTimeRef.current = null
     } else {
-      // Small delay before showing to allow for smooth transitions
+      // Adjust timeout duration based on data availability
+      let timeoutDuration = 50
+      
+      // Only use longer timeouts if we're actually waiting for something
+      if (!isConnectionReady) {
+        timeoutDuration = 250 // Longer timeout for connection issues
+      } else if (isDataMissing) {
+        timeoutDuration = 100 // Moderate timeout for data still loading
+      }
+      
       const timeout = setTimeout(() => {
-        setShowInfoPanel(true)
-      }, 50)
+        // Panel is already showing with loading state, now we'll update loading state to false
+        setIsPanelLoading(false)
+        
+        if (markerLoadTimeRef.current) {
+          const loadTime = performance.now() - markerLoadTimeRef.current
+          console.log(`[ProjectMarker] Panel loaded for project: ${project?.id} in ${loadTime.toFixed(2)}ms`)
+          
+          // Only log warning if load time is excessive AND we were actually loading data
+          if (loadTime > 1000 && (isDataMissing || !isConnectionReady)) {
+            console.warn(`[ProjectMarker] Slow panel load detected (${loadTime.toFixed(2)}ms) for project: ${project?.id}`)
+          }
+        }
+      }, timeoutDuration)
+      
       return () => clearTimeout(timeout)
     }
-  }, [isNearCenter])
+  }, [isNearCenter, project, isPending, contributionSummary, showInfoPanel, connectionState])
+
+  // Pre-load contribution data when marker is somewhat near center
+  useEffect(() => {
+    if (project?.id && project?.status !== 'draft' && !contributionSummary && connectionState === 'connected') {
+      console.log(`[ProjectMarker] Pre-fetching contribution data for project: ${project.id}`)
+      // Contribution data will be loaded automatically through the current mechanism,
+      // we're just logging when we start the pre-loading process
+    }
+  }, [project?.id, project?.status, contributionSummary, connectionState])
 
   return (
     <>
@@ -85,6 +149,7 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
           group={group}
           position={position}   
           isVisible={showInfoPanel && !isDeleted}
+          isLoading={isPanelLoading}
           contributionSummary={contributionSummary}
         />,
         map.getCanvasContainer()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useRouter } from 'next/navigation'
 import { ProjectDetails, ProjectDetailsSkeleton } from './project-details'
@@ -25,7 +25,9 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
   const [initialData, setInitialData] = useState<ProjectFormData | null>(null)
   
   // Determine if the component is in a loading state
-  const isLoading = !initialData || initialData.id !== projectId
+  const isLoading = useMemo(() =>
+    !initialData || initialData.id !== projectId,
+  [initialData, projectId])
 
   // Update initialData when projectData changes
   useEffect(() => {
@@ -62,6 +64,7 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
     disconnect()
     // Wait for the animation to complete
     setTimeout(() => {
+      setInitialData(null)
       router.push('/projects')
     }, 150)
   }
@@ -133,7 +136,7 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
       icon: <i className="fa-solid fa-lightbulb" />,
       content: (
         <div className="p-6 pt-0 overflow-y-auto">
-          {initialData && (
+          {initialData ? (
             <ProjectDetails
               initialData={initialData}
               projectId={projectId}
@@ -141,6 +144,8 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
               isReadOnly={true}
               isLoading={isLoading}
             />
+          ) : (
+            <ProjectDetailsSkeleton />
           )}
         </div>
       ),
