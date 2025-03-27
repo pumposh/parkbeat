@@ -4,6 +4,7 @@ import { env } from "hono/adapter"
 import { jstack, Procedure } from "jstack"
 import { Redis } from "@upstash/redis/cloudflare"
 import { getLoggerMiddleware } from "./middleware/logger-middleware"
+import { R2Bucket } from "@cloudflare/workers-types"
 
 export interface Env {
   Bindings: { 
@@ -11,6 +12,8 @@ export interface Env {
     UPSTASH_REDIS_REST_URL: string;
     UPSTASH_REDIS_REST_TOKEN: string;
     WEBSOCKET_DO: DurableObjectNamespace;
+    R2: R2Bucket;
+    STORAGE_DOMAIN: string;
   }
 }
 

@@ -10,6 +10,7 @@ import { Procedure } from "jstack";
 import { ContextWithSuperJSON } from "jstack";
 import { DedupeThing } from "@/lib/promise";
 import { ParkbeatLogger } from "@/lib/logger";
+import { AIIO, clientEventsSchema, serverEventsSchema } from "./types";
 
 type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
@@ -107,12 +108,15 @@ export const projectServerEvents = {
   })
 };
 
-const clientEvents = z.object(projectClientEvents)
-const serverEvents = z.object(projectServerEvents)
+export const projectEvents = {
+  client: z.object(projectClientEvents),
+  server: z.object(projectServerEvents)
+}
+
 type ProcedureEnv = ContextWithSuperJSON<Env>
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
 
-type LocalProcedure = Procedure<Env, ProcedureContext, void, typeof clientEvents, typeof serverEvents>
+type LocalProcedure = Procedure<Env, ProcedureContext, void, typeof clientEventsSchema, typeof serverEventsSchema>
 type ProcedureIO = Parameters<Parameters<LocalProcedure["ws"]>[0]>[0]['io']
 type ProjectSocket = Parameters<NonNullable<Awaited<ReturnType<Parameters<LocalProcedure["ws"]>[0]>>['onConnect']>>[0]['socket']
 
@@ -460,7 +464,7 @@ export const setupProjectHandlers = (
       // If the status changed, pass null as socketId to ensure all subscribers are notified
       // Otherwise, just pass the current socket ID
       const notifySocketId = result.statusChanged ? null : getSocketId(socket)
-      await notifyProjectSubscribers(contribution.project_id, notifySocketId, io)
+      await notifyProjectSubscribers(contribution.project_id, notifySocketId, io as unknown as AIIO)
       
       if (result.statusChanged) {
         logger.log(`Project ${contribution.project_id} status changed to 'funded'. All subscribers notified.`)

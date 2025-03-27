@@ -36,6 +36,11 @@ export interface StreetViewParams {
   zoom: number
 }
 
+// Image source parameters
+export type ImageSourceParams = 
+  | { type: 'url'; url: string }
+  | { type: 'streetView'; params: StreetViewParams }
+
 // Validation options
 export interface ValidationOptions {
   projectId?: string
@@ -186,7 +191,7 @@ export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) 
   }
 
   const validateStreetView = async (
-    params: StreetViewParams,
+    params: StreetViewParams | ImageSourceParams,
     overrideOptions?: Partial<ValidationOptions>
   ) => {
     // Merge default options with any overrides
@@ -212,7 +217,7 @@ export function useStreetViewValidation(defaultOptions: ValidationOptions = {}) 
       }
 
       wsManager.emit('validateImage', {
-        imageSource: {
+        imageSource: 'type' in params ? params : {
           type: 'streetView',
           params
         },

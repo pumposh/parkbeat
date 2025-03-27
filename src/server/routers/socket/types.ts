@@ -1,16 +1,37 @@
-import { ContextWithSuperJSON } from "jstack"
-import { Env } from "../../jstack"
+import { ContextWithSuperJSON, Procedure } from "jstack"
+import { Env as JStackEnv } from "@/server/jstack";
 import { publicProcedure } from "../../jstack"
 import type { ProjectData } from "@/server/types/shared"
 import { ServerSocket } from "jstack-shared"
 import { ParkbeatLogger } from "@/lib/logger"
+import { z } from "zod"
+import { projectEvents } from "./project-handlers"
+import { aiEvents } from "./ai-handlers"
 
+// Define base event types
+export type ClientEvents = z.infer<typeof aiEvents.client> & z.infer<typeof projectEvents.client>
+export type ServerEvents = z.infer<typeof aiEvents.server> & z.infer<typeof projectEvents.server>
 
-export type ProcedureEnv = ContextWithSuperJSON<Env>
+// Create zod schemas for the event types to satisfy ZodTypeAny constraint
+export const clientEventsSchema = z.object({
+  ...aiEvents.client.shape,
+  ...projectEvents.client.shape
+})
+
+export const serverEventsSchema = z.object({
+  ...aiEvents.server.shape,
+  ...projectEvents.server.shape
+})
+
+// Define procedure types using the zod schemas
+type LocalProcedure = Procedure<JStackEnv, ProcedureContext, void, typeof clientEventsSchema, typeof serverEventsSchema>
+
+export type ProcedureEnv = ContextWithSuperJSON<JStackEnv>
 export type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
 
-export type AIIO = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['io']
-export type AISocket = ServerSocket<any, any>
+// Define IO types using the event schemas
+export type AIIO = Parameters<Parameters<LocalProcedure["ws"]>[0]>[0]['io']
+export type AISocket = ServerSocket<z.infer<typeof clientEventsSchema>, z.infer<typeof serverEventsSchema>>
 
 export type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 

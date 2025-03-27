@@ -20,7 +20,7 @@ diff --git a/node_modules/jstack-shared/.bun-tag-ea50255e6048924d b/.bun-tag-ea5
 new file mode 100644
 index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 27d95247acf8ca59cdac6f79f9a2000e82e47028..72b12e2f8348b02f26419f4bca1324cf75a2d339 100644
+index 27d95247acf8ca59cdac6f79f9a2000e82e47028..b894e10f1af27e4d3effc516c0cc1307a3403d37 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -4415,7 +4415,7 @@ var EventEmitter = class {
@@ -41,7 +41,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..72b12e2f8348b02f26419f4bca1324cf
    ws;
    controllers = /* @__PURE__ */ new Map();
    emitter;
-@@ -4463,12 +4463,12 @@ var ServerSocket = class {
+@@ -4463,7 +4463,7 @@ var ServerSocket = class {
      });
    }
    get rooms() {
@@ -50,14 +50,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..72b12e2f8348b02f26419f4bca1324cf
    }
    close() {
      this.ws.close();
--    for (const controller of this.controllers.values()) {
--      controller.abort();
-+    for (const controllers of this.controllers.values()) {
-+      controllers.forEach((controller) => controller.abort());
-     }
-     this.controllers.clear();
-     for (const timers of this.heartbeatTimers.values()) {
-@@ -4489,22 +4489,36 @@ var ServerSocket = class {
+@@ -4489,22 +4489,29 @@ var ServerSocket = class {
    handleEvent(eventName, eventData) {
      this.emitter.handleEvent(eventName, eventData);
    }
@@ -92,33 +85,35 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..72b12e2f8348b02f26419f4bca1324cf
 -      controller.abort();
 -      this.controllers.delete(room);
 -      logger.info(`Left room: ${room}`);
-+    const controllers = this.controllers.get(room);
-+    this.subscribedRooms.set(room, { status: "disconnected" });
-+    if (controllers) {
-+      controllers.forEach((controller) => controller.abort());
-     } else {
-       logger.warn(`Attempted to leave room "${room}" but no active controller found`);
-     }
-+    this.controllers.delete(room);
+-    } else {
+-      logger.warn(`Attempted to leave room "${room}" but no active controller found`);
+-    }
++    this.unsubscribe(room);
 +    logger.info(`Left room: ${room}`);
    }
    createHeartbeat(room) {
      const heartbeat = {
-@@ -4525,7 +4539,12 @@ var ServerSocket = class {
+@@ -4524,8 +4531,11 @@ var ServerSocket = class {
+   async subscribe(room) {
      return new Promise(async (resolve, reject) => {
        try {
++        if (this.subscribedRooms.get(room)?.status === "connected") {
++          resolve();
++          return;
++        }
          const controller = new AbortController();
 -        this.controllers.set(room, controller);
-+        const controllers = this.controllers.get(room) ?? [];
-+        if (controllers.length) {
-+          controllers.forEach((controller2) => controller2.abort());
-+        }
-+        controllers.push(controller);
-+        this.controllers.set(room, controllers);
          this.lastPingTimes.set(room, Date.now());
          const stream = await fetch(`${this.redisUrl}/subscribe/${room}`, {
            headers: {
-@@ -4537,6 +4556,7 @@ var ServerSocket = class {
+@@ -4534,9 +4544,14 @@ var ServerSocket = class {
+           },
+           signal: controller.signal
+         });
++        if (this.controllers.has(room)) {
++          this.controllers.get(room)?.abort();
++        }
++        this.controllers.set(room, controller);
          const reader = stream.body?.getReader();
          const decoder = new TextDecoder();
          let buffer = "";
@@ -126,7 +121,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..72b12e2f8348b02f26419f4bca1324cf
          while (reader) {
            const { done, value } = await reader.read();
            resolve();
-@@ -4546,7 +4566,6 @@ var ServerSocket = class {
+@@ -4546,7 +4561,6 @@ var ServerSocket = class {
            const messages = buffer.split("\n");
            buffer = messages.pop() || "";
            for (const message of messages) {
@@ -134,7 +129,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..72b12e2f8348b02f26419f4bca1324cf
              if (message.startsWith("data: ")) {
                const data = message.slice(6);
                try {
-@@ -4561,13 +4580,26 @@ var ServerSocket = class {
+@@ -4561,13 +4575,26 @@ var ServerSocket = class {
                    logger.warn("Missing payload in message");
                    continue;
                  }
@@ -144,11 +139,11 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..72b12e2f8348b02f26419f4bca1324cf
 -                  this.lastPingTimes.set(room, Date.now());
 +                const maybePingMessage = payloadStr.substring(0, 8);
 +                if (maybePingMessage.includes("ping")) {
-+                  const abortControllers = this.controllers.get(room) ?? [];
++                  const abortController = this.controllers.get(room);
 +                  const status = this.subscribedRooms.get(room)?.status;
-+                  if (!abortControllers.length || status !== "connected") {
++                  if (!abortController || status !== "connected") {
 +                    logger.warn(`Halting heartbeat for room: ${room}`);
-+                    abortControllers.forEach((controller2) => controller2.abort());
++                    abortController?.abort();
 +                    this.subscribedRooms.set(room, { status: "disconnected" });
 +                    return;
 +                  } else {
@@ -166,18 +161,12 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..72b12e2f8348b02f26419f4bca1324cf
                  } else {
                    logger.debug("WebSocket not open, skipping message");
                  }
-@@ -4583,14 +4615,21 @@ var ServerSocket = class {
-     });
-   }
-   async unsubscribe(room) {
--    const controller = this.controllers.get(room);
--    if (controller) {
--      controller.abort();
+@@ -4586,11 +4613,18 @@ var ServerSocket = class {
+     const controller = this.controllers.get(room);
+     if (controller) {
+       controller.abort();
 -      this.controllers.delete(room);
 -      logger.info(`Unsubscribed from room: ${room}`);
-+    const controllers = this.controllers.get(room);
-+    if (controllers) {
-+      controllers.forEach((controller) => controller.abort());
      } else {
        logger.warn(`No active subscription found for room: ${room}`);
      }
@@ -193,7 +182,7 @@ index 27d95247acf8ca59cdac6f79f9a2000e82e47028..72b12e2f8348b02f26419f4bca1324cf
    }
  };
  var ClientSocket = class {
-@@ -4681,7 +4720,8 @@ Fix this issue: https://jstack.app/docs/getting-started/local-development
+@@ -4681,7 +4715,8 @@ Fix this issue: https://jstack.app/docs/getting-started/local-development
          const [eventName, eventData] = parseResult.data;
          this.emitter.handleEvent(eventName, eventData);
        } else {
@@ -260,7 +249,7 @@ index 373e563d5c46e9b3bbf6234a2541f11c057b12c7..8e7cfd038ef8ef05804f7e8d89c8ca04
      private createHeartbeat;
      private subscribe;
 diff --git a/dist/index.js b/dist/index.js
-index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..85ff5912fe3b6345e61f9977846366aa1de6f20b 100644
+index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..1347616fb61cfda2335243c40f37799025c41c70 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -4406,7 +4406,7 @@ var EventEmitter = class {
@@ -281,7 +270,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..85ff5912fe3b6345e61f9977846366aa
    ws;
    controllers = /* @__PURE__ */ new Map();
    emitter;
-@@ -4454,12 +4454,12 @@ var ServerSocket = class {
+@@ -4454,7 +4454,7 @@ var ServerSocket = class {
      });
    }
    get rooms() {
@@ -290,14 +279,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..85ff5912fe3b6345e61f9977846366aa
    }
    close() {
      this.ws.close();
--    for (const controller of this.controllers.values()) {
--      controller.abort();
-+    for (const controllers of this.controllers.values()) {
-+      controllers.forEach((controller) => controller.abort());
-     }
-     this.controllers.clear();
-     for (const timers of this.heartbeatTimers.values()) {
-@@ -4480,22 +4480,36 @@ var ServerSocket = class {
+@@ -4480,22 +4480,29 @@ var ServerSocket = class {
    handleEvent(eventName, eventData) {
      this.emitter.handleEvent(eventName, eventData);
    }
@@ -332,33 +314,35 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..85ff5912fe3b6345e61f9977846366aa
 -      controller.abort();
 -      this.controllers.delete(room);
 -      logger.info(`Left room: ${room}`);
-+    const controllers = this.controllers.get(room);
-+    this.subscribedRooms.set(room, { status: "disconnected" });
-+    if (controllers) {
-+      controllers.forEach((controller) => controller.abort());
-     } else {
-       logger.warn(`Attempted to leave room "${room}" but no active controller found`);
-     }
-+    this.controllers.delete(room);
+-    } else {
+-      logger.warn(`Attempted to leave room "${room}" but no active controller found`);
+-    }
++    this.unsubscribe(room);
 +    logger.info(`Left room: ${room}`);
    }
    createHeartbeat(room) {
      const heartbeat = {
-@@ -4516,7 +4530,12 @@ var ServerSocket = class {
+@@ -4515,8 +4522,11 @@ var ServerSocket = class {
+   async subscribe(room) {
      return new Promise(async (resolve, reject) => {
        try {
++        if (this.subscribedRooms.get(room)?.status === "connected") {
++          resolve();
++          return;
++        }
          const controller = new AbortController();
 -        this.controllers.set(room, controller);
-+        const controllers = this.controllers.get(room) ?? [];
-+        if (controllers.length) {
-+          controllers.forEach((controller2) => controller2.abort());
-+        }
-+        controllers.push(controller);
-+        this.controllers.set(room, controllers);
          this.lastPingTimes.set(room, Date.now());
          const stream = await fetch(`${this.redisUrl}/subscribe/${room}`, {
            headers: {
-@@ -4528,6 +4547,7 @@ var ServerSocket = class {
+@@ -4525,9 +4535,14 @@ var ServerSocket = class {
+           },
+           signal: controller.signal
+         });
++        if (this.controllers.has(room)) {
++          this.controllers.get(room)?.abort();
++        }
++        this.controllers.set(room, controller);
          const reader = stream.body?.getReader();
          const decoder = new TextDecoder();
          let buffer = "";
@@ -366,7 +350,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..85ff5912fe3b6345e61f9977846366aa
          while (reader) {
            const { done, value } = await reader.read();
            resolve();
-@@ -4537,7 +4557,6 @@ var ServerSocket = class {
+@@ -4537,7 +4552,6 @@ var ServerSocket = class {
            const messages = buffer.split("\n");
            buffer = messages.pop() || "";
            for (const message of messages) {
@@ -374,7 +358,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..85ff5912fe3b6345e61f9977846366aa
              if (message.startsWith("data: ")) {
                const data = message.slice(6);
                try {
-@@ -4552,13 +4571,26 @@ var ServerSocket = class {
+@@ -4552,13 +4566,26 @@ var ServerSocket = class {
                    logger.warn("Missing payload in message");
                    continue;
                  }
@@ -384,11 +368,11 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..85ff5912fe3b6345e61f9977846366aa
 -                  this.lastPingTimes.set(room, Date.now());
 +                const maybePingMessage = payloadStr.substring(0, 8);
 +                if (maybePingMessage.includes("ping")) {
-+                  const abortControllers = this.controllers.get(room) ?? [];
++                  const abortController = this.controllers.get(room);
 +                  const status = this.subscribedRooms.get(room)?.status;
-+                  if (!abortControllers.length || status !== "connected") {
++                  if (!abortController || status !== "connected") {
 +                    logger.warn(`Halting heartbeat for room: ${room}`);
-+                    abortControllers.forEach((controller2) => controller2.abort());
++                    abortController?.abort();
 +                    this.subscribedRooms.set(room, { status: "disconnected" });
 +                    return;
 +                  } else {
@@ -406,18 +390,12 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..85ff5912fe3b6345e61f9977846366aa
                  } else {
                    logger.debug("WebSocket not open, skipping message");
                  }
-@@ -4574,14 +4606,21 @@ var ServerSocket = class {
-     });
-   }
-   async unsubscribe(room) {
--    const controller = this.controllers.get(room);
--    if (controller) {
--      controller.abort();
+@@ -4577,11 +4604,18 @@ var ServerSocket = class {
+     const controller = this.controllers.get(room);
+     if (controller) {
+       controller.abort();
 -      this.controllers.delete(room);
 -      logger.info(`Unsubscribed from room: ${room}`);
-+    const controllers = this.controllers.get(room);
-+    if (controllers) {
-+      controllers.forEach((controller) => controller.abort());
      } else {
        logger.warn(`No active subscription found for room: ${room}`);
      }
@@ -433,7 +411,7 @@ index 032fb2bdea30184b2186ddef5e2f2fd39a88a1c1..85ff5912fe3b6345e61f9977846366aa
    }
  };
  var ClientSocket = class {
-@@ -4672,7 +4711,8 @@ Fix this issue: https://jstack.app/docs/getting-started/local-development
+@@ -4672,7 +4706,8 @@ Fix this issue: https://jstack.app/docs/getting-started/local-development
          const [eventName, eventData] = parseResult.data;
          this.emitter.handleEvent(eventName, eventData);
        } else {

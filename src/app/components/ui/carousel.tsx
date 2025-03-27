@@ -94,13 +94,17 @@ export function Carousel({
 
   return (
     <div 
-      className={cn("relative group carousel", className)}
+      className={cn(
+        "relative group carousel",
+        "flex flex-col flex-grow",
+        className
+      )}
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
-      <div className="overflow-hidden rounded-lg">
+      <div className="overflow-hidden rounded-lg flex-grow">
         <div 
-          className="relative aspect-[1/1] flex transition-transform duration-500 ease-out"
+          className="relative aspect-[1/1] h-full flex transition-transform duration-500 ease-out"
           style={{
             transform: `translateX(-${currentIndex * 100}%)`,
           }}
@@ -111,14 +115,14 @@ export function Carousel({
                 src={image.src}
                 alt={image.alt || `Image ${index + 1}`}
                 className={cn(
-                  "w-full h-full object-cover",
+                  "absolute inset-0 w-full h-full object-cover",
                   "transition-opacity duration-500",
                 )}
                 loading="lazy"
               />
               {image.label && (
                 <div className={cn(
-                  "absolute top-2 left-2",
+                  "absolute top-2 left-2 z-10",
                   "px-2 py-1 rounded bg-black/50 text-white text-sm",
                   "opacity-0 group-hover:opacity-100 transition-opacity"
                 )}>

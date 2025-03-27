@@ -7,6 +7,7 @@ import { GradientBlur } from '../../ui/gradient-blur'
 import { generateId } from '@/lib/id'
 import { useStreetViewValidation } from '@/hooks/use-street-view-validation'
 import { useProjectData } from '@/hooks/use-tree-sockets'
+import { useUser } from '@clerk/nextjs'
 
 declare global {
   interface Window {
@@ -35,6 +36,21 @@ interface StreetViewCardProps {
   saveDraft?: () => void
   className?: string
   showLoadingAnimation?: boolean
+}
+
+interface PresignedUrlResponse {
+  url: string
+  key: string
+}
+
+interface ValidationParams {
+  type: 'url' | 'streetView'
+  url?: string
+  lat?: number
+  lng?: number
+  heading?: number
+  pitch?: number
+  zoom?: number
 }
 
 export const StreetViewCard = ({ 
@@ -72,6 +88,11 @@ export const StreetViewCard = ({
   })
 
   const { projectData: { data: projectData } } = useProjectData(projectId)
+  const { user } = useUser()
+  const isAdmin = user?.organizationMemberships?.some(
+    (membership) => membership.role === "org:admin"
+  )
+
   useEffect(() => {
     if (projectData?.images?.length) {
       onValidationStateChange?.({ isValid: true })
@@ -387,6 +408,119 @@ export const StreetViewCard = ({
     )
   }
 
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Don't allow upload if not authenticated
+    if (!fundraiserId) {
+      console.log('[StreetViewCard] Cannot upload: No fundraiser ID')
+      return
+    }
+
+    // Validate file type and size
+    if (!file.type.startsWith('image/')) {
+      setValidationMessage({
+        message: 'Please upload an image file',
+        type: 'error'
+      })
+      return
+    }
+
+    const MAX_SIZE = 10 * 1024 * 1024 // 10MB
+    if (file.size > MAX_SIZE) {
+      setValidationMessage({
+        message: 'Image must be smaller than 10MB',
+        type: 'error'
+      })
+      return
+    }
+
+    try {
+      // Get presigned URL from backend
+      const response = await fetch('/api/upload/presign', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName: file.name,
+          contentType: file.type,
+          projectId
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('[StreetViewCard] Failed to get upload URL:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        })
+        throw new Error('Failed to get upload URL')
+      }
+      
+      const { url, key } = await response.json() as PresignedUrlResponse
+
+      // Upload to R2 using simple PUT request
+      const uploadResponse = await fetch(url, {
+        method: 'PUT',
+        body: file,
+        headers: {
+          'Content-Type': file.type
+        }
+      })
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text()
+        console.error('[StreetViewCard] Upload failed:', {
+          status: uploadResponse.status,
+          statusText: uploadResponse.statusText,
+          error: errorText
+        })
+        throw new Error(`Failed to upload image: ${uploadResponse.statusText}`)
+      }
+
+      // Get the public URL
+      const publicUrl = `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${key}`
+      
+      saveDraft?.()
+
+      // Validate the uploaded image using the same flow as street view
+      validateStreetView(
+        {
+          type: 'url',
+          url: publicUrl
+        },
+        {
+          onError: (error) => {
+            console.error('[StreetViewCard] Validation error:', error)
+            setValidationMessage({
+              message: error.message,
+              type: 'error'
+            })
+            onValidationStateChange?.({ isValid: false })
+          },
+          onSuccess: (response) => {
+            const isValid = response.success === 'yes' || response.success === 'maybe'
+            setValidationMessage({
+              message: response.description,
+              type: response.success === 'maybe' ? 'warning' : 'success'
+            })
+            onValidationStateChange?.({ isValid })
+            onValidationSuccess?.(response)
+          }
+        }
+      )
+    } catch (error) {
+      console.error('[StreetViewCard] Upload error:', error)
+      setValidationMessage({
+        message: error instanceof Error ? error.message : 'Failed to upload image',
+        type: 'error'
+      })
+    }
+  }
+
   if (externalLoading) {
     return (
       <div className="flex items-center gap-3 text-sm text-zinc-500">
@@ -497,63 +631,116 @@ export const StreetViewCard = ({
         </div>
       </div>
 
-      {/* Shutter Button */}
-      <button 
-        onClick={handleStreetViewCapture}
-        disabled={isValidating || !fundraiserId}
-        className={cn(
-          "absolute bottom-[8vw] left-1/2 -translate-x-1/2 z-10",
-          "w-[20vw] h-[20vw] rounded-full flex items-center justify-center",
-          "transition-all duration-200",
-          !isValidating && fundraiserId && "hover:scale-110",
-          "focus:outline-none focus:ring-4 focus:ring-white/30",
-          "drop-shadow-[0_4px_12px_rgba(0,0,0,0.4)]",
-          // Outer ring with shine animation
-          "before:absolute before:inset-[-1.75vw] before:rounded-full before:border-[1vw]",
-          "before:transition-all before:duration-300",
-          isValidating ? [
-            showLoadingAnimation ? [
-              "before:border-white/70",
-              "before:border-[4vw]",
-              "before:animate-bulge",
-              "before:scale-110",
+      {/* Upload and Capture Buttons */}
+      <div className="absolute bottom-[8vw] w-full z-10 flex items-center justify-center">
+        {/* Upload Button - Only show for treeCareCaptain */}
+        {isAdmin && (
+          <div className="absolute left-[15%]">
+            <label
+              className={cn(
+                "rounded-2xl flex items-center justify-center cursor-pointer",
+                "transition-all duration-200",
+                "hover:scale-105 active:scale-95",
+                "focus:outline-none focus:ring-2 focus:ring-white/20",
+                "frosted-glass backdrop-blur-md",
+                // Container styling
+                "bg-white/10",
+                "border border-white/20",
+                "shadow-[0_8px_16px_rgba(0,0,0,0.2)]",
+                "py-3 px-5 translate-x-[-16px]",
+                // Hover effects
+                "hover:bg-white/20 hover:border-white/30",
+                "hover:shadow-[0_12px_24px_rgba(0,0,0,0.25)]",
+                // Disabled state
+                isValidating && [
+                  "opacity-50",
+                  "cursor-not-allowed",
+                  "pointer-events-none",
+                  "hover:scale-100",
+                  "hover:bg-white/10",
+                  "hover:border-white/20"
+                ]
+              )}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                disabled={isValidating || !fundraiserId}
+                className="hidden"
+                aria-label="Upload image"
+              />
+              <i 
+                className={cn(
+                  "fa-solid fa-arrow-up-from-bracket",
+                  "text-white/90 text-base",
+                  "transition-transform duration-200",
+                  "group-hover:scale-110",
+                  "drop-shadow-[0_2px_3px_rgba(0,0,0,0.3)]"
+                )}
+                aria-hidden="true"
+              />
+            </label>
+          </div>
+        )}
+
+        {/* Capture Button */}
+        <button 
+          onClick={handleStreetViewCapture}
+          disabled={isValidating || !fundraiserId}
+          className={cn(
+            "w-[20vw] h-[20vw] max-h-[65px] max-w-[65px] rounded-full flex items-center justify-center",
+            "transition-all duration-200",
+            !isValidating && fundraiserId && "hover:scale-110",
+            "focus:outline-none focus:ring-4 focus:ring-white/30",
+            "drop-shadow-[0_4px_12px_rgba(0,0,0,0.4)]",
+            // Outer ring with shine animation
+            "before:absolute before:inset-[-1.75vw] before:rounded-full before:border-[1vw]",
+            "before:transition-all before:duration-300",
+            isValidating ? [
+              showLoadingAnimation ? [
+                "before:border-white/70",
+                "before:border-[4vw]",
+                "before:animate-bulge",
+                "before:scale-110",
+              ] : [
+                "before:border-white/50",
+                "before:scale-100",
+              ],
+              "before:opacity-50"
             ] : [
-              "before:border-white/50",
+              "before:border-white/90",
               "before:scale-100",
-            ],
-            "before:opacity-50"
-          ] : [
-            "before:border-white/90",
-            "before:scale-100",
-            "before:opacity-100"
-          ].join(" "),
-          // Inner circle
-          "after:absolute after:inset-[0.75vw] after:rounded-full",
-          "after:transition-all after:duration-300",
-          isValidating ? [
-            showLoadingAnimation ? [
-              "after:bg-white/30",
-              "after:scale-90",
-              "after:opacity-0"
+              "before:opacity-100"
+            ].join(" "),
+            // Inner circle
+            "after:absolute after:inset-[0.75vw] after:rounded-full",
+            "after:transition-all after:duration-300",
+            isValidating ? [
+              showLoadingAnimation ? [
+                "after:bg-white/30",
+                "after:scale-90",
+                "after:opacity-0"
+              ] : [
+                "after:bg-white/50",
+                "after:scale-95",
+                "after:opacity-50"
+              ]
             ] : [
-              "after:bg-white/50",
-              "after:scale-95",
-              "after:opacity-50"
-            ]
-          ] : [
-            "after:bg-white/90",
-            "after:scale-100",
-            "after:opacity-100"
-          ].join(" "),
-          isValidating && (showLoadingAnimation ? "opacity-90" : "opacity-75"),
-          isValidating && "cursor-not-allowed"
-        )}
-        aria-label="Take photo"
-      >
-        {isValidating && !showLoadingAnimation && (
-          <i className="fa-solid fa-circle-notch fa-spin absolute text-white/90 text-xl" aria-hidden="true" />
-        )}
-      </button>
+              "after:bg-white/90",
+              "after:scale-100",
+              "after:opacity-100"
+            ].join(" "),
+            isValidating && (showLoadingAnimation ? "opacity-90" : "opacity-75"),
+            isValidating && "cursor-not-allowed"
+          )}
+          aria-label="Take photo"
+        >
+          {isValidating && !showLoadingAnimation && (
+            <i className="fa-solid fa-circle-notch fa-spin absolute text-white/90 text-xl" aria-hidden="true" />
+          )}
+        </button>
+      </div>
     </div>
   )
 } 

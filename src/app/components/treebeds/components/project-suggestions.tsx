@@ -384,11 +384,14 @@ export function ProjectSuggestions({
                 {selectedSuggestionId === suggestion.id && (
                   <div className={cn(
                     styles.suggestionImage,
+                    "flex flex-col flex-grow",
+
                     selectedSuggestionId === suggestion.id && styles.visible
                   )}>
                     {getImages(suggestion).length > 0 ? (
                       <div className={cn(
                         "w-full h-full relative",
+                        "flex flex-col flex-grow",
                         suggestion.images?.status?.isGenerating && "animate-pulse"
                       )}>
                         <Carousel 

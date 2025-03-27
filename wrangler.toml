@@ -5,14 +5,13 @@ main = "src/server/index.ts"
 
 # Bind R2 bucket
 [[r2_buckets]]
-binding = "R2_BUCKET"
-bucket_name = "parkbeat-images"
-preview_bucket_name = "parkbeat-images-dev"
+binding = "R2"
+bucket_name = "parkbeat"
 
 [vars]
 # Reference environment variables without exposing them in the file
-R2_BUCKET_NAME = "parkbeat-images"
-
+R2_BUCKET_NAME = "parkbeat"
+STORAGE_DOMAIN = "https://pub-1b329c4b7260459ab85c7d45a2c4dc12.r2.dev"
 [dev]
 port = 8080
 

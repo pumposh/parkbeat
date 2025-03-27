@@ -15,7 +15,7 @@ import { ImageGenerationAgent } from "../ai-helpers/leonardo-agent";
 import { calculateProjectCosts } from "@/lib/cost";
 import { DedupeThing } from "@/lib/promise";
 import { ParkbeatLogger } from "@/lib/logger";
-import { AISocket, AIIO } from "./types";
+import { AISocket, AIIO, clientEventsSchema, serverEventsSchema } from "./types";
 
 type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
@@ -126,12 +126,17 @@ export const aiServerEvents = {
   })
 };
 
-const clientEvents = z.object(aiClientEvents)
-const serverEvents = z.object(aiServerEvents)
+export const aiEvents = {
+  client: z.object(aiClientEvents),
+  server: z.object(aiServerEvents)
+}
+
 type ProcedureContext = Parameters<Parameters<typeof publicProcedure.ws>[0]>[0]['ctx']
 type ProcedureEnv = ContextWithSuperJSON<JStackEnv>
+type LocalProcedure = Procedure<JStackEnv, ProcedureContext, void, typeof clientEventsSchema, typeof serverEventsSchema>
+type ProcedureIO = Parameters<Parameters<LocalProcedure["ws"]>[0]>[0]['io']
 
-export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AIIO, c: ProcedureEnv, logger: Logger) => {
+export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: ProcedureIO, c: ProcedureEnv, logger: Logger) => {
   const db = ctx.db;
 
   logger.info('Initializing AI WebSocket handler')
@@ -165,6 +170,17 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: AII
       sourceImageId: sourceImage.id,
       projectId
     })
+
+    const shouldProceed = await DedupeThing.getInstance().dedupe(
+      'generateImagesForSuggestion',
+      socketId,
+      suggestion.title,
+      projectId
+    )
+    if (!shouldProceed) {
+      logger.info(`[generateImagesForSuggestion] Skipping - already running with ID: ${suggestion.id}`)
+      return
+    }
 
     // Helper function to update suggestion images and notify subscribers
     const updateSuggestionImages = async (images: ProjectSuggestion['images']) => {
