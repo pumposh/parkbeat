@@ -689,18 +689,18 @@ export const StreetViewCard = ({
           onClick={handleStreetViewCapture}
           disabled={isValidating || !fundraiserId}
           className={cn(
-            "w-[20vw] h-[20vw] max-h-[65px] max-w-[65px] rounded-full flex items-center justify-center",
+            "w-[20vw] h-[20vw] max-h-[65px] max-w-[65px] relative rounded-full flex items-center justify-center",
             "transition-all duration-200",
             !isValidating && fundraiserId && "hover:scale-110",
             "focus:outline-none focus:ring-4 focus:ring-white/30",
             "drop-shadow-[0_4px_12px_rgba(0,0,0,0.4)]",
             // Outer ring with shine animation
-            "before:absolute before:inset-[-1.75vw] before:rounded-full before:border-[1vw]",
+            "before:absolute before:inset-[-10px] before:rounded-full before:border-[7px]",
             "before:transition-all before:duration-300",
             isValidating ? [
               showLoadingAnimation ? [
                 "before:border-white/70",
-                "before:border-[4vw]",
+                "before:border-[13px]",
                 "before:animate-bulge",
                 "before:scale-110",
               ] : [
@@ -714,7 +714,7 @@ export const StreetViewCard = ({
               "before:opacity-100"
             ].join(" "),
             // Inner circle
-            "after:absolute after:inset-[0.75vw] after:rounded-full",
+            "after:absolute after:inset-[2.5px] after:rounded-full",
             "after:transition-all after:duration-300",
             isValidating ? [
               showLoadingAnimation ? [
