@@ -140,12 +140,13 @@ export const setupProjectHandlers = (
 
   // Project subscription handlers
   socket.on('subscribeProject', async ({ projectId, shouldSubscribe }: { projectId: string; shouldSubscribe: boolean }) => {
+
+    const deduped = await DedupeThing.getInstance()
+      .dedupe(socketId, 'subscribeProject', projectId, shouldSubscribe)
+    if (!deduped) return;
+
     if (shouldSubscribe) {
       logger.log(`Handling project subscription for: ${projectId}`)
-
-      const deduped = await DedupeThing.getInstance()
-        .dedupe(socketId, 'subscribeProject', projectId)
-      if (!deduped) return;
 
       try {
         await processCleanupQueue()

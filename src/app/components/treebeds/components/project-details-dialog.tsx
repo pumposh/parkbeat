@@ -14,13 +14,12 @@ import { ProjectTargetTracker } from './project-target-tracker'
 import { calculateProjectCosts } from '@/lib/cost'
 import { CarouselTabs } from '../../ui/carousel-tabs'
 
-interface ProjectDetailsDialogProps {
+interface ProjectDetailsContentProps {
   projectId: string
+  onClose?: () => void
 }
 
-export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
-  const router = useRouter()
-  const [open, setOpen] = useState(true)
+function ProjectDetailsContent({ projectId, onClose }: ProjectDetailsContentProps) {
   const { projectData, disconnect } = useProjectData(projectId)
   const [initialData, setInitialData] = useState<ProjectFormData | null>(null)
   
@@ -59,15 +58,12 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
     }
   }, [projectData])
 
-  const handleClose = () => {
-    setOpen(false)
-    disconnect()
-    // Wait for the animation to complete
-    setTimeout(() => {
-      setInitialData(null)
-      router.push('/projects')
-    }, 150)
-  }
+  // Cleanup function for disconnecting from socket
+  useEffect(() => {
+    return () => {
+      disconnect()
+    }
+  }, [disconnect])
 
   // Render project title section
   const renderProjectTitle = () => {
@@ -184,50 +180,77 @@ export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
   ];
 
   return (
+    <div className="pointer-events-auto flex flex-col flex-1 overflow-hidden">
+      <div className="frosted-glass rounded-2xl relative grid grid-rows-[auto_1fr_auto] overflow-hidden">
+        {/* Close button */}
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-7 right-4 z-10 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+            aria-label="Close dialog"
+          >
+            <i className="fa-solid fa-chevron-down text-lg"></i>
+          </button>
+        )}
+        
+        <VisuallyHidden className="p-8 pb-0 flex items-center justify-between">
+          <Dialog.Title className="sr-only">
+            Project Details
+          </Dialog.Title>
+          <Dialog.Description className="sr-only">
+            {initialData?.description}
+          </Dialog.Description>
+        </VisuallyHidden>
+
+        <div className="overflow-y-hidden flex-1 flex flex-col">
+          {renderProjectTitle()}
+          
+          <div className={cn(
+            "flex-1 overflow-hidden flex flex-col",
+            isLoading && "min-h-[400px] rounded-lg"
+          )}>
+            {initialData && (
+              <CarouselTabs
+                key={`carousel-${projectId}`}
+                tabs={tabs}
+                adaptiveHeight={true}
+                contentClassName="h-auto"
+                tabPosition="bottom"
+                className="mt-auto mb-2 relative"
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface ProjectDetailsDialogProps {
+  projectId: string
+}
+
+export function ProjectDetailsDialog({ projectId }: ProjectDetailsDialogProps) {
+  const router = useRouter()
+  const [open, setOpen] = useState(true)
+  
+  const handleClose = () => {
+    setOpen(false)
+    // Wait for the animation to complete
+    setTimeout(() => {
+      router.push('/projects')
+    }, 150)
+  }
+
+  return (
     <Dialog.Root open={open} onOpenChange={handleClose}>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay fixed inset-0" />
         <Dialog.Content className="dialog-content fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl p-4 overflow-visible max-h-[100dvh] flex flex-col">
-          <div className="pointer-events-auto flex flex-col flex-1 overflow-hidden">
-            <div className="frosted-glass rounded-2xl relative grid grid-rows-[auto_1fr_auto] overflow-hidden">
-              {/* Close button */}
-              <button
-                onClick={handleClose}
-                className="absolute top-7 right-4 z-10 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
-                aria-label="Close dialog"
-              >
-                <i className="fa-solid fa-chevron-down text-lg"></i>
-              </button>
-              
-              <VisuallyHidden className="p-8 pb-0 flex items-center justify-between">
-                <Dialog.Title className="sr-only">
-                  Project Details
-                </Dialog.Title>
-                <Dialog.Description className="sr-only">
-                  {initialData?.description}
-                </Dialog.Description>
-              </VisuallyHidden>
-
-              <div className="overflow-y-hidden flex-1 flex flex-col">
-                {renderProjectTitle()}
-                
-                <div className={cn(
-                  "flex-1 overflow-hidden flex flex-col",
-                  isLoading && "min-h-[400px] rounded-lg"
-                )}>
-                  {initialData && (
-                    <CarouselTabs
-                      tabs={tabs}
-                      adaptiveHeight={true}
-                      contentClassName="h-auto"
-                      tabPosition="bottom"
-                      className="mt-auto mb-2 relative"
-                    />
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+          <ProjectDetailsContent 
+            projectId={projectId} 
+            onClose={handleClose} 
+          />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

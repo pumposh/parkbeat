@@ -108,7 +108,25 @@ export class WebSocketManager {
     console.info('Instance created');
   }
 
-  private connectWs() {    
+  // Clear latest state for an event or all events
+  clearLatestState<T extends EventName>(event?: T) {
+    if (event) {
+      this.console.info(`Clearing latest state for event: ${String(event)}`);
+      this.latestState.delete(event);
+    } else {
+      this.console.info('Clearing all latest state');
+      this.latestState.clear();
+    }
+  }
+
+  private async connectWs() {
+    const deduper = DedupeThing.getInstance();
+    const shouldConnect = deduper.dedupe('websocket-manager');
+    if (!shouldConnect) {
+      this.console.info('WebSocket connection already in progress, skipping connect');
+      return;
+    }
+    
     // Double-check connection state to prevent race conditions
     if (
       this.connectionState === 'connecting'
@@ -172,6 +190,7 @@ export class WebSocketManager {
         ws.cleanup();
         return;
       }
+      
       this.console.info('WebSocket connected successfully');
 
       ws.on('provideSocketId', onProvideSocketId);
@@ -185,6 +204,8 @@ export class WebSocketManager {
       this.reconnectAttempts = 0;
       if (this.eventBuffer.length > 0) {
         this.console.info(`Flushing ${this.eventBuffer.length} buffered events`);
+      } else {
+        this.console.info('No buffered events to flush');
       }
       this.flushEventBuffer();
     });
@@ -379,7 +400,7 @@ export class WebSocketManager {
     }, backoffTime);
   }
 
-  emit<T extends keyof ClientEvents>(
+  async emit<T extends keyof ClientEvents>(
     event: T,
     data: ExpectedArgument<T>,
     options: { 
@@ -393,7 +414,7 @@ export class WebSocketManager {
     } = {
       argBehavior: 'append',
       timing: 'delayed'
-    }): boolean {
+    }): Promise<boolean> {
     this.console.info(`Attempting to emit ${safeToString(event)} event with data:`, data);
     this.console.info(`Emit options:`, options);
     
@@ -417,6 +438,7 @@ export class WebSocketManager {
       queue.args.forEach(arg => {
         this.console.info(`Queue item for ${safeToString(event)}:`, arg);
       });
+      let someFailed = false;
       queue.args.forEach(arg => {
         if (this.ws) {
           this.console.info(`Emitting queued ${safeToString(event)} event with data:`, arg);
@@ -424,7 +446,17 @@ export class WebSocketManager {
             /** noop */
           } else {
             this.console.info(`Emitting ${safeToString(event)} event to WebSocket`);
-            this.ws.emit(event, arg as never);
+            const success = this.ws.emit(event, arg as never);
+            if (!success) {
+              this.console.warn(`Failed to emit ${safeToString(event)} event:`, arg);
+              someFailed = true;
+              // Add failed event back to the event buffer
+              this.eventBuffer.push({ 
+                event: event as keyof ClientEvents, 
+                data: arg as ExpectedArgument<keyof ClientEvents>,
+                options,
+              });
+            }
           }
         } else {
           this.console.error(`ERROR: WebSocket is null, cannot emit ${safeToString(event)}`);
@@ -437,6 +469,7 @@ export class WebSocketManager {
         queue.timeout = null;
       }
       this.console.info(`Queue processed for ${safeToString(event)}`);
+      return !someFailed;
     };
 
     let args = eventQueue?.args;
@@ -562,9 +595,13 @@ export class WebSocketManager {
     const useImmediateTiming = options.timing === 'immediate' || 
                               (event === 'subscribe' || event === 'subscribeProject');
     
+    let success: boolean | undefined;
     if (useImmediateTiming) {
       this.console.info(`Using immediate timing for ${safeToString(event)}, executing now`);
-      setTimeout(emissionAction, 0);
+      this.emitQueueRef.current[event] = { timeout, args } as any;
+      await asyncTimeout(0);
+      success = emissionAction();
+      return success ?? true;
     } else {
       // Clear existing timeout if it exists
       if (eventQueue?.timeout) {
@@ -577,12 +614,17 @@ export class WebSocketManager {
 
     this.emitQueueRef.current[event] = { timeout, args } as any;
     this.console.info(`Event ${safeToString(event)} queued successfully`);
-    return true;
+    return success ?? true;
   }
 
-  private flushEventBuffer() {
+  private async flushEventBuffer() {
     if (this.eventBuffer.length === 0) {
       this.console.info(`Event buffer is empty, nothing to flush`);
+      return;
+    }
+
+    if (this.connectionState !== 'connected' && this.ws?.isConnected) {
+      this.console.info(`Not connected (state: ${this.connectionState}), skipping flush`);
       return;
     }
     
@@ -606,7 +648,7 @@ export class WebSocketManager {
       this.console.info(`Processing buffered ${safeToString(event.event)} event with data:`, event.data);
       this.console.info(`Using options:`, options);
       
-      const result = this.emit(event.event, event.data, options);
+      const result = await this.emit(event.event, event.data, options);
       this.console.info(`Emit result for buffered ${safeToString(event.event)} event: ${result ? 'success' : 'failure'}`);
     }
     

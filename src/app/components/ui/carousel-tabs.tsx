@@ -60,6 +60,11 @@ export function CarouselTabs({
   const [displayFooter, setDisplayFooter] = useState(false)
   const [footerExtension, setFooterExtension] = useState<ReactNode | null>(null)
   
+  // Reset to initial tab on key change (when component is recreated)
+  useEffect(() => {
+    setActiveTabIndex(currentTabIndex ?? 0)
+  }, [currentTabIndex])
+  
   // Height-related state
   const [contentHeights, setContentHeights] = useState<Record<number, number>>({})
   const [interpolatedHeight, setInterpolatedHeight] = useState<number | null>(null)

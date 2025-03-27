@@ -45,7 +45,7 @@ const activeProjectSubscriptions = new Map<string, {
 }>();
 
 // Debug flag to enable/disable detailed subscription logging
-let DEBUG_PROJECT_SUBSCRIPTIONS = false;
+let DEBUG_PROJECT_SUBSCRIPTIONS = true;
 
 // Utility logging function
 const logSubscription = (message: string, ...args: any[]) => {
@@ -452,23 +452,9 @@ export function useProjectData(projectId: string) {
       logSubscription(`releasing subscription for project ${currentProjectId.current}`);
       
       const subscription = activeProjectSubscriptions.get(currentProjectId.current);
-      if (subscription) {
-        // Remove this subscriber
-        subscription.subscribers.delete(subscriberId.current);
-        subscription.refCount--;
-        
-        // If this was the last subscriber, unsubscribe from the room
-        if (subscription.refCount <= 0) {
-          logSubscription(`last subscriber, unsubscribing from project ${currentProjectId.current}`);
-          wsManager.unsubscribeFromRoom(currentProjectId.current, 'project');
-          activeProjectSubscriptions.delete(currentProjectId.current);
-        } else {
-          logSubscription(`other subscribers remain, keeping subscription active for ${currentProjectId.current}`, 
-            `(${subscription.refCount} refs, ${subscription.subscribers.size} subscribers)`);
-        }
-      } else {
-        // Failsafe - should not happen
-        wsManager.unsubscribeFromRoom(currentProjectId.current, 'project');
+      if (subscription?.subscribers.has(subscriberId.current)) {
+        logSubscription(`subscription already exists for project ${currentProjectId.current}`);
+        return;
       }
       
       currentProjectId.current = null;
@@ -502,7 +488,7 @@ export function useProjectData(projectId: string) {
       
       currentProjectId.current = projectId;
     }
-  }, [projectId, wsManager]);
+  }, [projectId]);
 
   // Enhanced cleanup to properly track subscription references
   const disconnect = () => {
@@ -522,6 +508,8 @@ export function useProjectData(projectId: string) {
         logSubscription(`disconnect: last subscriber, unsubscribing from project ${projectId}`);
         wsManager.unsubscribeFromRoom(projectId, 'project');
         activeProjectSubscriptions.delete(projectId);
+        // Clear cached state in WebSocketManager to prevent stale data on reconnect
+        wsManager.clearLatestState('projectData');
       } else {
         logSubscription(`disconnect: other subscribers remain, keeping subscription active for ${projectId}`, 
           `(${subscription.refCount} refs, ${subscription.subscribers.size} subscribers)`);

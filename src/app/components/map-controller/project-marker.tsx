@@ -25,7 +25,7 @@ function getMarkerStyles(project?: Project, contributionSummary?: ContributionSu
   
   // Default styles by status
   const statusStyles = {
-    'draft': { color: '#888888', scale: 0.9, opacity: 0.7 },
+    'draft': { color: '#FFA07A', scale: 0.9, opacity: 0.7 }, // Light orange for draft
     'active': { color: '#10B981', scale: 1, opacity: 1 },
     'funded': { color: '#F59E0B', scale: 1, opacity: 1 },
     'completed': { color: '#3B82F6', scale: 1, opacity: 1 },
@@ -41,7 +41,7 @@ function getMarkerStyles(project?: Project, contributionSummary?: ContributionSu
   }
   
   // Adjust color based on funding progress for active projects
-  let style = statusStyles[project.status] || statusStyles.draft;
+  let style = {...(statusStyles[project.status] || statusStyles.draft)};
   
   // For active projects, adjust color based on funding progress
   if (project.status === 'active' && fundingPercentage > 0) {
@@ -55,6 +55,31 @@ function getMarkerStyles(project?: Project, contributionSummary?: ContributionSu
   }
   
   return style;
+}
+
+// Get the appropriate CSS filter for a project based on its status
+function getMarkerFilter(status?: string): string {
+  if (!status) return "brightness(0.9) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))";
+  
+  switch (status) {
+    case 'draft':
+      // Light orange filter (no hue rotation, just sepia and saturation)
+      return "sepia(0.4) saturate(1.2) brightness(1.1) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))";
+    case 'active':
+      // Grayscale for active projects
+      return "grayscale(1) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))";
+    case 'funded':
+      // No transformation for funded (just drop shadow)
+      return "drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))";
+    case 'completed':
+      // Slight blue tint
+      return "hue-rotate(200deg) saturate(0.8) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))";
+    case 'archived':
+      // Desaturated and darker
+      return "grayscale(0.5) brightness(0.8) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))";
+    default:
+      return "drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))";
+  }
 }
 
 export const ProjectMarker = ({ project, group, position, isNearCenter, isDeleted, map }: ProjectMarkerProps) => {
@@ -90,12 +115,6 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
       
       // Always show the info panel immediately when near center, but with loading state if data is missing
       setShowInfoPanel(true)
-      
-      if (shouldShowLoading) {
-        console.log(`[ProjectMarker] Starting to load panel for project: ${project?.id}, waiting for ${!isConnectionReady ? 'connection' : 'data'}`)
-      } else {
-        console.log(`[ProjectMarker] Panel data already available for project: ${project?.id}`)
-      }
     }
 
     if (!isNearCenter) {
@@ -116,30 +135,11 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
       const timeout = setTimeout(() => {
         // Panel is already showing with loading state, now we'll update loading state to false
         setIsPanelLoading(false)
-        
-        if (markerLoadTimeRef.current) {
-          const loadTime = performance.now() - markerLoadTimeRef.current
-          console.log(`[ProjectMarker] Panel loaded for project: ${project?.id} in ${loadTime.toFixed(2)}ms`)
-          
-          // Only log warning if load time is excessive AND we were actually loading data
-          if (loadTime > 1000 && (isDataMissing || !isConnectionReady)) {
-            console.warn(`[ProjectMarker] Slow panel load detected (${loadTime.toFixed(2)}ms) for project: ${project?.id}`)
-          }
-        }
       }, timeoutDuration)
       
       return () => clearTimeout(timeout)
     }
   }, [isNearCenter, project, isPending, contributionSummary, showInfoPanel, connectionState])
-
-  // Pre-load contribution data when marker is somewhat near center
-  useEffect(() => {
-    if (project?.id && project?.status !== 'draft' && !contributionSummary && connectionState === 'connected') {
-      console.log(`[ProjectMarker] Pre-fetching contribution data for project: ${project.id}`)
-      // Contribution data will be loaded automatically through the current mechanism,
-      // we're just logging when we start the pre-loading process
-    }
-  }, [project?.id, project?.status, contributionSummary, connectionState])
 
   return (
     <>
@@ -191,32 +191,38 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
               isDeleted ? "leaving" : ""
             )}
             style={{ 
-              filter: `drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))`,
               opacity: markerStyle.opacity,
             }}
           >
-            <div className="relative">
+            <div className="relative"
+              style={{
+                filter: getMarkerFilter(project?.status),
+              }}
+            >
               <img 
-                src="/pin.svg" 
+                src="/pin-green.svg" 
                 alt="Project" 
                 className="w-12 h-12"
-                style={{
-                  filter: `hue-rotate(${getHueRotation(markerStyle.color)}) saturate(1.5)`,
-                }}
               />
               {/* Status icon overlay */}
-              {/* <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-[80%] text-white">
+              <div className={
+                cn(
+                  "absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-[80%]",
+                  "text-[#18351F]"
+                )}
+              >
                 <i className={cn(
-                  "fa-solid text-xs",
+                  "fa-solid text-sm",
                   {
                     'fa-seedling': project?.status === 'draft',
                     'fa-tree': project?.status === 'active',
                     'fa-coins': project?.status === 'funded',
                     'fa-check-circle': project?.status === 'completed',
-                    'fa-archive': project?.status === 'archived', */}
-                    {/* 'fa-layer-group': group
+                    'fa-archive': project?.status === 'archived',
+                    'fa-layer-group': !project && group
                   }
-                )} /> */}
+                )} />
+              </div>
             </div>
           </div>
         </div>
@@ -227,29 +233,39 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
 
 // Helper function to convert hex color to hue-rotation value
 function getHueRotation(hexColor: string): string {
-  // Convert hex to RGB
-  const r = parseInt(hexColor.slice(1, 3), 16) / 255;
-  const g = parseInt(hexColor.slice(3, 5), 16) / 255;
-  const b = parseInt(hexColor.slice(5, 7), 16) / 255;
-  
-  // Find the hue
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  
-  let h = 0;
-  
-  if (max === min) {
-    h = 0; // achromatic
-  } else {
-    const d = max - min;
-    switch (max) {
-      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-      case g: h = (b - r) / d + 2; break;
-      case b: h = (r - g) / d + 4; break;
-    }
-    h /= 6;
+  // Normalize the hex color to ensure it's valid
+  if (!hexColor || !hexColor.startsWith('#') || hexColor.length !== 7) {
+    return '0deg'; // Default to no rotation for invalid colors
   }
-  
-  // Convert to degrees and return
-  return `${Math.round(h * 360)}deg`;
+
+  try {
+    // Convert hex to RGB
+    const r = parseInt(hexColor.slice(1, 3), 16) / 255;
+    const g = parseInt(hexColor.slice(3, 5), 16) / 255;
+    const b = parseInt(hexColor.slice(5, 7), 16) / 255;
+    
+    // Find the hue
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    
+    let h = 0;
+    
+    if (max === min) {
+      h = 0; // achromatic
+    } else {
+      const d = max - min;
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+    }
+    
+    // Convert to degrees and return
+    return `${Math.round(h * 360)}deg`;
+  } catch (error) {
+    console.error('Error calculating hue rotation:', error);
+    return '0deg'; // Fallback to no rotation
+  }
 } 
