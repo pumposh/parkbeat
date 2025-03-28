@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils"
 import type { FooterAction } from "./footer"
 import { usePathname } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 
 export default function FooterIndicator({
   visibleActions, 
@@ -16,8 +16,8 @@ export default function FooterIndicator({
     (action) => action.href && pathname.includes(action.href)
   );
 
-  // Use useEffect to calculate dimensions after DOM has loaded
-  useEffect(() => {
+  // Function to calculate and update dimensions
+  const updateDimensions = useCallback(() => {
     if (activeIndex === -1) return;
     
     // Calculate position based on the DOM elements instead of percentages
@@ -38,7 +38,36 @@ export default function FooterIndicator({
       left,
       width: itemRect.width
     });
-  }, [activeIndex, pathname]);
+  }, [activeIndex]);
+
+  // Use useEffect to set up both initial calculation and resize observation
+  useEffect(() => {
+    // Initial calculation
+    updateDimensions();
+    
+    // Skip observer setup if no active item
+    if (activeIndex === -1) return;
+    
+    // Find the nav element to observe
+    const navElement = document.querySelector('nav');
+    if (!navElement) return;
+    
+    // Create resize observer
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(() => {
+        updateDimensions();
+      });
+    });
+    
+    // Observe both nav element and window for any size changes
+    resizeObserver.observe(navElement);
+    window.addEventListener('resize', updateDimensions);
+    
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateDimensions);
+    };
+  }, [activeIndex, updateDimensions, pathname]);
 
   if (activeIndex === -1) return null;
 
