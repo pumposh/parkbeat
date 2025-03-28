@@ -420,6 +420,19 @@ export class WebSocketManager {
     
     if (this.connectionState !== 'connected') {
       this.console.info(`Not connected (state: ${this.connectionState}), buffering ${safeToString(event)} event`);
+      if (options.argBehavior === 'replace') {
+        const existingArg = this.eventBuffer.find(e =>{
+          if (e.event !== event) return false;
+          if (!options.uniqueKey) return true;
+          if (!e.data || !options.uniqueKey) return false;
+          return (e.data as any)[options.uniqueKey] === (data as any)[options.uniqueKey];
+        });
+        if (existingArg) {
+          this.eventBuffer.splice(this.eventBuffer.indexOf(existingArg), 1);
+          this.console.info(`Replacing existing arg with uniqueKey ${safeToString(options.uniqueKey)}`);
+          return false;
+        }
+      }
       this.eventBuffer.push({ event, data, options });
       return false;
     }
@@ -592,9 +605,8 @@ export class WebSocketManager {
     let timeout: ReturnType<typeof setTimeout> | null = null;
     
     // For subscription events, use immediate timing to ensure they're processed quickly
-    const useImmediateTiming = options.timing === 'immediate' || 
-                              (event === 'subscribe' || event === 'subscribeProject');
-    
+    const useImmediateTiming = options.timing === 'immediate';
+
     let success: boolean | undefined;
     if (useImmediateTiming) {
       this.console.info(`Using immediate timing for ${safeToString(event)}, executing now`);
@@ -1017,18 +1029,20 @@ export class WebSocketManager {
     switch (prefix) {
       case 'project':
         this.console.info(`Emitting subscribeProject event with shouldSubscribe=false for ${itemId}`);
-        this.emit(
+        await this.emit(
           'subscribeProject', 
           { projectId: itemId, shouldSubscribe: false }, 
-          { argBehavior: 'replace', uniqueKey: 'projectId', timing: 'immediate' }
+          { argBehavior: 'replace', uniqueKey: 'projectId', timing: 'delayed' }
         );
+        // Clear cached state in WebSocketManager to prevent stale data on reconnect
+        this.clearLatestState('projectData');
         break;
       case 'geohash':
         this.console.info(`Emitting subscribe event with shouldSubscribe=false for ${itemId}`);
-        this.emit(
+        await this.emit(
           'subscribe', 
           { geohash: itemId, shouldSubscribe: false }, 
-          { argBehavior: 'replace', uniqueKey: 'geohash', timing: 'immediate' }
+          { argBehavior: 'replace', uniqueKey: 'geohash', timing: 'delayed' }
         );
         break;
     }

@@ -221,7 +221,6 @@ export function useLiveTrees() {
 
   // Handle delete tree updates
   useEffect(() => {
-    console.log('[useLiveTrees] deleteProjectData', deleteProjectData)
     if (!deleteProjectData || !('id' in deleteProjectData)) return;
     if (deleteProjectData.id === "0" || !deleteProjectData.id) return;
 
@@ -508,8 +507,6 @@ export function useProjectData(projectId: string) {
         logSubscription(`disconnect: last subscriber, unsubscribing from project ${projectId}`);
         wsManager.unsubscribeFromRoom(projectId, 'project');
         activeProjectSubscriptions.delete(projectId);
-        // Clear cached state in WebSocketManager to prevent stale data on reconnect
-        wsManager.clearLatestState('projectData');
       } else {
         logSubscription(`disconnect: other subscribers remain, keeping subscription active for ${projectId}`, 
           `(${subscription.refCount} refs, ${subscription.subscribers.size} subscribers)`);

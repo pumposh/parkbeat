@@ -145,10 +145,14 @@ export const setupProjectHandlers = (
 
   // Project subscription handlers
   socket.on('subscribeProject', async ({ projectId, shouldSubscribe }: { projectId: string; shouldSubscribe: boolean }) => {
+    socketId = getSocketId(socket)
 
     const deduped = await DedupeThing.getInstance()
       .dedupe(socketId, 'subscribeProject', projectId, shouldSubscribe)
-    if (!deduped) return;
+    if (!deduped) {
+      logger.log(`Duplicate subscribeProject event for project: ${projectId}`)
+      return;
+    }
 
     if (shouldSubscribe) {
       logger.log(`Handling project subscription for: ${projectId}`)
@@ -172,16 +176,16 @@ export const setupProjectHandlers = (
           // Fetch project data
           projectData = await getProjectData(projectId) ?? projectData
         } catch (error) {
-          logger.log('Project not found, creating empty project data')
+          console.log('Project not found, creating empty project data')
         }
         
         socket.emit('projectData', {
           projectId,
           data: projectData
         })
-        logger.log(`Subscription complete for project:${projectId}`)
+        console.log(`Subscription complete for project:${projectId}`)
       } catch (error) {
-        logger.error('Error in project subscription handler:', error)
+        console.error('Error in project subscription handler:', error)
         throw error
       }
     } else {

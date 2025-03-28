@@ -168,7 +168,6 @@ const EditableValue = memo(({
 
   // Format the display value for both display and to calculate width
   const formattedValue = useMemo(() => {
-    console.log('formattedValue', value, unit)
     const stripped = value.toString().replaceAll('$', '')
     if (unit === '$') {
       const numericValue = parseFloat(stripped);
