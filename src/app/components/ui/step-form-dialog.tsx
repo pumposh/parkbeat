@@ -178,7 +178,7 @@ export function StepFormDialog({
 
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = content
-      const isAtTop = scrollTop === 0
+      const isAtTop = scrollTop < 16
       const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 1
 
       if (isAtTop) {
@@ -308,6 +308,9 @@ export function StepFormDialog({
             <Dialog.Title>
               {currentStepData.title}
             </Dialog.Title>
+            <Dialog.Description id="step-form-dialog-description" className="sr-only">
+              Multi-step form dialog. Use left and right arrow buttons to navigate between steps. Current step: {currentStepData.title}
+            </Dialog.Description>
           </VisuallyHidden>
           <div className="pointer-events-auto flex flex-col flex-1 overflow-hidden">
             <div className="frosted-glass rounded-2xl relative grid grid-rows-[auto_1fr_auto] overflow-hidden">

@@ -133,7 +133,10 @@ export const MapController = ({
 
           // Show appropriate toast based on state change
           if (currentState === 'granted') {
-            getUserLocation();
+            // Only get user location if we don't already have it
+            if (!location || location.city === 'Current Location') {
+              getUserLocation();
+            }
           } else if (currentState === 'prompt' && !isInitialized) {
             // Do nothing
           } else if (currentState === 'denied' && lastPermissionState.current === 'granted') {
@@ -206,9 +209,7 @@ export const MapController = ({
             city: location?.city || 'Current Location'
           }
           
-          setLocation(newLocation)
-          
-          // Fly to the new location
+          // Update the location state without forcing map reinitialization
           if (map.current) {
             map.current.flyTo({
               center: [newLocation.longitude, newLocation.latitude],
@@ -217,6 +218,9 @@ export const MapController = ({
               essential: true
             })
           }
+          
+          // Update location state after map movement to prevent double updates
+          setLocation(newLocation)
         },
         (error) => {
           console.warn('Error getting user location:', error)

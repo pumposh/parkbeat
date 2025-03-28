@@ -1,19 +1,249 @@
 import OpenAI from 'openai'
-import type { AIAgent, AIAnalysisResult, AIEstimateResult, ProjectSuggestion } from './aigent'
+import type { AIAnalysisResult, ProjectSuggestion, AIAgent } from './aigent'
 import type { ProjectCategory } from "@/types/types"
 import { PromptManager } from './prompts'
 import { generateId } from '@/lib/id'
 import { ChatCompletionMessageParam } from 'openai/resources/chat/completions.mjs'
 import { getServerLogger } from '../../utils/logger'
+import { parseCostValue } from '@/lib/cost'
+import type { AIEstimateResult, BaseCostItem, LaborCostItem } from '@/server/types/shared'
 
+/**
+ * Implementation of AIAgent for OpenAI
+ */
 export class OpenAIAgent implements AIAgent {
   private client: OpenAI
   private model = 'gpt-4o'
-  private textModel = 'gpt-4o'
   private logger = getServerLogger()
 
   constructor(apiKey: string) {
     this.client = new OpenAI({ apiKey })
+  }
+
+  // Common parsing methods copied from BaseAIAgent to avoid circular dependencies
+  protected parseSuggestionsFromResponse(content: string): ProjectSuggestion[] {
+    try {
+      // Split content into sections
+      const sections = content.split('---').filter(Boolean)
+      
+      return sections.map(section => {
+        const lines = section.trim().split('\n')
+        const title = lines.find(l => l.toLowerCase().startsWith('title:'))?.split(':')[1]?.trim() || ''
+        const summary = lines.find(l => l.toLowerCase().startsWith('summary:'))?.split(':')[1]?.trim() || ''
+        const category = lines.find(l => l.toLowerCase().startsWith('type:'))?.split(':')[1]?.trim() as ProjectCategory || 'other'
+        const imagePrompt = lines.find(l => l.toLowerCase().startsWith('image prompt:'))?.split(':')[1]?.trim() || ''
+        const costLine = lines.find(l => l.toLowerCase().startsWith('estimated cost:'))?.split(':')[1]?.trim() || '0'
+        const cost = parseInt(costLine.replace(/[^0-9]/g, '')) || 0
+
+        return {
+          id: generateId(),
+          title,
+          summary,
+          imagePrompt,
+          category,
+          estimatedCost: {
+            total: cost
+          }
+        }
+      })
+    } catch (error) {
+      this.logger.error('Error parsing suggestions:', error)
+      return []
+    }
+  }
+
+  /**
+   * Parses the full structured suggestions from AI response
+   */
+  protected parseSuggestions(content: string): Array<ProjectSuggestion> {
+    const suggestions: Array<ProjectSuggestion> = []
+    const sections = content.split('---').filter(Boolean)
+
+    for (const section of sections) {
+      const lines = section.trim().split('\n')
+      let currentSuggestion: Partial<ProjectSuggestion> = {}
+
+      for (const line of lines) {
+        const [key, ...valueParts] = line.split(':')
+        const value = valueParts.join(':').trim()
+
+        switch (key?.trim().toUpperCase()) {
+          case 'TITLE':
+            currentSuggestion.title = value
+            break
+          case 'TYPE':
+            currentSuggestion.category = value.toLowerCase().replace(/ /g, '_')
+            break
+          case 'SUMMARY':
+            currentSuggestion.summary = value
+            break
+          case 'IMAGE PROMPT':
+            currentSuggestion.imagePrompt = value
+            break
+          case 'ESTIMATED COST':
+            try {
+              const cost = parseFloat(value.replace(/[^0-9.]/g, ''))
+              currentSuggestion.estimatedCost = {
+                total: cost
+              }
+            } catch (e) {
+              currentSuggestion.estimatedCost = {
+                total: 0
+              }
+            }
+            break
+        }
+      }
+
+      if (currentSuggestion.title && 
+          currentSuggestion.summary && 
+          currentSuggestion.category && 
+          currentSuggestion.imagePrompt && 
+          currentSuggestion.estimatedCost) {
+        suggestions.push(currentSuggestion as ProjectSuggestion)
+      }
+    }
+
+    return suggestions
+  }
+
+  /**
+   * Parses cost estimate from AI response
+   */
+  protected parseEstimateFromResponse(response: string): AIEstimateResult {
+    // Initialize the result structure
+    const estimate: AIEstimateResult = {
+      totalEstimate: 0,
+      breakdown: {
+        materials: {
+          items: [],
+          total: 0
+        },
+        labor: {
+          items: [],
+          total: 0
+        },
+        other: {
+          items: [],
+          total: 0
+        },
+        total: 0
+      },
+      assumptions: [],
+      confidenceScore: 0.8
+    }
+
+    const sections = response.split('\n\n')
+
+    // Parse materials section
+    const materialsSection = sections.find((s) => s.includes('MATERIALS BREAKDOWN'))
+    if (materialsSection) {
+      const materialItems: BaseCostItem[] = materialsSection
+        .split('\n')
+        .filter((l) => l.includes('$'))
+        .map((l) => {
+          const parts = l.split('$')
+          const name = parts[0] || ''
+          const costString = parts[1] || '0'
+          const costValue = parseFloat(costString.replace(/[^0-9.]/g, '') || '0')
+          const hasCents = (costValue - Math.floor(costValue)) !== 0;
+          const cost = hasCents ? `$${costValue.toFixed(2)}` : `$${costValue.toFixed(0)}`;
+          return {
+            item: name.trim() || '',
+            cost,
+            isIncluded: true
+          }
+        })
+      
+      estimate.breakdown.materials = {
+        items: materialItems,
+        total: materialItems.reduce((sum: number, item: BaseCostItem) => 
+          sum + parseCostValue(item.cost), 0)
+      }
+    }
+
+    // Parse labor section
+    const laborSection = sections.find((s) => s.includes('LABOR COSTS'))
+    if (laborSection) {
+      const laborItems: LaborCostItem[] = laborSection
+        .split('\n')
+        .filter((l) => l.includes('$'))
+        .map((l) => {
+          const [type, details] = l.split(':')
+          const detailsParts = details ? details.split('x') : ['0', '0']
+          const rate = parseFloat(detailsParts[0]?.replace(/[^0-9.]/g, '') || '0') || 0
+          const hours = parseFloat(detailsParts[1]?.replace(/[^0-9.]/g, '') || '0') || 0
+          
+          return {
+            task: type?.trim() || undefined,
+            description: type?.trim() || '',
+            rate,
+            hours,
+            isIncluded: true
+          }
+        })
+      
+      estimate.breakdown.labor = {
+        items: laborItems,
+        total: laborItems.reduce((sum: number, item: LaborCostItem) => 
+          sum + (item.rate * item.hours), 0)
+      }
+    }
+
+    // Parse other costs (including permits, management, contingency)
+    const otherSection = sections.find((s) => s.includes('OTHER COSTS'))
+    if (otherSection) {
+      const otherItems: BaseCostItem[] = otherSection
+        .split('\n')
+        .filter((l) => l.includes('$'))
+        .map((l) => {
+          const parts = l.split('$')
+          const name = parts[0] || ''
+          const costString = parts[1] || '0'
+          const costValue = parseFloat(costString.replace(/[^0-9.]/g, '') || '0')
+          const hasCents = (costValue - Math.floor(costValue)) !== 0;
+          const cost = hasCents ? `$${costValue.toFixed(2)}` : `$${costValue.toFixed(0)}`;
+          return {
+            item: name.trim() || '',
+            cost,
+            isIncluded: true
+          }
+        })
+      
+      estimate.breakdown.other = {
+        items: otherItems,
+        total: otherItems.reduce((sum: number, item: BaseCostItem) => 
+          sum + parseCostValue(item.cost), 0)
+      }
+    }
+
+    // Calculate total
+    estimate.breakdown.total = (
+      estimate.breakdown.materials.total +
+      estimate.breakdown.labor.total +
+      estimate.breakdown.other.total
+    )
+    estimate.totalEstimate = estimate.breakdown.total
+
+    // Parse assumptions
+    const assumptionsSection = sections.find((s) => s.includes('ASSUMPTIONS'))
+    if (assumptionsSection) {
+      estimate.assumptions = assumptionsSection
+        .split('\n')
+        .filter((l) => l.startsWith('-'))
+        .map((l) => l.slice(1).trim())
+    } else {
+      estimate.assumptions = []
+    }
+
+    // Parse confidence score
+    const confidenceLine = response.split('\n').find((l) => l.includes('CONFIDENCE SCORE'))
+    if (confidenceLine) {
+      const confidenceValue = confidenceLine.split(':')[1]
+      estimate.confidenceScore = confidenceValue ? parseFloat(confidenceValue.trim()) || 0.8 : 0.8
+    }
+
+    return estimate;
   }
 
   async validateImage({ imageUrl }: { imageUrl: string }): Promise<{
@@ -152,7 +382,7 @@ export class OpenAIAgent implements AIAgent {
       throw new Error('Failed to get suggestions from OpenAI')
     }
 
-    // Parse suggestions from the response
+    // Parse suggestions from the response using base class method
     const suggestions = this.parseSuggestionsFromResponse(suggestionsContent)
 
     return {
@@ -160,65 +390,6 @@ export class OpenAIAgent implements AIAgent {
       description,
       analysis: suggestionsContent,
       suggestions
-    }
-  }
-
-  private parseSuggestionsFromResponse(content: string): ProjectSuggestion[] {
-    try {
-      // Split content into sections
-      const sections = content.split('---').filter(Boolean)
-      
-      return sections.map(section => {
-        const lines = section.trim().split('\n')
-        const title = lines.find(l => l.toLowerCase().startsWith('title:'))?.split(':')[1]?.trim() || ''
-        const summary = lines.find(l => l.toLowerCase().startsWith('summary:'))?.split(':')[1]?.trim() || ''
-        const category = lines.find(l => l.toLowerCase().startsWith('type:'))?.split(':')[1]?.trim() as ProjectCategory || 'other'
-        const imagePrompt = lines.find(l => l.toLowerCase().startsWith('image prompt:'))?.split(':')[1]?.trim() || ''
-        const costLine = lines.find(l => l.toLowerCase().startsWith('estimated cost:'))?.split(':')[1]?.trim() || '0'
-        const cost = parseInt(costLine.replace(/[^0-9]/g, '')) || 0
-
-        return {
-          id: generateId(),
-          title,
-          summary,
-          imagePrompt,
-          category,
-          estimatedCost: {
-            total: cost
-          }
-        }
-      })
-    } catch (error) {
-      this.logger.error('Error parsing suggestions:', error)
-      return []
-    }
-  }
-
-  async generateImage({ prompt, originalImage }: {
-    prompt: string
-    originalImage: string
-  }): Promise<{ url: string }> {
-    try {
-      const response = await this.client.images.generate({
-        model: "dall-e-3",
-        prompt: `Based on this street view image (${originalImage}), create a realistic visualization of: ${prompt}. 
-                Make it photo-realistic and maintain the exact same perspective and viewing angle as the original street view.
-                The result should look like it was taken from the same spot.`,
-        n: 1,
-        size: "1024x1024",
-        quality: "standard",
-        style: "natural"
-      })
-
-      const imageUrl = response.data[0]?.url
-      if (!imageUrl) {
-        throw new Error('No image generated')
-      }
-
-      return { url: imageUrl }
-    } catch (error) {
-      this.logger.error('Error generating image:', error)
-      throw error
     }
   }
 
@@ -234,16 +405,19 @@ export class OpenAIAgent implements AIAgent {
     analysis: string
     estimate: AIEstimateResult
   }> {
-    const prompt = PromptManager.getCostEstimatePrompt({
-      model: this.textModel,
-      description,
-      category: category as ProjectCategory,
-      scope
-    })
+    const logger = getServerLogger()
+    logger.log('info', `Generating estimate for project in category: ${category}`)
 
-    const result = await this.client.chat.completions.create({
-      model: this.textModel,
-      messages: [
+    try {
+      const prompt = PromptManager.getCostEstimatePrompt({
+        model: this.model,
+        description,
+        category: category as ProjectCategory,
+        scope
+      })
+
+      // Call OpenAI API
+      const completionMessages: ChatCompletionMessageParam[] = [
         {
           role: 'system',
           content: prompt.systemPrompt
@@ -252,116 +426,30 @@ export class OpenAIAgent implements AIAgent {
           role: 'user',
           content: prompt.userPrompt
         }
-      ],
-      temperature: prompt.temperature,
-      max_tokens: 1000
-    })
+      ]
 
-    const analysis = result.choices[0]?.message?.content
-    if (!analysis) {
-      throw new Error('Failed to get cost estimate from OpenAI')
-    }
+      const completion = await this.client.chat.completions.create({
+        model: this.model,
+        messages: completionMessages,
+        temperature: 0.2,
+        max_tokens: 3000
+      })
 
-    this.logger.debug('[generateEstimate] analysis', analysis)
+      // Safely access the message content with proper null checking
+      const responseMessage = completion.choices[0]?.message
+      const response = responseMessage ? responseMessage.content || '' : ''
+      logger.log('info', `Generated cost estimate, length: ${response.length} chars`)
 
-    // Parse the response into structured sections
-    const sections = analysis.split('\n\n')
-    const estimate: AIEstimateResult = {
-      totalEstimate: 0,
-      breakdown: {
-        materials: [],
-        labor: [],
-        permits: 0,
-        management: 0,
-        contingency: 0
-      },
-      assumptions: [],
-      confidenceScore: 0.8
-    }
+      // Use base class method to parse the estimate
+      const estimate = this.parseEstimateFromResponse(response)
 
-    this.logger.debug('[generateEstimate] sections', sections)
-
-    // Parse materials section
-    const materialsSection = sections.find(s => s.includes('MATERIALS BREAKDOWN'))
-    if (materialsSection) {
-      estimate.breakdown.materials = materialsSection
-        .split('\n')
-        .filter(l => l.includes('$'))
-        .map(l => {
-          const [item, cost] = l.split('$')
-          const parsedCost = parseFloat(cost?.replace(/[^0-9.]/g, '') || '0')
-          return {
-            item: item?.trim() || '',
-            cost: parsedCost
-          }
-        })
-    }
-
-    this.logger.debug('[generateEstimate] materialsSection', materialsSection, estimate.breakdown.materials)
-
-    // Parse labor section
-    const laborSection = sections.find(s => s.includes('LABOR COSTS'))
-    if (laborSection) {
-      const lines = laborSection.split('\n')
-      let skillLevel = ''
-      let rate = 0
-      let hours = 0
-
-      // Extract skill level, rate, and hours from the section
-      for (const line of lines) {
-        if (line.includes('Skill level:')) {
-          skillLevel = line.split(':')[1]?.trim() || ''
-        } else if (line.includes('Rate: $')) {
-          rate = parseFloat(line.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
-        } else if (line.includes('Hours needed:')) {
-          hours = parseFloat(line.split(':')[1]?.replace(/[^0-9.]/g, '') || '0')
-        }
+      return {
+        analysis: response,
+        estimate
       }
-
-      // Create a single labor entry with the extracted values
-      if (rate > 0 && hours > 0) {
-        estimate.breakdown.labor = [{
-          task: `${skillLevel} labor`,
-          description: `${skillLevel} labor`,
-          rate,
-          hours
-        }]
-      }
-    }
-
-    this.logger.debug('[generateEstimate] laborSection', laborSection, estimate.breakdown.labor)
-
-    // Parse other costs
-    const otherSection = sections.find(s => s.includes('OTHER COSTS'))
-    if (otherSection) {
-      const lines = otherSection.split('\n')
-      estimate.breakdown.permits = parseFloat(lines.find(l => l.includes('Permits'))?.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
-      estimate.breakdown.management = parseFloat(lines.find(l => l.includes('Management'))?.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
-      estimate.breakdown.contingency = parseFloat(lines.find(l => l.includes('Contingency'))?.split('$')[1]?.replace(/[^0-9.]/g, '') || '0')
-    }
-
-    this.logger.debug('[generateEstimate] otherSection', otherSection, estimate.breakdown)
-
-    // Calculate total estimate by summing all components
-    const materialTotal = estimate.breakdown.materials.reduce((sum, item) => sum + item.cost, 0)
-    const laborTotal = estimate.breakdown.labor.reduce((sum, item) => sum + item.rate * item.hours, 0)
-    estimate.totalEstimate = materialTotal + laborTotal + 
-      estimate.breakdown.permits + 
-      estimate.breakdown.management + 
-      estimate.breakdown.contingency
-
-    // Parse assumptions
-    const assumptionsSection = sections.find(s => s.includes('ASSUMPTIONS'))
-    if (assumptionsSection) {
-      estimate.assumptions = assumptionsSection
-        .split('\n')
-        .filter(l => l.startsWith('-'))
-        .map(l => l.slice(1).trim())
-    }
-
-    return {
-      analysis,
-      estimate
+    } catch (error) {
+      logger.log('error', `Error generating cost estimate: ${error}`)
+      throw error
     }
   }
 
@@ -413,60 +501,8 @@ export class OpenAIAgent implements AIAgent {
       throw new Error('No response from OpenAI')
     }
 
-    // Parse the suggestions from the response
+    // Parse the suggestions using base class method
     const suggestions = this.parseSuggestions(content)
     return { suggestions: suggestions.slice(0, params.maxSuggestions) }
-  }
-
-  private parseSuggestions(content: string): Array<ProjectSuggestion> {
-    const suggestions: Array<ProjectSuggestion> = []
-    const sections = content.split('---').filter(Boolean)
-
-    for (const section of sections) {
-      const lines = section.trim().split('\n')
-      let currentSuggestion: Partial<ProjectSuggestion> = {}
-
-      for (const line of lines) {
-        const [key, ...valueParts] = line.split(':')
-        const value = valueParts.join(':').trim()
-
-        switch (key?.trim().toUpperCase()) {
-          case 'TITLE':
-            currentSuggestion.title = value
-            break
-          case 'TYPE':
-            currentSuggestion.category = value.toLowerCase().replace(/ /g, '_')
-            break
-          case 'SUMMARY':
-            currentSuggestion.summary = value
-            break
-          case 'IMAGE PROMPT':
-            currentSuggestion.imagePrompt = value
-            break
-          case 'ESTIMATED COST':
-            try {
-              const cost = parseFloat(value.replace(/[^0-9.]/g, ''))
-              currentSuggestion.estimatedCost = {
-                total: cost
-              }
-            } catch (e) {
-              currentSuggestion.estimatedCost = {
-                total: 0
-              }
-            }
-            break
-        }
-      }
-
-      if (currentSuggestion.title && 
-          currentSuggestion.summary && 
-          currentSuggestion.category && 
-          currentSuggestion.imagePrompt && 
-          currentSuggestion.estimatedCost) {
-        suggestions.push(currentSuggestion as ProjectSuggestion)
-      }
-    }
-
-    return suggestions
   }
 } 

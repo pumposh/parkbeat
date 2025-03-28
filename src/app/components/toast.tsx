@@ -89,7 +89,7 @@ export function Toast({ message, type = 'info', duration = 3000, persistent = fa
       <div className="rounded-lg shadow-lg px-4 py-3 min-w-[320px] max-w-md">
         <div className="flex items-center gap-3 mb-2">
           <i className={`fa-solid fa-${icon} text-lg ${colorClass}`} aria-hidden="true" />
-          <p className="text-sm text-zinc-800 dark:text-zinc-200 flex-1">{message}</p>
+          <p className="text-sm text-zinc-800 dark:text-zinc-200 flex-grow overflow-hidden">{message}</p>
           
           {persistent && !isActionLoading && (
             <button

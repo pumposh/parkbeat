@@ -1,13 +1,15 @@
-import { useCallback, useState, useEffect } from 'react'
-import type { ProjectData, ProjectStatus } from '@/server/types/shared'
+import { useCallback, useState, useEffect, useRef, useMemo } from 'react'
+import type { ProjectData, ProjectStatus, CostBreakdown, ProjectCostBreakdown } from '@/server/types/shared'
 import { useLiveTrees } from '@/hooks/use-tree-sockets'
+import { useProjectData } from '@/hooks/use-tree-sockets'
 import type { ProjectFormData } from '../tree-dialog'
 import { cn } from '@/lib/utils'
-import { calculateProjectCosts } from '@/lib/cost'
+import { calculateProjectCosts, convertFlatToNestedCostBreakdown, convertNestedToFlatCostBreakdown } from '@/lib/cost'
 import { CostEstimate } from './cost-estimate'
 import { Carousel } from '@/app/components/ui/carousel'
 import { UserAvatar } from '@/app/components/ui/user-avatar'
 import { UserName } from '@/app/components/ui/user-name'
+import { WebSocketManager } from '@/hooks/websocket-manager'
 
 const categoryEmojis: Record<string, string> = {
   urban_greening: '🌳',
@@ -32,6 +34,107 @@ interface ProjectDetailsProps {
 }
 
 type EditingField = 'name' | 'description' | null
+
+interface ProjectImagesProps {
+  projectId: string
+  initialImages?: Array<{ src: string, stage: 'generated' | 'upscaled' | 'source', label: string }>
+  isGenerating?: boolean
+  isRegenerating?: boolean
+}
+
+function ProjectImages({ 
+  projectId, 
+  initialImages = [],
+  isGenerating = false,
+  isRegenerating = false
+}: ProjectImagesProps) {
+  const { projectData } = useProjectData(projectId)
+  
+  // Process images from projectData and fallback to initialImages if needed
+  const images = useMemo(() => {
+    // If we don't have project data yet, use the initial images
+    if (!projectData?.data?.suggestions?.length) {
+      return initialImages
+    }
+    
+    // Find the active suggestion
+    const suggestion = projectData.data.suggestions.find(
+      s => s.id === projectData.data.project.source_suggestion_id
+    )
+    
+    if (!suggestion?.images) return initialImages
+    
+    const processedImages: Array<{ src: string, stage: 'generated' | 'upscaled' | 'source', label: string }> = []
+    
+    if (suggestion.images.generated?.length) {
+      suggestion.images.generated.forEach(image => {
+        processedImages.push({ src: image.url, stage: 'generated', label: 'Imagined ✨' })
+      })
+    }
+    
+    if (suggestion.images.upscaled?.url) {
+      processedImages.push({ 
+        src: suggestion.images.upscaled.url, 
+        stage: 'upscaled',
+        label: 'Current' 
+      })
+    }
+    
+    if (!processedImages.length && suggestion.images.source?.url) {
+      processedImages.push({ 
+        src: suggestion.images.source.url, 
+        stage: 'source', 
+        label: 'Current' 
+      })
+    }
+    
+    return processedImages.length ? processedImages : initialImages
+  }, [projectData, initialImages])
+  
+  // Check if any generating status exists in project data
+  const isGeneratingFromData = useMemo(() => {
+    if (!projectData?.data?.suggestions?.length) return isGenerating
+    
+    const suggestion = projectData.data.suggestions.find(
+      s => s.id === projectData.data.project.source_suggestion_id
+    )
+    
+    return suggestion?.images?.status?.isGenerating || isGenerating
+  }, [projectData, isGenerating])
+  
+  if (!images.length) {
+    return null
+  }
+
+  return (
+    <div className="relative w-full mb-4">
+      <div className="relative w-full pb-[100%] rounded-lg overflow-hidden">
+        <div className="absolute inset-0">
+          <Carousel
+            images={images.map(img => ({
+              src: img.src,
+              alt: `Project image - ${img.stage}`,
+              label: img.label
+            }))}
+            showControls={true}
+            showIndicators={true}
+            autoPlay={false}
+          />
+          {(isGeneratingFromData || isRegenerating) && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
+              <div className="frosted-glass rounded-xl px-4 py-2 flex items-center gap-2">
+                <i className="fa-solid fa-wand-magic-sparkles text-zinc-700 dark:text-zinc-300" />
+                <span className="text-sm text-zinc-700 dark:text-zinc-300">
+                  Generating image...
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export function ProjectDetailsSkeleton() {
   return (
@@ -65,19 +168,36 @@ export function ProjectDetails({
   isLoading = false
 }: ProjectDetailsProps) {
   const [name, setName] = useState(initialData.name)
+  const [hasNameChanged, setHasNameChanged] = useState(false)
+  
+  // Reference to the initial values to detect changes
+  const initialName = useRef(initialData.name)
+  const initialDescription = useRef(initialData.description)
+  const initialCosts = useRef<CostBreakdown | null>(null)
+  const [hasEdits, setHasEdits] = useState(false)
+  const [isRegenerating, setIsRegenerating] = useState(false)
+  
   useEffect(() => {
     if (initialData.name === name) return;
     setName(initialData.name)
+    initialName.current = initialData.name
+    // Reset name change detection when receiving new data
+    setHasNameChanged(false)
   }, [initialData.name])
 
   const [description, setDescription] = useState(initialData.description)
+  const [hasDescriptionChanged, setHasDescriptionChanged] = useState(false)
+  
   useEffect(() => {
     if (initialData.description === description) return;
     setDescription(initialData.description)
+    initialDescription.current = initialData.description
+    // Reset description change detection when receiving new data
+    setHasDescriptionChanged(false)
   }, [initialData.description])
 
   const [editingField, setEditingField] = useState<EditingField>(null)
-  const [costs, setCosts] = useState(() => {
+  const [costs, setCosts] = useState<CostBreakdown | null>(() => {
     if (initialData.cost_breakdown) {
       return calculateProjectCosts(initialData.cost_breakdown)
     }
@@ -86,18 +206,31 @@ export function ProjectDetails({
     }
     return null
   })
+  
+  const [hasCostsChanged, setHasCostsChanged] = useState(false)
 
   // Update costs when initialData changes
   useEffect(() => {
+    let updatedCosts = null;
     if (initialData.cost_breakdown) {
-      setCosts(calculateProjectCosts(initialData.cost_breakdown))
+      updatedCosts = calculateProjectCosts(initialData.cost_breakdown);
     } else if (initialData.suggestion?.estimatedCost?.breakdown) {
-      setCosts(calculateProjectCosts(initialData.suggestion.estimatedCost.breakdown))
+      updatedCosts = calculateProjectCosts(initialData.suggestion.estimatedCost.breakdown);
     }
-  }, [initialData.cost_breakdown, initialData.suggestion?.estimatedCost?.breakdown])
+    
+    if (updatedCosts) {
+      setCosts(updatedCosts);
+      initialCosts.current = JSON.parse(JSON.stringify(updatedCosts)); // Deep copy
+    }
+  }, [initialData.cost_breakdown, initialData.suggestion?.estimatedCost?.breakdown]);
 
-  // Get images from suggestion or project data
-  const getImages = () => {
+  // Update hasEdits when any changes are made
+  useEffect(() => {
+    setHasEdits(hasNameChanged || hasDescriptionChanged || hasCostsChanged);
+  }, [hasNameChanged, hasDescriptionChanged, hasCostsChanged]);
+
+  // Get images from suggestion or project data - moved to useMemo
+  const initialImages = useMemo(() => {
     if (!initialData.suggestion?.images) return []
 
     const images: { src: string, stage: 'generated' | 'upscaled' | 'source', label: string }[] = []
@@ -122,18 +255,18 @@ export function ProjectDetails({
       })
     }
     return images
-  }
-
-  const images = getImages()
+  }, [initialData.suggestion?.images])
 
   const handleNameChange = (newName: string) => {
     if (isReadOnly) return
     setName(newName)
+    setHasNameChanged(newName !== initialName.current)
   }
 
   const handleDescriptionChange = (newDescription: string) => {
     if (isReadOnly) return
     setDescription(newDescription)
+    setHasDescriptionChanged(newDescription !== initialDescription.current)
   }
 
   const handleFieldSave = (field: EditingField) => {
@@ -154,39 +287,62 @@ export function ProjectDetails({
     setEditingField(null)
   }
 
-  const handleCostUpdate = useCallback((updatedCosts: any) => {
+  const handleCostUpdate = useCallback((updatedCosts: CostBreakdown) => {
     if (isReadOnly) return
     console.log('[ProjectDetails] Costs updated:', updatedCosts)
     
     // Update local state first
     setCosts(updatedCosts)
     
-    // Convert the cost items to match the expected format
+    // Check if costs have changed from initial values
+    if (initialCosts.current) {
+      const initialJson = JSON.stringify(initialCosts.current);
+      const currentJson = JSON.stringify(updatedCosts);
+      setHasCostsChanged(initialJson !== currentJson);
+    }
+    
+    // Convert the nested format to the flat format expected by the database
+    const flatCostBreakdown = convertNestedToFlatCostBreakdown(updatedCosts)
+    
+    // Send the flat format to the database
     const costUpdate = {
       id: projectId,
       status: projectStatus,
-      cost_breakdown: {
-        materials: updatedCosts.materials.items.map((item: any) => ({
-          item: item.item,
-          cost: item.cost,
-          isIncluded: item.isIncluded ?? true
-        })),
-        labor: updatedCosts.labor.items.map((item: any) => ({
-          description: item.description,
-          hours: item.hours,
-          rate: item.rate,
-          isIncluded: item.isIncluded ?? true
-        })),
-        other: updatedCosts.other.items.map((item: any) => ({
-          item: item.item,
-          cost: item.cost,
-          isIncluded: item.isIncluded ?? true
-        }))
-      }
+      cost_breakdown: flatCostBreakdown
     }
     
     onUpdateProject?.(costUpdate)
   }, [projectId, projectStatus, onUpdateProject, isReadOnly])
+
+  const handleReimagineTap = useCallback(() => {
+    if (isRegenerating || !initialData?.suggestion?.id) return;
+    
+    setIsRegenerating(true);
+    
+    // Use the new socket event that updates suggestion data before regenerating images
+    const wsManager = WebSocketManager.getInstance();
+    wsManager.emit('updateAndReimagineSuggestion', {
+      projectId,
+      suggestionId: initialData.suggestion.id
+    }, { argBehavior: 'replace' });
+    
+    // Reset state after a timeout
+    setTimeout(() => {
+      setHasEdits(false);
+      setHasNameChanged(false);
+      setHasDescriptionChanged(false);
+      setHasCostsChanged(false);
+      
+      // Update the initial refs to the current values
+      initialName.current = name;
+      initialDescription.current = description;
+      if (costs) {
+        initialCosts.current = JSON.parse(JSON.stringify(costs));
+      }
+      
+      setIsRegenerating(false);
+    }, 3000);
+  }, [projectId, initialData.suggestion?.id, isRegenerating, name, description, costs]);
 
   if (isLoading) {
     return <ProjectDetailsSkeleton />
@@ -194,35 +350,13 @@ export function ProjectDetails({
 
   return (
     <div className="space-y-2 pt-5">
-      {/* Project Images */}
-      {images.length > 0 && (
-        <div className="relative w-full mb-4">
-          <div className="relative w-full pb-[100%] rounded-lg overflow-hidden">
-            <div className="absolute inset-0">
-              <Carousel
-                images={images.map(img => ({
-                  src: img.src,
-                  alt: `${name} - ${img.stage} image`,
-                  label: img.label
-                }))}
-                showControls={true}
-                showIndicators={true}
-                autoPlay={false}
-              />
-              {initialData.suggestion?.images?.status?.isGenerating && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
-                  <div className="frosted-glass rounded-xl px-4 py-2 flex items-center gap-2">
-                    <i className="fa-solid fa-wand-magic-sparkles text-zinc-700 dark:text-zinc-300" />
-                    <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                      Generating image...
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Project Images - Now using dedicated component */}
+      <ProjectImages 
+        projectId={projectId}
+        initialImages={initialImages}
+        isGenerating={initialData.suggestion?.images?.status?.isGenerating}
+        isRegenerating={isRegenerating}
+      />
 
       {/* Project Category */}
       {(!isReadOnly && (initialData.category || initialData.suggestion?.category)) && (
@@ -251,6 +385,44 @@ export function ProjectDetails({
         </div>
       )}
 
+      {/* Reimagine Button */}
+      {!isReadOnly && (
+        <div className="mt-4 pt-2">
+          {hasEdits ? (
+            <button 
+              onClick={handleReimagineTap}
+              disabled={isRegenerating}
+              className={cn(
+                "w-full rounded-lg bg-gradient-to-r from-blue-100 to-blue-200 dark:from-blue-950/50 dark:to-blue-900/70 p-4 flex items-center justify-between gap-3 transition-all",
+                "hover:shadow-md hover:from-blue-200 hover:to-blue-300 dark:hover:from-blue-900/50 dark:hover:to-blue-800/70",
+                "disabled:opacity-50 disabled:pointer-events-none"
+              )}
+            >
+              <div className="flex flex-col items-start gap-1">
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-300">
+                  Edits were made!
+                </p>
+                <p className="text-left text-sm text-blue-700 dark:text-blue-400">
+                  Tap here to reimagine this space based on your changes
+                </p>
+              </div>
+              <i className="fa-solid fa-wand-magic-sparkles text-blue-600 dark:text-blue-400 text-xl flex-shrink-0" />
+            </button>
+          ) : (
+            <div className="rounded-lg bg-gray-50 dark:bg-black/10 p-4 flex items-center justify-between gap-3">
+              <div className="flex flex-col items-start gap-1">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Something look off?
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Edit your project details to improve your imagination
+                </p>
+              </div>
+              <i className="fa-solid fa-circle-info text-gray-400 text-xl flex-shrink-0" />
+            </div>
+          )}
+        </div>
+      )}
       {/* Project Title */}
       {!isReadOnly ? (
         <div className={cn(
@@ -332,21 +504,6 @@ export function ProjectDetails({
             isReadOnly={isReadOnly}
             onChange={handleCostUpdate}
           />
-          {!isReadOnly && (
-            <div className="mt-4 pt-4 pb-12">
-              <div className="rounded-lg bg-gray-50 dark:bg-black/10 p-4 flex items-center gap-3">
-                <i className="fa-solid fa-circle-info text-gray-400" />
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Something look off?
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Edit material and labor estimates for a more accurate fundraising goal
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
         </>
       )}
     </div>

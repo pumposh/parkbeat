@@ -1,37 +1,20 @@
 import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react'
 import { cn } from '@/lib/utils'
-import { formatCurrency } from '@/lib/cost'
+import { formatCurrency, parseCostValue } from '@/lib/cost'
 import { useDebouncedCallback } from '@/hooks/use-debounce'
+import type { 
+  CostBreakdown, 
+  BaseCostItem,
+  LaborCostItem 
+} from '@/server/types/shared'
 import './cost-estimate.css'
 
-interface CostItem {
-  item: string
-  cost: string | number
-  isIncluded?: boolean
+// Local interface for UI-specific type operations with cost items
+type CostItem = BaseCostItem & {
+  cost: string | number // Allow number for UI flexibility
 }
 
-interface LaborItem {
-  description: string
-  hours: number
-  rate: number
-  isIncluded?: boolean
-}
-
-interface CostBreakdown {
-  materials: {
-    items: CostItem[]
-    total: number
-  }
-  labor: {
-    items: LaborItem[]
-    total: number
-  }
-  other: {
-    items: CostItem[]
-    total: number
-  }
-  total: number
-}
+type LaborItem = LaborCostItem
 
 interface CostEstimateProps {
   costs: CostBreakdown
@@ -101,7 +84,23 @@ const EditableValue = memo(({
   onEditComplete: () => void
   isEditing: boolean
 }) => {
-  const cleanValue = (v: string | number) => v.toString().replace(/[^0-9.]/g, '')
+  const cleanValue = (v: string | number) => {
+    // Make sure we get a string that only contains numbers and decimal points
+    const cleaned = v.toString().replace(/[^0-9.]/g, '')
+    
+    // If it's just a decimal point, return 0
+    if (cleaned === '.' || cleaned === '') {
+      return '0'
+    }
+    
+    // Handle multiple decimal points
+    const parts = cleaned.split('.')
+    if (parts.length > 2) {
+      return parts[0] + '.' + parts.slice(1).join('')
+    }
+    
+    return cleaned
+  }
 
   const [localValue, _setLocalValue] = useState(cleanValue(value))
 
@@ -110,7 +109,7 @@ const EditableValue = memo(({
   useEffect(() => {
     const newValue = cleanValue(value)
     if (newValue !== localValue && !isFocused) {
-      setLocalValue(newValue)
+      _setLocalValue(newValue)
     }
   }, [value, isFocused])
 
@@ -127,13 +126,31 @@ const EditableValue = memo(({
   }, 1000, [onEditComplete])
 
   const setLocalValue = (v: string) => {
-    if (v === '') {
+    if (v === '' || v === '.') {
       _setLocalValue('0')
       onValueChange(section, index, '0', field)
     } else {
-      const cleanValue = v.replace(/[^0-9.]/g, '').replace(/^0+(?=\d)/, '')
-      _setLocalValue(cleanValue)
-      onValueChange(section, index, cleanValue, field)
+      // Clean the input value to only allow valid numbers
+      const cleanedValue = v.replace(/[^0-9.]/g, '')
+      
+      // Handle multiple decimal points
+      const parts = cleanedValue.split('.')
+      let finalValue = cleanedValue
+      if (parts.length > 2) {
+        finalValue = parts[0] + '.' + parts.slice(1).join('')
+      }
+      
+      // Remove leading zeros in whole number part (unless it's just 0)
+      if (finalValue !== '0') {
+        const parts = finalValue.split('.')
+        const whole = parts[0] || ''
+        const decimal = parts.length > 1 ? parts[1] : undefined
+        
+        finalValue = whole.replace(/^0+(?=\d)/, '') + (decimal ? `.${decimal}` : '')
+      }
+      
+      _setLocalValue(finalValue)
+      onValueChange(section, index, finalValue, field)
     }
   }
 
@@ -150,10 +167,23 @@ const EditableValue = memo(({
   }, [onEditComplete, debouncedCallback])
 
   // Format the display value for both display and to calculate width
-  const formattedValue = useMemo(() => 
-    unit === '$' ? formatCurrency(parseFloat(value.toString())) : value.toString(),
-    [value, unit]
-  )
+  const formattedValue = useMemo(() => {
+    console.log('formattedValue', value, unit)
+    const stripped = value.toString().replaceAll('$', '')
+    if (unit === '$') {
+      const numericValue = parseFloat(stripped);
+      // Use the same format logic as in formatCurrency
+      const hasCents = (numericValue - Math.floor(numericValue)) !== 0;
+      
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: hasCents ? 2 : 0,
+        maximumFractionDigits: hasCents ? 2 : 0
+      }).format(numericValue);
+    } 
+    return stripped;
+  }, [value, unit])
 
   // Calculate approximate width based on the formatted value
   const minWidth = useMemo(() => {
@@ -430,18 +460,29 @@ export function CostEstimate({
       
       if (section === 'labor' && field) {
         const laborItem = updatedCosts.labor.items[index] as LaborItem
+        // Ensure numerical values for calculations
         laborItem[field] = parseFloat(value.toString()) || 0
+        
+        // Recalculate labor section total based on included items
         updatedCosts.labor.total = updatedCosts.labor.items.reduce((sum, item) => 
-          sum + (item.isIncluded ? item.hours * item.rate : 0), 0
+          sum + (item.isIncluded ? (parseFloat(item.hours.toString()) || 0) * (parseFloat(item.rate.toString()) || 0) : 0), 0
         )
       } else if (section !== 'labor') {
         const item = updatedCosts[section].items[index] as CostItem
-        item.cost = value.toString()
+        // Parse the input value to a number first
+        const numericValue = parseFloat(value.toString()) || 0;
+        
+        // Format based on whether it has cents
+        const hasCents = (numericValue - Math.floor(numericValue)) !== 0
+        item.cost = `$${hasCents ? numericValue.toFixed(2) : numericValue.toFixed(0)}`;
+        
+        // Recalculate section total based on included items
         updatedCosts[section].total = updatedCosts[section].items.reduce((sum, item) => 
-          sum + (item.isIncluded ? parseFloat(item.cost.toString()) : 0), 0
+          sum + (item.isIncluded ? parseCostValue(item.cost) : 0), 0
         )
       }
 
+      // Recalculate the overall total
       updatedCosts.total = (
         updatedCosts.materials.total + 
         updatedCosts.labor.total + 
@@ -466,17 +507,22 @@ export function CostEstimate({
     if (section === 'labor') {
       const laborItem = updatedCosts.labor.items[index] as LaborItem
       laborItem.isIncluded = isIncluded
+      
+      // Recalculate labor section total based on included items
       updatedCosts.labor.total = updatedCosts.labor.items.reduce((sum, item) => 
-        sum + (item.isIncluded ? item.hours * item.rate : 0), 0
+        sum + (item.isIncluded ? (parseFloat(item.hours.toString()) || 0) * (parseFloat(item.rate.toString()) || 0) : 0), 0
       )
     } else {
       const item = updatedCosts[section].items[index] as CostItem
       item.isIncluded = isIncluded
+      
+      // Recalculate section total based on included items
       updatedCosts[section].total = updatedCosts[section].items.reduce((sum, item) => 
-        sum + (item.isIncluded ? parseFloat(item.cost.toString()) : 0), 0
+        sum + (item.isIncluded ? parseCostValue(item.cost) : 0), 0
       )
     }
 
+    // Recalculate the overall total
     updatedCosts.total = (
       updatedCosts.materials.total + 
       updatedCosts.labor.total + 

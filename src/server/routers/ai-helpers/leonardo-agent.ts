@@ -379,21 +379,30 @@ export class LeonardoAgent implements ImageGenerationAgent {
       logger.info('[LeonardoAgent] Original image uploaded', { initImageId })
 
       const enhancedPrompt = `
-        Create a photorealistic visualization of this community improvement project.
-        ${prompt}
-        
-        Project Context: ${projectContext || 'A community improvement project'}
-        
-        Technical Requirements:
-        - Maintain the EXACT same camera angle and perspective as the original
-        - Only modify the specific areas mentioned in the prompt
-        - Maintain a high level of photorealism and realism
-        - Do not hallucinate elements outside of the prompt that are not in the original image
-        
-        Style Guidelines:
-        - Create clean, professional improvements
-        - Maintain a tidy, well-maintained appearance
-      `.trim().replace(/\n/g, ' ').substring(0, 1500)
+Create a photorealistic visualization of this community improvement project.
+${prompt}
+
+${projectContext}
+
+Technical Requirements:
+- Maintain the EXACT same camera angle and perspective as the original
+- Only modify the specific areas mentioned in the prompt
+- Maintain a high level of photorealism and realism
+- Do not hallucinate elements outside of the prompt that are not in the original image
+
+Style Guidelines:
+- Create clean, professional improvements
+- Maintain a tidy, well-maintained appearance
+`.trim().substring(0, 1500)
+
+      // Log the final prompt for debugging
+      logger.debug('[LeonardoAgent] Enhanced prompt:', {
+        originalPrompt: prompt,
+        hasProjectContext: !!projectContext,
+        projectContextLength: projectContext?.length,
+        finalPromptLength: enhancedPrompt.length,
+        finalPrompt: enhancedPrompt
+      })
 
       const models = {
         Pheonix: "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",

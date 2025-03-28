@@ -64,7 +64,7 @@ function getMarkerFilter(status?: string): string {
   switch (status) {
     case 'draft':
       // Light orange filter (no hue rotation, just sepia and saturation)
-      return "sepia(0.4) saturate(1.2) brightness(1.1) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))";
+      return "hue-rotate(-45deg) brightness(2) saturate(1.9) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))";
     case 'active':
       // Grayscale for active projects
       return "grayscale(1) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.1))";

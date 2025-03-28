@@ -105,7 +105,7 @@ export namespace ParkbeatLogger {
     private groupId: string;
     private useConsoleGroup: boolean;
     
-    constructor(parentLogger: Logger, groupId: string, useConsoleGroup: boolean = false) {
+    constructor(parentLogger: Logger, groupId: string, useConsoleGroup: boolean = true) {
       super();
       this.parentLogger = parentLogger;
       this.groupId = groupId;

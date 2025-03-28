@@ -8,14 +8,15 @@ import { getLocationInfo } from "@/lib/location";
 import { env } from "hono/adapter";
 import type { publicProcedure } from "@/server/jstack";
 import { ContextWithSuperJSON, Procedure } from "jstack";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { getTreeHelpers } from "../tree-helpers/context";
-import type { ProjectCategory, ProjectSuggestion } from "../../types/shared";
+import type { ProjectCategory, ProjectCostBreakdown, ProjectStatus, ProjectSuggestion } from "../../types/shared";
 import { ImageGenerationAgent } from "../ai-helpers/leonardo-agent";
-import { calculateProjectCosts } from "@/lib/cost";
+import { calculateProjectCosts, convertFlatToNestedCostBreakdown } from "@/lib/cost";
 import { DedupeThing } from "@/lib/promise";
 import { ParkbeatLogger } from "@/lib/logger";
 import { AISocket, AIIO, clientEventsSchema, serverEventsSchema } from "./types";
+import ngeohash from 'ngeohash';
 
 type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
@@ -53,6 +54,10 @@ export const aiClientEvents = {
   generateImagesForSuggestions: z.object({
     projectId: z.string(),
     suggestionIds: z.array(z.string()).optional(),
+  }),
+  updateAndReimagineSuggestion: z.object({
+    projectId: z.string(),
+    suggestionId: z.string(),
   }),
 };
 
@@ -168,19 +173,9 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
     logger.info(`[generateImagesForSuggestion] Starting process for suggestion ${suggestion.id}`, {
       suggestionTitle: suggestion.title,
       sourceImageId: sourceImage.id,
-      projectId
+      projectId,
+      suggestion
     })
-
-    const shouldProceed = await DedupeThing.getInstance().dedupe(
-      'generateImagesForSuggestion',
-      socketId,
-      suggestion.title,
-      projectId
-    )
-    if (!shouldProceed) {
-      logger.info(`[generateImagesForSuggestion] Skipping - already running with ID: ${suggestion.id}`)
-      return
-    }
 
     // Helper function to update suggestion images and notify subscribers
     const updateSuggestionImages = async (images: ProjectSuggestion['images']) => {
@@ -190,134 +185,192 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
       notifyProjectSubscribers(projectId, socketId, io)
     }
 
-    try {
-      let upscaledImageUrl = sourceImage.image_url
-      let upscaleId: string | undefined
-      
-      // Check if we already have an upscaled version
-      if (suggestion.images?.upscaled?.url && suggestion.images?.upscaled?.id) {
-        logger.info(`[generateImagesForSuggestion] Using existing upscaled image for suggestion ${suggestion.id}`, {
-          upscaleId: suggestion.images.upscaled.id,
-          upscaledUrl: suggestion.images.upscaled.url
-        })
-        upscaledImageUrl = suggestion.images.upscaled.url
-        upscaleId = suggestion.images.upscaled.id
-      } else {
-        // First upscale the source image
-        try {
-          // Initialize or update status
-          await updateSuggestionImages({
-            upscaled: {},
-            ...suggestion.images,
-            source: {
-              url: sourceImage.image_url,
-              id: sourceImage.id
-            },
-            status: {
-              isUpscaling: true,
-              isGenerating: false,
-              lastError: null
-            }
-          })
+    // Create a unique lock key for this suggestion's image generation
+    const lockKey = `suggestion:${suggestion.id}:imageGeneration:lock`
+    const lockTtl = 300 // 5 minutes in seconds
     
-          const upscaledImage = await leonardoAgent.upscaleImage({
-            imageUrl: sourceImage.image_url,
-            upscaleMultiplier: 1.5,
-            style: 'REALISTIC'
-          })
+    // Try to acquire the lock using Redis SET NX with expiry
+    const lock = await ctx.redis.set(lockKey, socketId, {
+      nx: true,
+      ex: lockTtl
+    })
+    
+    if (!lock) {
+      logger.info(`[generateImagesForSuggestion] Skipping - lock exists for suggestion ${suggestion.id}`)
+      return
+    }
 
-          upscaledImageUrl = upscaledImage.url
-          upscaleId = upscaledImage.id
-
-          await updateSuggestionImages({
-            ...suggestion.images,
-            source: {
-              url: sourceImage.image_url,
-              id: sourceImage.id
-            },
-            upscaled: {
-              url: upscaledImage.url,
-              id: upscaledImage.id,
-              upscaledAt: new Date().toISOString()
-            },
-            status: {
-              isUpscaling: false,
-              isGenerating: false,
-              lastError: null
-            }
-          })
-
-        } catch (error) {
-          logger.error(`[generateImagesForSuggestion] Error upscaling image ${sourceImage.id}:`, {
-            error,
-            sourceImageId: sourceImage.id,
-            suggestionId: suggestion.id
-          })
-
-          await updateSuggestionImages({
-            ...suggestion.images,
-            source: {
-              url: sourceImage.image_url,
-              id: sourceImage.id
-            },
-            upscaled: {
-              error: {
-                code: 'UPSCALE_ERROR',
-                message: error instanceof Error ? error.message : 'Failed to upscale image'
-              }
-            },
-            status: {
-              isUpscaling: false,
-              isGenerating: false,
-              lastError: {
-                code: 'UPSCALE_ERROR',
-                message: error instanceof Error ? error.message : 'Failed to upscale image',
-                timestamp: new Date().toISOString()
-              }
-            }
-          })
-
-          // Continue with original image if upscaling fails
-          logger.info(`[generateImagesForSuggestion] Continuing with original image after upscale failure`)
-        }
+    try {
+      // Additional deduplication check using suggestion ID and source image
+      const dedupeKey = `${suggestion.id}:${sourceImage.id}`
+      const shouldProceed = await DedupeThing.getInstance().dedupe(
+        'generateImagesForSuggestion',
+        socketId,
+        dedupeKey,
+        projectId
+      )
+      if (!shouldProceed) {
+        logger.info(`[generateImagesForSuggestion] Skipping - already processed with ID: ${suggestion.id}`)
+        return
       }
 
-      // Update status for generation phase
+      // Step 1: Initialize status
       await updateSuggestionImages({
         ...suggestion.images,
         source: {
           url: sourceImage.image_url,
           id: sourceImage.id
         },
-        upscaled: suggestion.images?.upscaled || {},
+        upscaled: {},
         status: {
-          isUpscaling: false,
-          isGenerating: true,
+          isUpscaling: true,
+          isGenerating: false,
           lastError: null
         }
       })
 
-      const costs = calculateProjectCosts(suggestion.estimatedCost?.breakdown)
-      const projectDetails = costs ? `
-        Project Budget Breakdown:
-        - Materials (${costs.materials.total.toLocaleString()})
-        - Labor Requirements: ${costs.labor.total.toLocaleString()}
-        - Additional Costs: ${costs.other.total.toLocaleString()}
-        Total Budget: $${costs.total.toLocaleString()}
-      ` : ''
+      // Step 2: Prepare both upscaling and cost estimation in parallel
+      let upscaledImageUrl = sourceImage.image_url
+      let upscaleId: string | undefined
 
+      const [upscaleResult, costs] = await Promise.all([
+        // Handle upscaling
+        (async () => {
+          try {
+            // Check if we already have an upscaled version
+            if (suggestion.images?.upscaled?.url && suggestion.images?.upscaled?.id) {
+              logger.info(`[generateImagesForSuggestion] Using existing upscaled image for suggestion ${suggestion.id}`, {
+                upscaleId: suggestion.images.upscaled.id,
+                upscaledUrl: suggestion.images.upscaled.url
+              })
+              return {
+                url: suggestion.images.upscaled.url,
+                id: suggestion.images.upscaled.id
+              }
+            }
+
+            // Perform upscaling
+            const upscaledImage = await leonardoAgent.upscaleImage({
+              imageUrl: sourceImage.image_url,
+              upscaleMultiplier: 1.5,
+              style: 'REALISTIC'
+            })
+
+            return upscaledImage
+          } catch (error) {
+            logger.error(`[generateImagesForSuggestion] Error upscaling image ${sourceImage.id}:`, {
+              error,
+              sourceImageId: sourceImage.id,
+              suggestionId: suggestion.id
+            })
+            return null
+          }
+        })(),
+        // Calculate costs
+        calculateProjectCosts(suggestion.estimatedCost?.breakdown)
+      ])
+
+      // Step 3: Update status after parallel operations
+      if (upscaleResult) {
+        upscaledImageUrl = upscaleResult.url
+        upscaleId = upscaleResult.id
+
+        await updateSuggestionImages({
+          ...suggestion.images,
+          source: {
+            url: sourceImage.image_url,
+            id: sourceImage.id
+          },
+          upscaled: {
+            url: upscaleResult.url,
+            id: upscaleResult.id,
+            upscaledAt: new Date().toISOString()
+          },
+          status: {
+            isUpscaling: false,
+            isGenerating: true,
+            lastError: null
+          }
+        })
+      } else {
+        // Continue with original image if upscaling fails
+        logger.info(`[generateImagesForSuggestion] Continuing with original image after upscale failure`)
+        await updateSuggestionImages({
+          ...suggestion.images,
+          source: {
+            url: sourceImage.image_url,
+            id: sourceImage.id
+          },
+          upscaled: {
+            error: {
+              code: 'UPSCALE_ERROR',
+              message: 'Failed to upscale image'
+            }
+          },
+          status: {
+            isUpscaling: false,
+            isGenerating: true,
+            lastError: {
+              code: 'UPSCALE_ERROR',
+              message: 'Failed to upscale image',
+              timestamp: new Date().toISOString()
+            }
+          }
+        })
+      }
+
+      // Step 4: Prepare project context with cost information
+      const costBreakdown = suggestion.estimatedCost?.breakdown
+      
+      logger.info('[generateImagesForSuggestion] Cost data:', {
+        hasCosts: !!costs,
+        hasCostBreakdown: !!costBreakdown,
+        totalCost: costs?.total,
+        breakdownStructure: costBreakdown
+      })
+
+      const projectDetails = costBreakdown ? `
+Project Budget Breakdown:
+Materials (Total: $${costs?.materials.total.toLocaleString() || 0}):
+${costBreakdown.materials.items?.map(item => `- ${item.item}: $${item.cost.toLocaleString()}`).join('\n')}
+
+Labor Requirements (Total: $${costs?.labor.total.toLocaleString() || 0}):
+${costBreakdown.labor.items?.map(task => `- ${task.task || task.description}: ${task.hours} hours at $${task.rate}/hr`).join('\n')}
+
+Additional Costs (Total: $${costs?.other.total.toLocaleString() || 0}):
+${costBreakdown.other.items?.map(item => `- ${item.item}: $${item.cost}`).join('\n')}
+
+Total Project Budget: $${costs?.total.toLocaleString() || 0}`.trim() : ''
+
+      const projectContext = `
+Project Title: "${suggestion.title}"
+Project Description: ${suggestion.description || suggestion.summary}
+
+${projectDetails}
+
+Implementation Requirements:
+1. Add all specified materials and elements from the materials list above
+2. Ensure the scale of improvements matches the detailed budget
+3. Show realistic construction quality matching the labor specifications
+4. Include all key materials mentioned in the breakdown
+5. Maintain proportions that reflect the cost allocation
+
+Note: This is a ${suggestion.category.replace(/_/g, ' ')} project with a 
+focus on community improvement and sustainable development.`.trim()
+
+      logger.debug('[generateImagesForSuggestion] Project context:', {
+        contextLength: projectContext.length,
+        hasTitle: !!suggestion.title,
+        hasDescription: !!(suggestion.description || suggestion.summary),
+        hasDetails: !!projectDetails,
+        context: projectContext
+      })
+
+      // Step 5: Generate the image
       const imageResult = await leonardoAgent.reimagineFromPrompt({
         originalImageUrl: upscaledImageUrl,
         prompt: suggestion.imagePrompt,
-        projectContext: `
-          Project Title: "${suggestion.title}"
-          Project Description: ${suggestion.description || suggestion.summary}
-          ${projectDetails}
-          Implementation Requirements:
-          1. Add all specified materials and elements from the materials list
-          2. Ensure the scale of improvements matches the budget
-          3. Show realistic construction quality matching the labor specifications
-        `
+        projectContext
       })
 
       if (imageResult.urls.length > 0) {
@@ -386,6 +439,9 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
       })
 
       throw error
+    } finally {
+      // Always release the lock when done
+      await ctx.redis.del(lockKey)
     }
   }
 
@@ -428,7 +484,7 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
         return
       }
 
-      const agent = createAIAgent('openai', c)
+      const agent = createAIAgent('gemini', c)
 
       // Verify we're still the current execution
       const currentId = await ctx.redis.get(executionKey)
@@ -489,15 +545,17 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
         })
 
         if (!result.suggestions?.length) {
-          logger.info(`[generateSuggestionsForProject] No suggestions generated`)
-          return
+          logger.info(`[generateSuggestionsForProject] No suggestions generated`, {
+            result
+          })
+          throw new Error('No suggestions generated')
         }
 
         // Save new suggestions to database
         const metadata = images[0]?.metadata as { fundraiserId?: string } | null
 
         // Save suggestions first without cost estimates
-        const savedSuggestions = await Promise.all(result.suggestions.map(async suggestion => {
+        const savedSuggestions: ProjectSuggestion[] = await Promise.all(result.suggestions.map(async suggestion => {
           const suggestionId = generateId()
           const newSuggestion: ProjectSuggestion = {
             id: suggestionId,
@@ -521,6 +579,7 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
                 lastError: null
               }
             },
+            is_estimating: false,
             confidence: '0.8',
             reasoning_context: 'Generated from consolidated image analysis',
             status: 'pending',
@@ -544,8 +603,15 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
         notifyProjectSubscribers(projectId, socketId, io)
 
         // Generate cost estimates for all suggestions in parallel
-        await Promise.all(savedSuggestions.map(async suggestion => {
+        const suggestionsWithCosts: ProjectSuggestion[] = await Promise.all(savedSuggestions.map(async suggestion => {
           try {
+            // Set the is_estimating flag to true before starting
+            await db.update(projectSuggestions)
+              .set({
+                is_estimating: true
+              })
+              .where(eq(projectSuggestions.id, suggestion.id))
+            
             const costEstimate = await agent.generateEstimate({
               description: suggestion.summary || suggestion.description || '',
               category: suggestion.category,
@@ -556,20 +622,42 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
               }
             })
 
-            // Update the suggestion with the cost estimate
+            // Update the suggestion with the cost estimate and set is_estimating to false
             await db.update(projectSuggestions)
               .set({
                 estimated_cost: {
                   total: costEstimate.estimate.totalEstimate,
                   breakdown: costEstimate.estimate.breakdown,
                   assumptions: costEstimate.estimate.assumptions
-                }
+                },
+                is_estimating: false
               })
               .where(eq(projectSuggestions.id, suggestion.id))
 
+            if (!costEstimate.estimate?.breakdown) {
+              logger.error(`[generateSuggestionsForProject] No cost estimate generated for suggestion ${suggestion.id}`)
+              return { ...suggestion, is_estimating: false }
+            }
+
             logger.info(`[generateSuggestionsForProject] Generated cost estimate for suggestion: ${suggestion.id}`)
+            return { 
+              ...suggestion, 
+              estimatedCost: {
+                total: costEstimate.estimate.totalEstimate,
+                breakdown: costEstimate.estimate.breakdown,
+              },
+              is_estimating: false
+            }
           } catch (error) {
+            // Make sure to set is_estimating to false even if there's an error
+            await db.update(projectSuggestions)
+              .set({
+                is_estimating: false
+              })
+              .where(eq(projectSuggestions.id, suggestion.id))
+              
             logger.error(`[generateSuggestionsForProject] Error generating cost estimate for suggestion ${suggestion.id}:`, error)
+            return { ...suggestion, is_estimating: false }
           }
         }))
 
@@ -580,7 +668,7 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
         const leonardoAgent = createAIImageAgent(c)
         
         // Generate images for all suggestions in parallel
-        await Promise.all(savedSuggestions.map(async (suggestion) => {
+        await Promise.all(suggestionsWithCosts.map(async (suggestion) => {
           try {
             const randomIndex = Math.floor(Math.random() * images.length)
             const sourceImage = images[randomIndex]
@@ -648,13 +736,71 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
         ? imageSource.url 
         : `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${imageSource.params.lat},${imageSource.params.lng}&heading=${imageSource.params.heading}&pitch=${imageSource.params.pitch}&fov=${90/imageSource.params.zoom}&key=${GOOGLE_MAPS_API_KEY}`
 
-      const agent = createAIAgent('openai', c)
+      const agent = createAIAgent('gemini', c)
       const validationResult = await agent.validateImage({ imageUrl })
 
       if (projectId) {
         if (validationResult.isMaybe || validationResult.isValid) {
           const { db } = ctx
 
+          // Check if the project exists, and create it if it doesn't
+          const existingProject = await db
+            .select()
+            .from(projects)
+            .where(eq(projects.id, projectId))
+            .limit(1)
+
+          if (!existingProject.length) {
+            // Create a draft project first
+            const now = new Date()
+            const defaultGeohash = imageSource.type === 'streetView' 
+              ? ngeohash.encode(imageSource.params.lat, imageSource.params.lng, 9)
+              : 'unknown'
+
+
+            const projectData = {
+              id: projectId,
+              name: 'New Project',
+              description: '',
+              status: 'draft' as ProjectStatus,
+              fundraiser_id: fundraiserId || projectId, // Use the project ID as a fallback fundraiser ID
+              _loc_lat: imageSource.type === 'streetView' ? imageSource.params.lat.toString() : '0',
+              _loc_lng: imageSource.type === 'streetView' ? imageSource.params.lng.toString() : '0',
+              _loc_geohash: defaultGeohash,
+              _meta_created_by: 'system',
+              _meta_updated_by: 'system',
+              _meta_updated_at: now,
+              _meta_created_at: now,
+              _view_heading: imageSource.type === 'streetView' ? imageSource.params.heading.toString() : null,
+              _view_pitch: imageSource.type === 'streetView' ? imageSource.params.pitch.toString() : null,
+              _view_zoom: imageSource.type === 'streetView' ? imageSource.params.zoom.toString() : null,
+              source_suggestion_id: null,
+              cost_breakdown: {
+                materials: [],
+                labor: [],
+                other: []
+              },
+              category: 'other' as ProjectCategory, 
+              summary: '',
+              skill_requirements: '',
+              space_assessment: {
+                size: null,
+                access: null,
+                complexity: null, 
+                constraints: []
+              }
+            };
+
+
+            const [newProject] = await db
+              .insert(projects)
+              .values(projectData)
+              .returning();
+            if (!newProject) throw new Error('Failed to insert project');
+            logger.info(`[validateImage:${requestId}] Created new draft project: ${projectId}`)
+          }
+
+          // Now insert or update the image
           const existingImage = await db
             .select()
             .from(projectImages)
@@ -800,9 +946,26 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
       }
 
       // Filter suggestions if specific IDs were provided
-      const suggestionsToProcess: ProjectSuggestion[] = (suggestionIds 
-        ? suggestions.filter(s => suggestionIds.includes(s.id))
-        : suggestions).map(s => ({
+      const suggestionsToProcess: ProjectSuggestion[] = suggestions
+        .filter(s => {
+          // Skip if IDs were provided and this suggestion is not in the list
+          if (suggestionIds && suggestionIds.length > 0 && !suggestionIds.includes(s.id)) {
+            return false;
+          }
+          
+          // Skip suggestions that are currently estimating costs
+          if (s.is_estimating) {
+            logger.info(`[generateImagesForSuggestions] Skipping suggestion ${s.id} because it's currently estimating costs`)
+            return false;
+          }
+          
+          // Only process suggestions that aren't already being processed
+          const isProcessing = s.images?.status?.isGenerating || s.images?.status?.isUpscaling;
+          const hasImages = (s.images?.generated?.length || 0) > 0;
+          
+          return !isProcessing && !hasImages;
+        })
+        .map(s => ({
           ...s,
           reasoning_context: s.reasoning_context || '',
           project_id: s.project_id || undefined,
@@ -811,41 +974,256 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
           description: s.description || '',
           summary: s.summary || '',
           images: s.images as ProjectSuggestion['images'],
-          metadata: s.metadata as ProjectSuggestion['metadata']
+          metadata: s.metadata as ProjectSuggestion['metadata'],
+          is_estimating: s.is_estimating || false // Ensure is_estimating is always defined
         }))
 
-      const leonardoAgent = createAIImageAgent(c)
-      const socketId = getSocketId(socket)
-      
-      // Process each suggestion
-      await Promise.all(suggestionsToProcess.map(async (suggestion) => {
-        try {
-          // Get a random image from the available images
-          const randomIndex = Math.floor(Math.random() * images.length)
-          const sourceImage = images[randomIndex]
-          if (!sourceImage) {
-            logger.warn(`[generateImagesForSuggestions] No source image found for suggestion ${suggestion.id}`)
-            return
+      // If we found suggestions that need image generation and have cost estimates
+      if (suggestionsToProcess.length > 0) {
+        logger.info(`[generateImagesForSuggestions] Processing ${suggestionsToProcess.length} suggestions with cost estimates`)
+        
+        const leonardoAgent = createAIImageAgent(c)
+        const socketId = getSocketId(socket)
+        
+        // Process each suggestion
+        await Promise.all(suggestionsToProcess.map(async (suggestion) => {
+          try {
+            // Get a random image from the available images
+            const randomIndex = Math.floor(Math.random() * images.length)
+            const sourceImage = images[randomIndex]
+            if (!sourceImage) {
+              logger.warn(`[generateImagesForSuggestions] No source image found for suggestion ${suggestion.id}`)
+              return
+            }
+
+            await generateImagesForSuggestion({
+              suggestion,
+              sourceImage,
+              leonardoAgent,
+              db,
+              projectId,
+              socketId,
+              io,
+              logger
+            })
+          } catch (error) {
+            logger.error(`[generateImagesForSuggestions] Error processing suggestion ${suggestion.id}:`, error)
           }
+        }))
 
-          await generateImagesForSuggestion({
-            suggestion: suggestion as ProjectSuggestion,
-            sourceImage,
-            leonardoAgent,
-            db,
-            projectId,
-            socketId,
-            io,
-            logger
-          })
-        } catch (error) {
-          logger.error(`[generateImagesForSuggestions] Error processing suggestion ${suggestion.id}:`, error)
-        }
-      }))
-
-      logger.info(`[generateImagesForSuggestions] Completed image generation for project: ${projectId}`)
+        logger.info(`[generateImagesForSuggestions] Completed image generation for project: ${projectId}`)
+      } else {
+        logger.info(`[generateImagesForSuggestions] No suggestions found that need image generation or all are still estimating costs`)
+      }
     } catch (error) {
       logger.error(`[generateImagesForSuggestions] Error:`, error)
     }
   })
-} 
+
+  // New socket event handler to update a suggestion and regenerate its image
+  socket.on('updateAndReimagineSuggestion', async ({ projectId, suggestionId }) => {
+    const socketId = getSocketId(socket)
+    const deduped = await DedupeThing.getInstance()
+      .dedupe(socketId, 'updateAndReimagineSuggestion', projectId, suggestionId)
+    if (!deduped) return;
+
+    logger.info(`[updateAndReimagineSuggestion] Updating and regenerating image for suggestion: ${suggestionId} in project: ${projectId}`)
+
+    try {
+      const { db } = ctx
+      const { LEONARDO_API_KEY } = env<Env>(c)
+      
+      if (!LEONARDO_API_KEY) {
+        throw new Error('Missing LEONARDO_API_KEY')
+      }
+
+      // 1. Get the project data
+      const project = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .limit(1)
+
+      if (!project.length || !project[0]) {
+        throw new Error('Project not found')
+      }
+
+      // 2. Get the suggestion to update
+      const suggestionResult = await db
+        .select()
+        .from(projectSuggestions)
+        .where(and(
+          eq(projectSuggestions.id, suggestionId),
+          eq(projectSuggestions.project_id, projectId)
+        ))
+        .limit(1)
+
+      if (!suggestionResult.length || !suggestionResult[0]) {
+        throw new Error('Suggestion not found')
+      }
+
+      const suggestion = suggestionResult[0]
+      const projectData = project[0]
+
+      const newBreakdown = convertFlatToNestedCostBreakdown(projectData.cost_breakdown);
+      const newSuggestion = {
+        title: projectData.name,
+        description: projectData.description || suggestion.description || '',
+        estimated_cost: {
+          breakdown: newBreakdown,
+          total: newBreakdown.total,
+        },
+        images: {
+          ...(suggestion.images || {}),
+          status: {
+            isGenerating: true,
+            isUpscaling: false,
+            lastError: null
+          },
+          // Clear existing generated images to force regeneration
+          generated: [],
+          // Ensure source and upscaled objects exist
+          source: suggestion.images?.source || { url: '', id: '' },
+          upscaled: suggestion.images?.upscaled || {}
+        }
+      };
+
+      console.info(`[updateAndReimagineSuggestion] New suggestion: ${JSON.stringify(newSuggestion, null, 2)}`)
+
+      // 3. Update the suggestion with project values
+      await db.update(projectSuggestions)
+        .set(newSuggestion)
+        .where(eq(projectSuggestions.id, suggestionId))
+
+      // Notify project subscribers of changes
+      notifyProjectSubscribers(projectId, socketId, io)
+
+      // 4. Get the updated suggestion (to ensure we have the right data structure)
+      const updatedSuggestionResult = await db
+        .select()
+        .from(projectSuggestions)
+        .where(eq(projectSuggestions.id, suggestionId))
+        .limit(1)
+
+      console.info(`[updateAndReimagineSuggestion] Updated suggestion: ${JSON.stringify(updatedSuggestionResult, null, 2)}`)
+
+      if (!updatedSuggestionResult.length || !updatedSuggestionResult[0]) {
+        throw new Error('Failed to retrieve updated suggestion')
+      }
+
+      // 5. Get all images for the project
+      const images = await db
+        .select()
+        .from(projectImages)
+        .where(eq(projectImages.project_id, projectId))
+        .orderBy(desc(projectImages.created_at))
+
+      if (!images.length) {
+        throw new Error('No images found for project')
+      }
+
+      // 6. Format the suggestion for image generation
+      const updatedSuggestion = updatedSuggestionResult[0]
+      
+      // Ensure we have valid images property
+      if (!updatedSuggestion.images) {
+        updatedSuggestion.images = {
+          status: {
+            isUpscaling: false,
+            isGenerating: false,
+            lastError: null
+          },
+          source: { url: '', id: '' },
+          upscaled: {},
+          generated: []
+        }
+      }
+      
+      const suggestionToProcess = {
+        ...updatedSuggestion,
+        reasoning_context: updatedSuggestion.reasoning_context || '',
+        created_at: typeof updatedSuggestion.created_at === 'string' 
+          ? updatedSuggestion.created_at 
+          : updatedSuggestion.created_at.toISOString(),
+        description: updatedSuggestion.description || '',
+        summary: updatedSuggestion.summary || null,
+        metadata: updatedSuggestion.metadata as Record<string, unknown>,
+        project_id: updatedSuggestion.project_id || projectId,
+        is_estimating: false
+      } as ProjectSuggestion
+
+      // 7. Generate new images for the suggestion
+      const leonardoAgent = createAIImageAgent(c)
+      
+      // Get a random image from the available images
+      const randomIndex = Math.floor(Math.random() * images.length)
+      const sourceImage = images[randomIndex]
+      
+      if (!sourceImage) {
+        throw new Error('No source image found for project')
+      }
+
+      // 8. Generate images for the suggestion
+      await generateImagesForSuggestion({
+        suggestion: suggestionToProcess,
+        sourceImage,
+        leonardoAgent,
+        db,
+        projectId,
+        socketId,
+        io,
+        logger
+      })
+
+      logger.info(`[updateAndReimagineSuggestion] Successfully updated and regenerated image for suggestion: ${suggestionId}`)
+      
+      // Notify project subscribers of changes
+      notifyProjectSubscribers(projectId, socketId, io)
+    } catch (error) {
+      logger.error(`[updateAndReimagineSuggestion] Error:`, error)
+      
+      // If there was an error, try to reset the suggestion status
+      try {
+        const { db } = ctx
+        const suggestionResult = await db
+          .select()
+          .from(projectSuggestions)
+          .where(eq(projectSuggestions.id, suggestionId))
+          .limit(1)
+          
+        if (suggestionResult.length && suggestionResult[0]) {
+          const suggestion = suggestionResult[0]
+          
+          // Ensure suggestion has the required structure
+          const updatedImages = {
+            ...(suggestion.images || {}),
+            status: {
+              isGenerating: false,
+              isUpscaling: false,
+              lastError: {
+                code: 'ERROR',
+                message: error instanceof Error ? error.message : 'Unknown error',
+                timestamp: new Date().toISOString()
+              }
+            },
+            // Ensure these exist
+            source: suggestion.images?.source || { url: '', id: '' },
+            upscaled: suggestion.images?.upscaled || {},
+            generated: suggestion.images?.generated || []
+          }
+          
+          await db.update(projectSuggestions)
+            .set({
+              images: updatedImages
+            })
+            .where(eq(projectSuggestions.id, suggestionId))
+            
+          // Notify project subscribers of the error
+          notifyProjectSubscribers(projectId, socketId, io)
+        }
+      } catch (resetError) {
+        logger.error(`[updateAndReimagineSuggestion] Error resetting suggestion status:`, resetError)
+      }
+    }
+  })
+}

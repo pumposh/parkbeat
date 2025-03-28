@@ -131,7 +131,7 @@ function ProjectDetailsContent({ projectId, onClose }: ProjectDetailsContentProp
       label: 'Project',
       icon: <i className="fa-solid fa-lightbulb" />,
       content: (
-        <div className="p-6 pt-0 overflow-y-auto">
+        <div className="px-6 py-12 pt-0 overflow-y-auto">
           {initialData ? (
             <ProjectDetails
               initialData={initialData}
@@ -168,7 +168,7 @@ function ProjectDetailsContent({ projectId, onClose }: ProjectDetailsContentProp
       label: 'Share',
       icon: <i className="fa-solid fa-arrow-up-from-bracket" />,
       content: (
-        <div className="p-6 pt-0 overflow-y-auto">
+        <div className="p-6 pb-0 pt-0 overflow-y-auto">
           <ProjectShare 
             projectId={projectId}
             isLoading={isLoading}

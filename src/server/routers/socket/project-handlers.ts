@@ -5,12 +5,13 @@ import { getTreeHelpers } from "../tree-helpers/context";
 import { desc, eq, InferInsertModel, like, sql, and } from "drizzle-orm";
 import { projects, projectContributions } from "@/server/db/schema";
 import geohash from 'ngeohash'
-import { type ProjectStatus, type BaseProject, type ProjectData, projectSuggestionSchema, projectSchema, baseProjectSchema, contributionSummarySchema } from "../../types/shared";
+import { type ProjectStatus, type BaseProject, type ProjectData, projectSuggestionSchema, projectSchema, baseProjectSchema, contributionSummarySchema, CostBreakdown, ProjectCostBreakdown } from "../../types/shared";
 import { Procedure } from "jstack";
 import { ContextWithSuperJSON } from "jstack";
 import { DedupeThing } from "@/lib/promise";
 import { ParkbeatLogger } from "@/lib/logger";
 import { AIIO, clientEventsSchema, serverEventsSchema } from "./types";
+import { convertNestedToFlatCostBreakdown } from "@/lib/cost";
 
 type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
@@ -318,7 +319,17 @@ export const setupProjectHandlers = (
 
     try {
       const hash = geohash.encode(data._loc_lat, data._loc_lng)
-      const projectData: InferInsertModel<typeof projects> = {
+      
+      // Convert cost breakdown to the flat format expected by the database schema
+      const processedCostBreakdown = data.cost_breakdown ? 
+        (typeof data.cost_breakdown === 'string' 
+          ? JSON.parse(data.cost_breakdown) 
+          : ('materials' in data.cost_breakdown && 'items' in data.cost_breakdown.materials)
+            ? convertNestedToFlatCostBreakdown(data.cost_breakdown as CostBreakdown)
+            : data.cost_breakdown) 
+        : { materials: [], labor: [], other: [] };
+        
+      const projectData = {
         id: data.id,
         name: data.name,
         description: data.description || null,
@@ -335,17 +346,17 @@ export const setupProjectHandlers = (
         _view_pitch: data._view_pitch?.toString() || null,
         _view_zoom: data._view_zoom?.toString() || null,
         source_suggestion_id: data.source_suggestion_id,
-        cost_breakdown: data.cost_breakdown,
-        category: 'other',
+        cost_breakdown: processedCostBreakdown,
+        category: data.category || 'other', 
         summary: '',
         skill_requirements: '',
         space_assessment: {
           size: null,
           access: null,
-          complexity: null,
+          complexity: null, 
           constraints: []
         }
-      } as const;
+      };
 
       const existingProject = await db
         .select()

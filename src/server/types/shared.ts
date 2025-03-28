@@ -53,44 +53,42 @@ export const projectCostItemSchema = z.object({
 })
 export type ProjectCostItem = z.infer<typeof projectCostItemSchema>
 
+// Define basic cost item schemas
+export const baseCostItemSchema = z.object({
+  item: z.string(),
+  cost: z.string(),
+  isIncluded: z.boolean().default(true)
+})
+export type BaseCostItem = z.infer<typeof baseCostItemSchema>
+
+export const laborCostItemSchema = z.object({
+  task: z.string().optional(),
+  description: z.string(),
+  hours: z.number(),
+  rate: z.number(),
+  isIncluded: z.boolean().default(true)
+})
+export type LaborCostItem = z.infer<typeof laborCostItemSchema>
+
+// Define the cost breakdown section schema
+export const costBreakdownSectionSchema = <T extends z.ZodTypeAny>(itemSchema: T) => z.object({
+  items: z.array(itemSchema),
+  total: z.number()
+})
+
+// Create the full cost breakdown schema
 export const costBreakdownSchema = z.object({
-  materials: z.array(z.object({
-    item: z.string(),
-    cost: z.string(),
-    isIncluded: z.boolean().default(true)
-  })),
-  labor: z.array(z.object({
-    task: z.string().optional(),
-    description: z.string(),
-    hours: z.number(),
-    rate: z.number(),
-    isIncluded: z.boolean().default(true)
-  })),
-  other: z.array(z.object({
-    item: z.string(),
-    cost: z.string(),
-    isIncluded: z.boolean().default(true)
-  }))
+  materials: costBreakdownSectionSchema(baseCostItemSchema),
+  labor: costBreakdownSectionSchema(laborCostItemSchema),
+  other: costBreakdownSectionSchema(baseCostItemSchema),
+  total: z.number()
 })
 export type CostBreakdown = z.infer<typeof costBreakdownSchema>
 
 export const projectCostBreakdownSchema = z.object({
-  materials: z.array(z.object({
-    item: z.string(),
-    cost: z.string(),
-    isIncluded: z.boolean().default(true)
-  })),
-  labor: z.array(z.object({
-    description: z.string(),
-    hours: z.number(),
-    rate: z.number(),
-    isIncluded: z.boolean().default(true)
-  })),
-  other: z.array(z.object({
-    item: z.string(),
-    cost: z.string(),
-    isIncluded: z.boolean().default(true)
-  }))
+  materials: z.array(baseCostItemSchema),
+  labor: z.array(laborCostItemSchema),
+  other: z.array(baseCostItemSchema)
 })
 export type ProjectCostBreakdown = z.infer<typeof projectCostBreakdownSchema>
 
@@ -168,6 +166,7 @@ export const projectSuggestionSchema = z.object({
     total: z.number(),
     breakdown: costBreakdownSchema
   }).optional(),
+  is_estimating: z.boolean().optional().default(false),
   confidence: z.string(),
   reasoning_context: z.string(),
   summary: z.string().nullable(),
@@ -229,7 +228,7 @@ export const baseProjectSchema = z.object({
   _view_zoom: z.number().optional(),
   source_suggestion_id: z.string().optional(),
   category: projectCategorySchema.optional(),
-  cost_breakdown: costBreakdownSchema.optional(),
+  cost_breakdown: z.union([costBreakdownSchema, projectCostBreakdownSchema]).optional(),
 })
 export type BaseProject = z.infer<typeof baseProjectSchema>
 
@@ -267,21 +266,7 @@ export type AIVisionResult = z.infer<typeof aiVisionResultSchema>
 
 export const aiEstimateResultSchema = z.object({
   totalEstimate: z.number(),
-  breakdown: z.object({
-    materials: z.array(z.object({
-      item: z.string(),
-      cost: z.number()
-    })),
-    labor: z.array(z.object({
-      task: z.string(),
-      description: z.string(),
-      rate: z.number(),
-      hours: z.number()
-    })),
-    permits: z.number(),
-    management: z.number(),
-    contingency: z.number()
-  }),
+  breakdown: costBreakdownSchema,
   assumptions: z.array(z.string()),
   confidenceScore: z.number()
 })

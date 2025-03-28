@@ -576,6 +576,7 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
           category: suggestion.category,
           metadata: suggestion.metadata as Record<string, unknown>,
           estimatedCost: suggestion.estimated_cost as ProjectSuggestion['estimatedCost'],
+          is_estimating: suggestion.is_estimating || false,
           images: suggestion.images || {
             upscaled: {},
             source: {},

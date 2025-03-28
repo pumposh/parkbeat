@@ -118,6 +118,7 @@ export const projectSuggestions = pgTable(
     }),
     category: projectCategoryEnum("category").notNull(),
     estimated_cost: jsonb("estimated_cost").default(null),
+    is_estimating: boolean("is_estimating").default(false),
     confidence: numeric("confidence").notNull(),
     reasoning_context: text("reasoning_context").default(''),
     summary: text("summary").default(''),

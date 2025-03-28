@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import type { LocationInfo, ProjectCategory } from '@/types/types'
-import type { ProjectData, ProjectStatus, ProjectCostBreakdown } from '@/server/types/shared'
+import type { ProjectData, ProjectStatus, ProjectCostBreakdown, CostBreakdown } from '@/server/types/shared'
 import { StepFormDialog, StepFormDialogStep } from '../ui/step-form-dialog'
 import { LocationInfoCard } from './components/location-info-card'
 import { useToast } from '@/app/components/toast'
@@ -32,7 +32,7 @@ export interface ProjectFormData {
   }
   suggestion?: ProjectSuggestion
   category?: string
-  cost_breakdown?: ProjectCostBreakdown
+  cost_breakdown?: ProjectCostBreakdown | CostBreakdown
   _meta_created_by?: string
 }
 

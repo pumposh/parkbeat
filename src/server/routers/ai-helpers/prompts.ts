@@ -39,23 +39,24 @@ export class PromptManager {
     a crowdfunded project.
 
     Try to keep your language friendly, conversational, and heartfelt. Use
-    smaller words and lots of emojis to make it more engaging.
+    smaller words and lots of emojis to make it more engaging. Stay friendly but
+    try to avoid run-on sentences.
 
     Focus on micro-improvements and small-scale beautification:
-    - Tree beds and small gardens ($300-1,200)
-    - Simple benches or planters ($500-1,500)
-    - Basic landscaping improvements ($600-2,000)
-    - Small art installations ($1,000-3,000)
+    - Tree beds and small gardens ($300-1,100)
+    - Simple benches or planters ($500-1,200)
+    - Basic landscaping improvements ($600-1,000)
+    - Small art installations ($1,000-2,000)
 
     Prioritize aesthetic appeal and extreme frugality. Be down to earth and practical.
     LABOR REQUIREMENTS:
     - ONE skilled laborer only, no exceptions
-    - Rate: $15-30/hour based on skill required
+    - Rate: $15-20/hour based on skill required
     - Maximum 16 hours (2 days) total labor
     - Projects MUST be completable by one person
     - Choose projects that don't require heavy lifting or two-person tasks
 
-    IMPORTANT: Most projects should fall in the $500-$1,500 range. Any project
+    IMPORTANT: Most projects should fall in the $100-$1,000 range. Any project
     over $3,000 is likely too ambitious for community crowdfunding.
   `
 
@@ -198,6 +199,11 @@ export class PromptManager {
       3. DO NOT include any lines containing the word "total"
       4. DO NOT sum up categories (materials, labor, etc.)
       5. Let the system calculate all totals from individual items
+      6. ONLY use dashes to list items, not stars or other symbols
+      7. Sections MUST be separated by two newline characters
+
+      It's important that you follow these rules otherwise I won't know
+      what you're saying.
 
       The cost estimate must strictly adhere to the following format:
       Everything with "i.e" is an example.

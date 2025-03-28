@@ -571,7 +571,7 @@ export const StreetViewCard = ({
               validationMessage.type === 'warning' ? "fa-triangle-exclamation text-yellow-500" :
               "fa-check-circle text-emerald-500"
             )} aria-hidden="true" />
-            <p className="text-sm text-zinc-800 dark:text-zinc-200 flex-1">{validationMessage.message}</p>
+            <p className="text-sm text-zinc-800 dark:text-zinc-200 flex-grow overflow-hidden">{validationMessage.message}</p>
             <button
               onClick={(e) => {
                 e.stopPropagation()

@@ -134,6 +134,13 @@
       "when": 1740475421428,
       "tag": "0018_empty_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1743101630327,
+      "tag": "0019_thick_landau",
+      "breakpoints": true
     }
   ]
 }

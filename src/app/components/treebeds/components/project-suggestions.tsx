@@ -5,8 +5,12 @@ import styles from './project-suggestions.module.css'
 import { getElementAutoSize } from '@/lib/dom'
 import { WebSocketManager } from '@/hooks/websocket-manager'
 import { Carousel } from '@/app/components/ui/carousel'
-import { calculateProjectCosts, convertSuggestionToProjectCosts, formatCurrency } from '@/lib/cost'
-import { ProjectSuggestion } from '@/server/types/shared'
+import { calculateProjectCosts, convertSuggestionToProjectCosts, formatCurrency, parseCostValue } from '@/lib/cost'
+import type { 
+  ProjectSuggestion,
+  BaseCostItem,
+  LaborCostItem
+} from '@/server/types/shared'
 
 const categoryEmojis: Record<string, string> = {
   urban_greening: '🌳',
@@ -58,34 +62,29 @@ export function ProjectSuggestions({
     if (projectData?.suggestions && projectData.suggestions.length > 0) {
       const suggestionsWithoutImages = projectData.suggestions
         .filter(suggestion => 
+          // Only process suggestions that have their cost estimates completed (not being estimated)
+          !suggestion.is_estimating &&
+          // Only process suggestions without images
           !suggestion.images?.generated?.length && 
           !suggestion.images?.status?.isGenerating &&
+          !suggestion.images?.status?.isUpscaling &&
           !generatingImages[suggestion.id]
         )
         .map(suggestion => suggestion.id);
       
       if (suggestionsWithoutImages.length > 0) {
-        // Mark these suggestions as generating
-        const newGeneratingState = suggestionsWithoutImages.reduce((acc, id) => {
-          acc[id] = true;
-          return acc;
-        }, {} as Record<string, boolean>);
-        
-        setGeneratingImages(prev => ({ ...prev, ...newGeneratingState }));
-        
-        // Emit the generate images event
-        emitGenerateImagesForSuggestions(projectId, suggestionsWithoutImages);
-        
-        // Reset generating state after a timeout
-        setTimeout(() => {
-          setGeneratingImages(prev => {
-            const newState = { ...prev };
-            suggestionsWithoutImages.forEach(id => {
-              newState[id] = false;
-            });
-            return newState;
+        // Use a more reliable state update
+        setGeneratingImages(prev => {
+          const newState = { ...prev };
+          suggestionsWithoutImages.forEach(id => {
+            if (!newState[id]) {
+              newState[id] = true;
+            }
           });
-        }, 30000); // 30 seconds timeout
+          return newState;
+        });
+        
+        emitGenerateImagesForSuggestions(projectId, suggestionsWithoutImages);
       }
     }
   }, [projectData?.suggestions, projectId]);
@@ -168,7 +167,14 @@ export function ProjectSuggestions({
 
   const handleGenerateImage = useCallback((suggestionId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (generatingImages[suggestionId]) return
+    
+    // Get the suggestion
+    const suggestion = suggestions.find(s => s.id === suggestionId)
+    
+    // Don't generate if already generating or if cost estimation is in progress
+    if (generatingImages[suggestionId] || !suggestion || suggestion.is_estimating) {
+      return
+    }
 
     setGeneratingImages(prev => ({ ...prev, [suggestionId]: true }))
     
@@ -177,7 +183,7 @@ export function ProjectSuggestions({
     setTimeout(() => {
       setGeneratingImages(prev => ({ ...prev, [suggestionId]: false }))
     }, 30000) // 30 seconds timeout
-  }, [projectId, generatingImages])
+  }, [projectId, generatingImages, suggestions])
 
   const SuggestionSkeleton = () => (
     <div className="frosted-glass p-4 space-y-3 opacity-60">
@@ -235,9 +241,16 @@ export function ProjectSuggestions({
                 ? 'text-accent'
                 : 'text-gray-500 dark:text-gray-400 group-hover:text-accent'
             )}>
-              {costs?.total 
-                ? formatCurrency(costs.total)
-                : <i className="fa-solid fa-spinner fa-spin" />}
+              {suggestion.is_estimating ? (
+                <div className="flex items-center">
+                  <i className="fa-solid fa-calculator mr-1" />
+                  <span className="text-xs">Estimating costs...</span>
+                </div>
+              ) : costs?.total ? (
+                formatCurrency(costs.total)
+              ) : (
+                <i className="fa-solid fa-spinner fa-spin" />
+              )}
             </span>
           </div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 line-clamp-1">
@@ -265,39 +278,51 @@ export function ProjectSuggestions({
                 "space-y-2 text-sm overflow-hidden transition-all duration-200 ease-in-out",
                 isCostBreakdownExpanded ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
               )}>
-                {costs.materials.items.length > 0 && (
+                {costs.materials.items?.length > 0 && (
                   <>
                     <div className="text-gray-500 dark:text-gray-400 mb-1">Materials</div>
-                    {costs.materials.items.map((item: { item: string, cost: string }, i: number) => (
-                      <div key={`material-${i}`}>
-                        <div className="pl-4 text-gray-600 dark:text-gray-300 flex justify-between">
+                    {costs.materials.items?.map((item: BaseCostItem, i: number) => (
+                      <div key={`material-${i}`} className="relative">
+                        <div className={cn(
+                          "pl-4 text-gray-600 dark:text-gray-300 flex justify-between",
+                          !item.isIncluded && "opacity-50"
+                        )}>
                           <span className="font-medium">{item.item?.replace('- ', '')}</span>
-                          <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(parseFloat(item.cost))}</span>
+                          <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(parseCostValue(item.cost))}</span>
                         </div>
+                        {!item.isIncluded ? <span className={cn(
+                          "absolute rounded-2",
+                          "w-[calc(100%-0.82rem)] ml-3 h-[1.5px]",
+                          "top-1/2 left-0 translate-y-1/2",
+                          "bg-black/20 dark:bg-white/20"
+                        )} /> : null}   
                       </div>
                     ))}
                   </>
                 )}
-                {costs.labor.items.length > 0 && costs.labor.total > 0 && (
+                {costs.labor.items?.length > 0 && costs.labor.total > 0 && (
                   <>
                     <div className="text-gray-500 dark:text-gray-400 mb-1">Labor</div>
-                    {costs.labor.items.map((item: { description: string, hours: number, rate: number }, i: number) => (
-                      <div key={`labor-${i}`}>
+                    {costs.labor.items?.map((item: LaborCostItem, i: number) => (
+                      <div key={`labor-${i}`} className="relative">
                         <div className="pl-4 text-gray-600 dark:text-gray-300 flex justify-between">
                           <span className="font-medium">{item.description?.replace('- ', '')}</span>
-                          <span className="tabular-nums text-right min-w-[100px]">{item.hours * item.rate}</span>
+                          <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(item.hours * item.rate)}</span>
                         </div>
+                        {!item.isIncluded ? <span className="absolute w-full h-[2px] rounded-2 bg-foreground" /> : null}
                       </div>
                     ))}
                   </>
                 )}
-                {costs.other.items.length > 0 && costs.other.total > 0 && (
+                {costs.other.items?.length > 0 && costs.other.total > 0 && (
                   <>
                     <div className="text-gray-500 dark:text-gray-400 mb-1">Other</div>
-                    {costs.other.items.map((item: { item: string, cost: string }, i: number) => (
-                      <div key={`other-${i}`} className="pl-4 text-gray-600 dark:text-gray-300 flex justify-between">
+                    {costs.other.items?.map((item: BaseCostItem, i: number) => (
+                      <div key={`other-${i}`} className="relative pl-4 text-gray-600 dark:text-gray-300 flex justify-between">
                         <span className="font-medium">{item.item?.replace('- ', '')}</span>
-                        <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(parseFloat(item.cost))}</span>
+                        <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(parseCostValue(item.cost))}</span>
+                        {/* strikethrough */}
+                        {!item.isIncluded ? <span className="absolute w-full h-[2px] rounded-2 bg-foreground" /> : null}
                       </div>
                     ))}
                   </>
