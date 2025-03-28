@@ -3,8 +3,9 @@
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { SettingsDialog } from "../settings-dialog"
+import FooterIndicator from "./footer-indicator"
 
-type FooterAction = {
+export type FooterAction = {
   href?: string
   icon: string
   label: string
@@ -37,7 +38,7 @@ const footerActions: FooterAction[] = [
 ]
 
 // Using memo to prevent unnecessary re-renders
-export default function FooterMenu({ pathname }: { pathname: string }) {
+export default function FooterMenu({ pathname = '/' }: { pathname?: string }) {
   const isAdmin = false;
 
   const visibleActions = footerActions.filter(action => 
@@ -51,14 +52,15 @@ export default function FooterMenu({ pathname }: { pathname: string }) {
       <div className="mx-auto px-3 pb-1.5">
         <div className="relative">
           <nav className="frosted-glass rounded-2xl px-3 py-1.5 flex items-center justify-around relative">
-            {visibleActions.map((action) => (
+            {visibleActions.map((action, index) => (
               action.component ? (
                 <div
                   key={action.label}
                   className={cn(
                     "flex flex-col items-center gap-1 px-3 py-1 rounded-lg transition-colors",
                     "hover:text-zinc-600 dark:hover:text-zinc-300",
-                    "text-zinc-700 dark:text-zinc-400"
+                    "text-zinc-700 dark:text-zinc-300",
+                    "z-10 relative"
                   )}
                 >
                   {action.component}
@@ -70,16 +72,28 @@ export default function FooterMenu({ pathname }: { pathname: string }) {
                   className={cn(
                     "flex flex-col items-center gap-1 px-3 py-1 rounded-lg transition-colors",
                     "hover:text-zinc-600 dark:hover:text-zinc-300",
-                    pathname.includes(action.href!)
-                      ? "text-black/80 dark:text-white/80 bg-white/30 dark:bg-black/30 shadow-xl" 
-                      : "text-zinc-600 dark:text-zinc-100"
+                    "z-10 relative",
+                    "text-zinc-600 dark:text-zinc-300"
                   )}
                 >
-                  <i className={cn(action.icon, "text-lg")} aria-hidden="true" />
-                  <span className="font-light font-display tracking-wide text-[10px]">{action.label}</span>
+                  <i 
+                    className={cn(
+                      action.icon, 
+                      "text-lg transition-all",
+                    )} 
+                    aria-hidden="true" 
+                  />
+                  <span 
+                    className={cn(
+                      "font-light font-display tracking-wide text-[10px] transition-all",
+                    )}
+                  >
+                    {action.label}
+                  </span>
                 </Link>
               )
             ))}
+            <FooterIndicator visibleActions={visibleActions} />
           </nav>
         </div>
       </div>
