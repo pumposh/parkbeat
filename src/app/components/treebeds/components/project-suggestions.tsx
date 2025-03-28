@@ -243,13 +243,12 @@ export function ProjectSuggestions({
             )}>
               {suggestion.is_estimating ? (
                 <div className="flex items-center">
-                  <i className="fa-solid fa-calculator mr-1" />
-                  <span className="text-xs">Estimating costs...</span>
+                  <i className="fa-solid fa-circle-notch fa-spin mr-1" />
                 </div>
               ) : costs?.total ? (
                 formatCurrency(costs.total)
               ) : (
-                <i className="fa-solid fa-spinner fa-spin" />
+                <i className="fa-solid fa-circle-notch fa-spin" />
               )}
             </span>
           </div>
