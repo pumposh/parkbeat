@@ -165,6 +165,7 @@ export class WebSocketManager {
     const registerEvents = (ws: ClientSocket) => {
       // Initialize all possible events with no-op handlers
       const eventNames: (keyof ServerEvents)[] = [
+        'archiveProject',
         'newProject',
         'deleteProject',
         'subscribe',
@@ -1073,6 +1074,21 @@ export const useServerEvent: {
     Dispatch<ExpectedArgument<K>>
   ]
 } = {
+  archiveProject: (defaultValue: EventPayloadMap['archiveProject']) => {
+    const [value, setValue] = useState<EventPayloadMap['archiveProject']>(defaultValue);
+    const wsManager = useMemo(() => WebSocketManager.getInstance(), []);
+    
+    useEffect(() => {
+      const latestState = wsManager.getLatestState('archiveProject');
+      if (latestState) { setValue(latestState); }
+
+      wsManager.registerHook('archiveProject', setValue);
+      return () => wsManager.unregisterHook('archiveProject', setValue);
+    }, [wsManager]);
+    
+    return [value, setValue];
+  },
+  
   deleteProject: (defaultValue: EventPayloadMap['deleteProject']) => {
     const [value, setValue] = useState<EventPayloadMap['deleteProject']>(defaultValue);
     const wsManager = useMemo(() => WebSocketManager.getInstance(), []);

@@ -132,6 +132,7 @@ export function useLiveTrees() {
   const [projectData] = useServerEvent.projectData({ projectId: '', data: { project: {} as ProjectPayload, images: [], suggestions: [] } });
   const [subscribeData] = useServerEvent.subscribe({ geohash: '', shouldSubscribe: true, projects: [] });
   const [deleteProjectData] = useServerEvent.deleteProject({ id: '' });
+  const [archiveProject] = useServerEvent.archiveProject({ id: '' });
 
   // Register handler on mount and handle connection state
   useEffect(() => {
@@ -239,6 +240,27 @@ export function useLiveTrees() {
 
     logger.log('debug', `Project ${deleteProjectData.id} removed from client state via deleteProject`);
   }, [deleteProjectData, logger]);
+
+  useEffect(() => {
+    console.log('[useLiveTrees] archiveProject', archiveProject)
+    if (!archiveProject || !('id' in archiveProject)) return;
+    if (archiveProject.id === "0" || !archiveProject.id) return;
+
+    setProjectMap(prev => {
+      const next = new Map(prev);
+      next.delete(archiveProject.id);
+      return next;
+    });
+
+    // Also remove contribution summary when project is deleted
+    setContributionSummaryMap(prev => {
+      const next = new Map(prev);
+      next.delete(archiveProject.id);
+      return next;
+    });
+
+    logger.log('debug', `Project ${archiveProject.id} removed from client state via archiveProject`);
+  }, [archiveProject, logger]);
 
   // Handle subscription updates
   useEffect(() => {

@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { ProjectTargetTracker } from './project-target-tracker'
 import { calculateProjectCosts } from '@/lib/cost'
 import { CarouselTabs } from '../../ui/carousel-tabs'
+import { ProjectSettings } from './project-settings'
 
 interface ProjectDetailsContentProps {
   projectId: string
@@ -176,6 +177,30 @@ function ProjectDetailsContent({ projectId, onClose }: ProjectDetailsContentProp
         </div>
       ),
       skeleton: <ProjectShareSkeleton className="px-6 pt-6" />
+    },
+    // Settings tab for project creators and admins
+    {
+      id: 'settings',
+      label: 'Settings',
+      icon: <i className="fa-solid fa-gear" />,
+      content: (
+        <div className="p-6 pt-0 overflow-y-auto">
+          {initialData && (
+            <ProjectSettings
+              projectId={projectId}
+              projectCreatorId={initialData._meta_created_by || ''}
+              projectStatus={projectData?.data?.project.status || 'draft'}
+              isLoading={isLoading}
+            />
+          )}
+        </div>
+      ),
+      skeleton: (
+        <div className="p-6 pt-6">
+          <div className="h-8 w-3/4 animate-pulse bg-gray-200 dark:bg-gray-800 rounded mb-4"></div>
+          <div className="h-12 w-full animate-pulse bg-gray-200 dark:bg-gray-800 rounded"></div>
+        </div>
+      )
     }
   ];
 

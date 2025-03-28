@@ -20,6 +20,9 @@ export const projectClientEvents = {
   deleteProject: z.object({
     id: z.string(),
   }),
+  archiveProject: z.object({
+    id: z.string(),
+  }),
   subscribe: z.object({
     geohash: z.string(),
     shouldSubscribe: z.boolean(),
@@ -105,6 +108,9 @@ export const projectServerEvents = {
     })).optional(),
   }),
   deleteProject: z.object({
+    id: z.string(),
+  }),
+  archiveProject: z.object({
     id: z.string(),
   })
 };
@@ -229,7 +235,13 @@ export const setupProjectHandlers = (
         const nearbyProjects = await db
           .select()
           .from(projects)
-          .where(like(projects._loc_geohash, `${geohash}%`))
+          .where(
+            and(
+              like(projects._loc_geohash, `${geohash}%`),
+              // Filter out archived projects
+              sql`${projects.status} != 'archived'`
+            )
+          )
           .orderBy(desc(projects._loc_geohash))
 
         const individualProjects = await Promise.all(nearbyProjects
@@ -314,6 +326,61 @@ export const setupProjectHandlers = (
     } catch (error) {
       logger.error('Error in deleteProject handler:', error)
       throw error
+    }
+  })
+
+  socket.on('archiveProject', async (data: { id: string }) => {
+    logger.log(`Processing project archival: ${data.id}`)
+    const { db } = ctx
+
+    const deduped = await DedupeThing.getInstance()
+      .dedupe(socketId, 'archiveProject', data.id)
+    if (!deduped) return;
+
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, data.id))
+      .limit(1)
+
+    if (!project) {
+      throw new Error('Project not found')
+    }
+
+    // Update project status to archived
+    const [updatedProject] = await db
+      .update(projects)
+      .set({
+        status: 'archived',
+        _meta_updated_at: new Date(),
+        _meta_updated_by: socketId || project._meta_updated_by
+      })
+      .where(eq(projects.id, data.id))
+      .returning()
+
+    if (!updatedProject) {
+      throw new Error('Failed to archive project')
+    }
+
+    // Notify project subscribers about the status change
+    const projectDataUpdate = await getProjectData(data.id)
+    
+    if (projectDataUpdate) {
+      await io.to(`project:${data.id}`).emit('projectData', {
+        projectId: data.id,
+        data: projectDataUpdate
+      })
+    }
+
+    logger.log(`Successfully archived project: ${data.id}`)
+
+    // Emit to all parent geohashes
+    for (let precision = project._loc_geohash.length; precision > 0; precision--) {
+      const parentHash = project._loc_geohash.substring(0, precision)
+      const activeSocketIds = await getActiveSubscribers(parentHash)
+      if (activeSocketIds.length > 0) {
+        await io.to(`geohash:${parentHash}`).emit('archiveProject', { id: data.id })
+      }
     }
   })
 

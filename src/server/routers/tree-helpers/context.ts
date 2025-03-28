@@ -246,32 +246,6 @@ export const getTreeHelpers = ({ ctx, logger }: { ctx: ProcedureContext, logger:
     return Array.from(activeSocketIds)
   }
 
-  const notifyGeohashSubscribers = async (geohash: string, io: IO) => {
-    const key = getGeohashKey(geohash)
-    const sockets = await ctx.redis.smembers(key)
-    for (const socket of sockets) {
-      const nearbyProjects = await ctx.db
-        .select()
-        .from(projects)
-        .where(like(projects._loc_geohash, `${geohash}%`))
-        .orderBy(desc(projects._loc_geohash))
-
-      const individualProjects = nearbyProjects
-        .map(project => ({
-          id: project.id,
-          name: project.name,
-          status: project.status as ProjectStatus,
-          _loc_lat: parseFloat(project._loc_lat),
-          _loc_lng: parseFloat(project._loc_lng),
-          _meta_created_by: project._meta_created_by,
-          _meta_updated_by: project._meta_updated_by,
-          _meta_updated_at: project._meta_updated_at.toISOString(),
-          _meta_created_at: project._meta_created_at.toISOString()
-        }))
-
-    }
-  }
-
   // Helper function to get contribution summary for a project
   const getContributionSummary = async (projectId: string): Promise<ContributionSummary> => {
     logger.debug(`Getting contribution summary for project: ${projectId}`)

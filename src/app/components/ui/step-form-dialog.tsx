@@ -381,7 +381,16 @@ export function StepFormDialog({
                   <button
                     type="button"
                     onClick={handleCancel}
-                    className="rounded-2xl frosted-glass focus-visible:outline-none focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-100 hover:ring-zinc-300 dark:hover:ring-zinc-100 h-10 flex items-center justify-center text-zinc-800 dark:text-zinc-100 text-xl disabled:cursor-not-allowed disabled:hover:ring-0 px-8 py-2"
+                    className={cn(
+                      "rounded-2xl frosted-glass",
+                      "focus-visible:outline-none focus-visible:ring-zinc-300",
+                      "dark:focus-visible:ring-zinc-100 hover:ring-zinc-300",
+                      "dark:hover:ring-zinc-100 h-10",
+                      "flex items-center justify-center",
+                      "text-zinc-800 dark:text-zinc-100 text-xl",
+                      "disabled:cursor-not-allowed disabled:hover:ring-0",
+                      "px-8 py-2"
+                    )}
                     aria-label="Cancel"
                   >
                     <i className="fa-solid fa-xmark transition-opacity" aria-hidden="true" />
