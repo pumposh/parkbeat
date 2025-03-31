@@ -10,7 +10,7 @@ import { useState } from "react";
 import { Dispatch } from "react";
 
 // Connection state management
-export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting';
+export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'idle';
 
 // Create a console instance for WebSocketManager
 // const console = getWebSocketLogger();
@@ -18,7 +18,7 @@ export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'rec
 type ClientSocket = ReturnType<typeof client.tree.live.$ws>
 
 // Define subscription status type
-export type SubscriptionStatus = 'active' | 'unsubscribed';
+export type SubscriptionStatus = 'active' | 'unsubscribed' | 'idle';
 
 type EventName = keyof (ClientEvents & ServerEvents);
 type ServerEventName = keyof ServerEvents;
@@ -106,6 +106,7 @@ export class WebSocketManager {
 
   private constructor() {
     console.info('Instance created');
+    this.startIdleCheck(); // Start the idle connection checker
   }
 
   // Clear latest state for an event or all events
@@ -801,7 +802,7 @@ export class WebSocketManager {
     return remainingTime;
   }
 
-  // Register a heartbeat hook for this project
+  // Handle heartbeat events with idle status detection
   private handleHeartbeat(arg: EventPayloadMap['heartbeat']) {
     const self = WebSocketManager.getInstance();
 
@@ -815,8 +816,31 @@ export class WebSocketManager {
     }
 
     self.setLastPingTime(room, lastPingTime);
+    self.checkIdleStatus(room); // Check if connection should be marked as idle
   };
 
+  // Check if the connection has been idle for too long
+  checkIdleStatus(room: string) {
+    const roomData = this.roomSubscriptions.get(room);
+    if (!roomData || roomData.status !== 'active') return;
+    
+    const now = Date.now();
+    const lastPingTime = roomData.lastPingTime;
+    const timeSinceLastPing = now - lastPingTime;
+    
+    // Mark as idle if more than 30 seconds have passed since last ping
+    if (timeSinceLastPing > 30000) {
+      this.console.info(`Room ${room} has been inactive for ${timeSinceLastPing}ms, marking as idle`);
+      this.roomSubscriptions.set(room, {
+        ...roomData,
+        status: 'idle'
+      });
+      // Notify listeners about the status change
+      this.stateListeners.forEach(listener => listener(this.connectionState));
+    }
+  }
+
+  // Update the setLastPingTime method to check for idle status transitions
   setLastPingTime(room: string, lastPingTime: number) {
     const logger = getLogger().group(room, room, false, false)
       || this.console;
@@ -824,9 +848,26 @@ export class WebSocketManager {
     if (!existingData) return;
     
     logger.info(`Existing room data for ${room}:`, existingData);
-    const newData = { ...existingData, lastPingTime };  
+    
+    // Check if the connection was previously idle
+    const wasIdle = existingData.status === 'idle';
+    
+    // Update with new ping time
+    const newData = { 
+      ...existingData, 
+      lastPingTime,
+      // If it was idle, reactivate it
+      status: wasIdle ? 'active' : existingData.status 
+    };
+    
     this.roomSubscriptions.set(room, newData);
     logger.info(`Updated room data for ${room}:`, newData);
+    
+    // If status changed from idle to active, notify listeners
+    if (wasIdle) {
+      logger.info(`Room ${room} was idle but is now active again`);
+      this.stateListeners.forEach(listener => listener(this.connectionState));
+    }
     
     if (existingData?.heartbeatHook) {
       logger.info(`Calling heartbeat hook for ${room}`);
@@ -834,6 +875,18 @@ export class WebSocketManager {
     } else {
       logger.info(`No heartbeat hook found for ${room}`);
     }
+  }
+
+  // Add a method to periodically check for idle connections
+  startIdleCheck() {
+    // Run idle check every 10 seconds
+    setInterval(() => {
+      this.roomSubscriptions.forEach((data, room) => {
+        if (data.status === 'active') {
+          this.checkIdleStatus(room);
+        }
+      });
+    }, 10000);
   }
 
   subscribeToRoom(itemId: string, prefix = 'geohash') {
@@ -845,7 +898,7 @@ export class WebSocketManager {
     logger.info(`Current connection state: ${this.connectionState}`);
     logger.info(`Current subscriptions:`, Array.from(this.roomSubscriptions.keys()));
     
-    // Check if room exists but is marked as unsubscribed
+    // Check if room exists but is marked as unsubscribed or idle
     const existingRoom = this.roomSubscriptions.get(roomKey);
     logger.info(`Existing room data for ${roomKey}:`, existingRoom);
     
@@ -898,6 +951,23 @@ export class WebSocketManager {
               break;
           }
         }, 0);
+        
+        return;
+      } else if (existingRoom.status === 'idle') {
+        logger.info(`Reactivating idle room: ${roomKey}`);
+        
+        // Update status to active
+        this.roomSubscriptions.set(roomKey, {
+          ...existingRoom,
+          status: 'active',
+          lastPingTime: Date.now() // Reset ping time
+        });
+        
+        logger.info(`Updated room data for ${roomKey}:`, this.roomSubscriptions.get(roomKey));
+        
+        // Notify state listeners about the subscription change
+        logger.info(`Notifying ${this.stateListeners.size} state listeners about reactivation`);
+        this.stateListeners.forEach(listener => listener(this.connectionState));
         
         return;
       } else {
@@ -1065,6 +1135,17 @@ export class WebSocketManager {
     });
     return allSubscriptions;
   }
+
+  // Add method to get all idle subscriptions
+  getIdleSubscriptions(): Set<string> {
+    const idleSubscriptions = new Set<string>();
+    this.roomSubscriptions.forEach((data, key) => {
+      if (data.status === 'idle') {
+        idleSubscriptions.add(key);
+      }
+    });
+    return idleSubscriptions;
+  }
 }
 
 
@@ -1226,6 +1307,7 @@ export type WebSocketState = {
   connectionState: ConnectionState;
   activeSubscriptions: string[];
   unsubscribedRooms: string[];
+  idleSubscriptions: string[];
   hookCount: number;
   isConnected: boolean;
 };
@@ -1240,6 +1322,7 @@ export function useWebSocketState(): WebSocketState {
     unsubscribedRooms: Array.from(wsManager.getAllSubscriptions())
       .filter(([_, status]) => status === 'unsubscribed')
       .map(([key]) => key),
+    idleSubscriptions: Array.from(wsManager.getIdleSubscriptions()),
     hookCount: wsManager.getHookCount(),
     isConnected: wsManager.getConnectionState() === 'connected'
   }), [wsManager]); 
@@ -1268,6 +1351,7 @@ export function useWebSocketState(): WebSocketState {
         connectionState,
         activeSubscriptions: Array.from(wsManager.getActiveSubscriptions()),
         unsubscribedRooms,
+        idleSubscriptions: Array.from(wsManager.getIdleSubscriptions()),
         hookCount: wsManager.getHookCount(),
         isConnected: connectionState === 'connected'
       };

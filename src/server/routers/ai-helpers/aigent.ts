@@ -1,4 +1,4 @@
-import { GenerativeModel, GoogleGenerativeAI } from "@google/generative-ai"
+import { GenerativeModel, GoogleGenerativeAI, Part, InlineDataPart } from "@google/generative-ai"
 import type { ProjectCategory } from "@/types/types"
 import { PromptManager } from "./prompts"
 import { Context } from "hono"
@@ -487,8 +487,12 @@ export class GeminiAgent implements AIAgent {
   }): Promise<AIAnalysisResult> {
     // First check if this is an appropriate outdoor space
     const initialCheckPrompt = PromptManager.getInitialSpaceCheckPrompt()
+    
+    // Properly format the image for Gemini API
+    const imageData = await this.prepareImageData(imageUrl)
+    
     const initialCheck = await this.model.generateContent([
-      imageUrl,
+      imageData,
       initialCheckPrompt.systemPrompt,
       initialCheckPrompt.userPrompt
     ])
@@ -522,7 +526,7 @@ export class GeminiAgent implements AIAgent {
     })
 
     const result = await this.model.generateContent([
-      imageUrl,
+      imageData,
       analysisPrompt.systemPrompt,
       analysisPrompt.userPrompt
     ])
@@ -580,6 +584,50 @@ export class GeminiAgent implements AIAgent {
     }
   }
 
+  // Helper method to prepare image data for Gemini API
+  private async prepareImageData(imageUrl: string): Promise<Part | string> {
+    // Check if it's a data URL (base64 encoded)
+    if (imageUrl.startsWith('data:')) {
+      const matches = imageUrl.match(/^data:([A-Za-z-+/]+);base64,(.+)$/)
+      if (matches && matches.length === 3) {
+        const mimeType = matches[1]
+        const base64Data = matches[2]
+        return {
+          inlineData: {
+            data: base64Data,
+            mimeType
+          }
+        } as InlineDataPart
+      }
+    }
+    
+    // If it's a remote URL, fetch the image and convert to base64
+    try {
+      const response = await fetch(imageUrl)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.statusText}`)
+      }
+      
+      const arrayBuffer = await response.arrayBuffer()
+      const base64Data = Buffer.from(arrayBuffer).toString('base64')
+      
+      // Determine MIME type from content-type header or fallback to image/jpeg
+      const mimeType = response.headers.get('content-type') || 'image/jpeg'
+      
+      return {
+        inlineData: {
+          data: base64Data,
+          mimeType
+        }
+      } as InlineDataPart
+    } catch (error) {
+      console.error('Error preparing image data:', error)
+      // If we can't fetch/process the image, fall back to using the URL directly
+      // (this might not work depending on Gemini's access to the URL)
+      return imageUrl
+    }
+  }
+
   async generateEstimate({ description, category, scope }: {
     description: string
     category: string
@@ -627,8 +675,11 @@ export class GeminiAgent implements AIAgent {
   }> {
     const prompt = PromptManager.getInitialSpaceCheckPrompt()
     
+    // Use proper image data format
+    const imageData = await this.prepareImageData(imageUrl)
+    
     const result = await this.model.generateContent([
-      imageUrl,
+      imageData,
       prompt.systemPrompt,
       prompt.userPrompt
     ])
@@ -646,7 +697,7 @@ export class GeminiAgent implements AIAgent {
     const [validity, ...descriptionParts] = content.split('\n')
     const isValid = !validity?.toUpperCase().includes('NO')
     const isMaybe = validity?.toUpperCase().includes('MAYBE') ?? false
-    const description = descriptionParts.join('\n').trim()
+    const description = descriptionParts.join('\n').trim().replace('LINE TWO -- ', '')
 
     return {
       isValid,
@@ -675,11 +726,12 @@ export class GeminiAgent implements AIAgent {
     })
 
     // Create content array for Gemini API
-    const contentArray = [prompt.systemPrompt, prompt.userPrompt]
+    const contentArray: (string | Part)[] = [prompt.systemPrompt, prompt.userPrompt]
     
-    // Add each image to the content array
+    // Process each image and add it to the content array
     for (const image of params.images) {
-      contentArray.push(image.imageUrl)
+      const imageData = await this.prepareImageData(image.imageUrl)
+      contentArray.push(imageData)
     }
 
     const response = await this.model.generateContent(contentArray)

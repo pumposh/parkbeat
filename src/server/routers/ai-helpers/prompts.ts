@@ -163,12 +163,12 @@ export class PromptManager {
       project complexity, and space constraints.
 
       COST GUIDELINES:
-      - Projects should target $500-$1,500 total cost
-      - Never exceed $3,000 total for any project
+      - Projects should target $500-$1000 total cost
+      - Never exceed $1,300 total for any project
       - Labor structure (STRICT):
         * ONE skilled worker only
         * Rate: $15-30/hr based on skill level
-        * Maximum 16 hours total
+        * Minimum 4 hours, maximum 8 hours total
         * No helper/additional labor allowed
       - Typical project breakdowns:
         * Materials: 35-45% of total cost
@@ -177,9 +177,9 @@ export class PromptManager {
         * Management: 5-15%
       - Project type ranges:
         * Tree beds/gardens: $300-1,200
-        * Benches/planters: $500-1,500
-        * Basic landscaping: $600-2,000
-        * Small art: $1,000-3,000
+        * Benches/planters: $500-1,200
+        * Basic landscaping: $600-800
+        * Small art: $1,000-1,500
 
       SPACE COMPLEXITY ADJUSTMENTS:
       - Easy access (open, flat): Base labor rate
@@ -248,8 +248,7 @@ export class PromptManager {
       3. Materials and equipment needs
       4. Special equipment for one-person work
       5. Permits and fees
-      6. Project management
-      7. Contingency (5-10%)
+      6. Contingency (5-10%)
 
       IMPORTANT: 
       - Reject or modify any project that cannot be safely completed by one person within 16 hours
@@ -274,10 +273,12 @@ export class PromptManager {
         LINE TWO -- RESPONSE TO THE QUESTION.
         
         Ignore any people or obstructions in the image.
-        Is this image of an outdoor space and appropriate for use
-        to start community improvement project to fundraise for?
-        Think beautification projects, tree beds, benches, etc; something
-        within financial feasibility.
+        Is this image of an outdoor space and importantly is it a space that
+        is appropriate for use to start a community improvement project to
+        fundraise for? Think beautification projects, tree beds, benches, etc;
+        something within financial feasibility. If all you see is a building,
+        concrete, cars, etc respond with "no".
+
         A "no" response should be an absolute, definitive answer.
         A "maybe" response should be a nuanced answer that takes into
         account the possibility of the space being used for something else.

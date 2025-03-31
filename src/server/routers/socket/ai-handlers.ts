@@ -10,13 +10,14 @@ import type { publicProcedure } from "@/server/jstack";
 import { ContextWithSuperJSON, Procedure } from "jstack";
 import { eq, desc, and } from "drizzle-orm";
 import { getTreeHelpers } from "../tree-helpers/context";
-import type { ProjectCategory, ProjectCostBreakdown, ProjectStatus, ProjectSuggestion } from "../../types/shared";
+import type { ProjectCategory, ProjectStatus, ProjectSuggestion } from "../../types/shared";
 import { ImageGenerationAgent } from "../ai-helpers/leonardo-agent";
 import { calculateProjectCosts, convertFlatToNestedCostBreakdown } from "@/lib/cost";
 import { DedupeThing } from "@/lib/promise";
 import { ParkbeatLogger } from "@/lib/logger";
 import { AISocket, AIIO, clientEventsSchema, serverEventsSchema } from "./types";
 import ngeohash from 'ngeohash';
+import sizeOf from 'image-size';
 
 type Logger = ParkbeatLogger.GroupLogger | ParkbeatLogger.Logger | typeof console
 
@@ -233,6 +234,55 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
       let upscaledImageUrl = sourceImage.image_url
       let upscaleId: string | undefined
 
+      /** Determine if upscaling the source image is required */
+      const minimumUpscaleSize = 1024
+      
+      // Check if upscaling is needed by fetching image dimensions
+      const needsUpscaling = await (async () => {
+        try {
+          // If we already have an upscaled version, we don't need to recheck
+          if (suggestion.images?.upscaled?.url && suggestion.images?.upscaled?.id) {
+            return false;
+          }
+          
+          // Using image-size to check dimensions
+          try {
+            // Fetch the image as a buffer first
+            const response = await fetch(sourceImage.image_url);
+            if (!response.ok) {
+              logger.warn(`[generateImagesForSuggestion] Failed to fetch image: ${response.status} ${response.statusText}`);
+              return true; // Default to upscaling if fetch fails
+            }
+            
+            const buffer = await response.arrayBuffer();
+            const dimensions = sizeOf(Buffer.from(buffer));
+            
+            if (!dimensions || !dimensions.width || !dimensions.height) {
+              logger.warn(`[generateImagesForSuggestion] Failed to determine image dimensions, assuming upscaling is needed`);
+              return true;
+            }
+            
+            // Check if either width or height is below the minimum size
+            const needsUpscale = dimensions.width < minimumUpscaleSize || dimensions.height < minimumUpscaleSize;
+            logger.info(`[generateImagesForSuggestion] Image size check: ${dimensions.width}x${dimensions.height}, needs upscaling: ${needsUpscale}`);
+            return needsUpscale;
+          } catch (sizeError) {
+            logger.error(`[generateImagesForSuggestion] Error determining image size:`, {
+              error: sizeError,
+              sourceImageId: sourceImage.id
+            });
+            return true; // Default to upscaling if there's an error
+          }
+        } catch (error) {
+          logger.error(`[generateImagesForSuggestion] Error checking image dimensions:`, {
+            error,
+            sourceImageId: sourceImage.id
+          });
+          // Default to upscaling if there's an error
+          return true;
+        }
+      })();
+
       const [upscaleResult, costs] = await Promise.all([
         // Handle upscaling
         (async () => {
@@ -247,6 +297,15 @@ export const setupAIHandlers = (socket: AISocket, ctx: ProcedureContext, io: Pro
                 url: suggestion.images.upscaled.url,
                 id: suggestion.images.upscaled.id
               }
+            }
+
+            // Skip upscaling if not needed
+            if (!needsUpscaling) {
+              logger.info(`[generateImagesForSuggestion] Skipping upscaling for image - dimensions meet minimum requirements`);
+              return {
+                url: sourceImage.image_url,
+                id: sourceImage.id
+              };
             }
 
             // Perform upscaling
