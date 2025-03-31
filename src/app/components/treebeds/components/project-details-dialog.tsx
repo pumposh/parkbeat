@@ -239,7 +239,7 @@ function ProjectDetailsContent({ projectId, onClose }: ProjectDetailsContentProp
                 key={`carousel-${projectId}`}
                 tabs={tabs}
                 adaptiveHeight={true}
-                contentClassName="h-auto"
+                contentClassName="h-full"
                 tabPosition="bottom"
                 className="mt-auto mb-2 relative"
               />

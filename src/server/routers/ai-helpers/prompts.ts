@@ -159,39 +159,46 @@ export class PromptManager {
   static getCostEstimatePrompt(context: CostEstimateContext) {
     const systemPrompt = this.DEFAULT_SYSTEM_PROMPT + `
       You will be given project details and need to generate a detailed cost estimate.
-      Be realistic but extremely frugal in your estimates. Consider local market rates,
-      project complexity, and space constraints.
+      Be extremely frugal in your estimates - always err on the side of underestimating costs.
+      Focus on bare minimum, DIY-friendly solutions that achieve the core goal.
 
-      COST GUIDELINES:
-      - Projects should target $500-$1000 total cost
-      - Never exceed $1,300 total for any project
-      - Labor structure (STRICT):
+      COST GUIDELINES (STRICT):
+      - Projects should target $300-$700 total cost whenever possible
+      - Never exceed $1,000 total for any project
+      - Labor structure (EXTREMELY STRICT):
         * ONE skilled worker only
-        * Rate: $15-30/hr based on skill level
-        * Minimum 4 hours, maximum 8 hours total
+        * Rate: $15-25/hr (prefer the lower end)
+        * Maximum 8 hours total labor
         * No helper/additional labor allowed
-      - Typical project breakdowns:
-        * Materials: 35-45% of total cost
-        * Labor: 35-45% (max 16 hours)
-        * Permits/Fees: 5-15%
-        * Management: 5-15%
-      - Project type ranges:
-        * Tree beds/gardens: $300-1,200
-        * Benches/planters: $500-1,200
-        * Basic landscaping: $600-800
-        * Small art: $1,000-1,500
+      - Target project breakdowns:
+        * Materials: 40-50% of total cost (use recycled/donated where possible)
+        * Labor: 30-40% (max 8 hours)
+        * Permits/Fees: 5-10% (seek waivers when possible)
+        * Management: 5-10% (minimize)
+      - Project type maximum ranges:
+        * Tree beds/gardens: $200-$800
+        * Benches/planters: $300-$700
+        * Basic landscaping: $400-$600
+        * Small art: $500-$800
 
       SPACE COMPLEXITY ADJUSTMENTS:
       - Easy access (open, flat): Base labor rate
-      - Moderate access: Add 10-15% to labor rate
-      - Difficult access: Add 15-25% to labor rate
+      - Moderate access: Add 10% to labor rate
+      - Difficult access: Add 15% to labor rate
       - Space size impacts:
-        * Very small (<5 sq m): May increase time needed
-        * Medium (5-20 sq m): Optimal for one person
-        * Large (>20 sq m): Must be broken into phases
+        * Very small (<5 sq m): Optimal for one person
+        * Medium (5-15 sq m): Simplify scope to fit time constraint
+        * Large (>15 sq m): Must be broken into phases or reduced in scope
 
       IMPORTANT: If a project cannot be completed by one person
-      within 16 hours, it MUST be rejected or modified.
+      within 8 hours, it MUST be reduced in scope or rejected.
+
+      CRITICAL FRUGALITY RULES:
+      - Always opt for the least expensive materials that will work
+      - Prioritize solutions requiring minimal specialized equipment
+      - Consider upcycled or reclaimed materials where appropriate
+      - Break large projects into smaller, independently funded phases
+      - Eliminate purely decorative elements unless central to purpose
 
       RESPONSE FORMAT RULES:
       1. List ONLY individual line items - NO totals or subtotals
@@ -214,18 +221,18 @@ export class PromptManager {
          - Size category
          - Cost multipliers applied
       2. MATERIALS BREAKDOWN
-         - Soil mix: $75
-         - Plants (5 perennials): $150
-         - Garden edging: $45
+         - Soil mix (basic): $40
+         - Plants (3 perennials): $75
+         - Garden edging (recycled): $20
          ...
       3. LABOR COSTS
          - Skill level: [basic/intermediate/advanced]
-         - Rate: $[15-30]/hour
+         - Rate: $[15-25]/hour
          - Hours needed: [1-8]
       4. OTHER COSTS
-         - Equipment rental: $50
-         - Permit fee: $75
-         - Project coordination: $100
+         - Equipment rental: $25
+         - Permit fee: $50
+         - Project coordination: $25
       5. FEASIBILITY CHECK
          - Can one person complete this? [Yes/No]
          - If No, suggested modifications
@@ -234,7 +241,7 @@ export class PromptManager {
     `
 
     const userPrompt = `
-      Generate a detailed cost estimate for the following community project:
+      Generate a minimal, highly frugal cost estimate for the following community project:
       Description: ${context.description}
       Category: ${context.category}
       Scope: 
@@ -243,17 +250,19 @@ export class PromptManager {
       - Timeline: ${context.scope.timeline} months
       
       Consider:
-      1. Single-person labor constraints
+      1. Single-person labor constraints (maximum 8 hours)
       2. Space constraints and access requirements
-      3. Materials and equipment needs
-      4. Special equipment for one-person work
-      5. Permits and fees
-      6. Contingency (5-10%)
+      3. Essential materials only (no premium options)
+      4. DIY-friendly approach with minimal equipment
+      5. Necessary permits and fees (seek lowest cost options)
+      6. Small contingency (5% max)
 
       IMPORTANT: 
-      - Reject or modify any project that cannot be safely completed by one person within 16 hours
+      - Reject or reduce scope of any project that cannot be safely completed by one person within 8 hours
       - List only individual items, never include totals
       - Each line item must be specific (e.g. "2x4 lumber (8ft)" not just "lumber")
+      - Prioritize lowest cost options that still deliver the core value
+      - Suggest alternatives if you believe the project can be done more frugally
     `
 
     return {
@@ -301,11 +310,9 @@ export class PromptManager {
       1. urban_greening: Tree planting, green walls, native plant gardens
       2. park_improvement: Basic park infrastructure upgrades, path repairs
       3. community_garden: Small-scale food or flower growing spaces
-      4. playground: Simple play elements, individual pieces
-      5. public_art: Murals, sculptures, decorative elements
-      6. sustainability: Water management, solar lighting, recycling
-      7. accessibility: ADA improvements, ramps, signage
-      8. other: ONLY if it doesn't fit any other category
+      4. public_art: Murals, sculptures, decorative elements
+      5. sustainability: Water management, solar lighting, recycling
+      6. other: ONLY if it doesn't fit any other category
 
       CATEGORY SELECTION RULES:
       - Each suggestion MUST be assigned exactly one category
@@ -313,6 +320,8 @@ export class PromptManager {
       - Use 'other' ONLY as a last resort when no other category fits
       - DO NOT create new categories or modify existing ones
       - DO NOT combine categories
+      - PRIORITIZE urban_greening projects
+      - Aim to include at least one urban_greening project if feasible for the location
 
       COST GUIDELINES:
       - Aim for most projects to be $500-$1,500
@@ -365,6 +374,8 @@ export class PromptManager {
       - Provide realistic cost estimates
       - Focus on achievable improvements
       - STRICTLY use only the allowed project categories
+      - Prioritize urban greening projects when the space allows for it
+      - Look for opportunities to add flower beds, planters, or other green elements
 
       Separate each suggestion with "---"
     `
