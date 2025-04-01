@@ -125,8 +125,11 @@ function ProjectDetailsContent({ projectId, onClose }: ProjectDetailsContentProp
     );
   };
 
-  // Define tab content
-  const tabs = [
+  // Memoize the project title section to prevent rerenders
+  const projectTitle = useMemo(() => renderProjectTitle(), [initialData, projectData?.data?.contribution_summary?.total_amount_cents, isLoading]);
+
+  // Define tab content - memoized to prevent recreation on every render
+  const tabs = useMemo(() => [
     {
       id: 'project',
       label: 'Project',
@@ -202,7 +205,7 @@ function ProjectDetailsContent({ projectId, onClose }: ProjectDetailsContentProp
         </div>
       )
     }
-  ];
+  ], [initialData, projectId, projectData?.data?.project.status, isLoading]);
 
   return (
     <div className="pointer-events-auto flex flex-col flex-1 overflow-hidden">
@@ -228,7 +231,7 @@ function ProjectDetailsContent({ projectId, onClose }: ProjectDetailsContentProp
         </VisuallyHidden>
 
         <div className="overflow-y-hidden flex-1 flex flex-col">
-          {renderProjectTitle()}
+          {projectTitle}
           
           <div className={cn(
             "flex-1 overflow-hidden flex flex-col",
@@ -236,10 +239,8 @@ function ProjectDetailsContent({ projectId, onClose }: ProjectDetailsContentProp
           )}>
             {initialData && (
               <CarouselTabs
-                key={`carousel-${projectId}`}
                 tabs={tabs}
                 adaptiveHeight={true}
-                contentClassName="h-full"
                 tabPosition="bottom"
                 className="mt-auto mb-2 relative"
               />

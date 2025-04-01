@@ -9,6 +9,7 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
   scroll-behavior: smooth;
+  height: -webkit-fill-available;
 }
 
 .carouselContainer::-webkit-scrollbar {
