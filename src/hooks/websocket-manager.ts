@@ -734,6 +734,10 @@ export class WebSocketManager {
     return this.latestState.get(event) as ExpectedArgument<T> | undefined;
   }
 
+  setLatestState<T extends EventName>(event: T, data: ExpectedArgument<T>) {
+    this.latestState.set(event, data);
+  }
+
   getHookCount() {
     const count = this.hooks?.size || 0;
     return count;

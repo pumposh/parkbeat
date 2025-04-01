@@ -179,7 +179,7 @@ export function StepFormDialog({
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = content
       const isAtTop = scrollTop < 16
-      const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 1
+      const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 16
 
       if (isAtTop) {
         setScrollPosition('top')

@@ -4,13 +4,8 @@ import { cn } from '@/lib/utils'
 import styles from './project-suggestions.module.css'
 import { getElementAutoSize } from '@/lib/dom'
 import { WebSocketManager } from '@/hooks/websocket-manager'
-import { Carousel } from '@/app/components/ui/carousel'
-import { calculateProjectCosts, convertSuggestionToProjectCosts, formatCurrency, parseCostValue } from '@/lib/cost'
-import type { 
-  ProjectSuggestion,
-  BaseCostItem,
-  LaborCostItem
-} from '@/server/types/shared'
+import { calculateProjectCosts, convertSuggestionToProjectCosts, formatCurrency } from '@/lib/cost'
+import type { ProjectSuggestion } from '@/server/types/shared'
 
 const categoryEmojis: Record<string, string> = {
   urban_greening: '🌳',
@@ -53,7 +48,6 @@ export function ProjectSuggestions({
   const [selectedSuggestionId, setSelectedSuggestionId] = useState<string | null>(null)
   const [generatingImages, setGeneratingImages] = useState<Record<string, boolean>>({})
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
-  const containerRef = useRef<HTMLDivElement>(null)
   const { projectData: { data: projectData } } = useProjectData(projectId)
   const suggestions = sortSuggestions(projectData?.suggestions ?? [])
 
@@ -73,7 +67,6 @@ export function ProjectSuggestions({
         .map(suggestion => suggestion.id);
       
       if (suggestionsWithoutImages.length > 0) {
-        // Use a more reliable state update
         setGeneratingImages(prev => {
           const newState = { ...prev };
           suggestionsWithoutImages.forEach(id => {
@@ -86,6 +79,10 @@ export function ProjectSuggestions({
         
         emitGenerateImagesForSuggestions(projectId, suggestionsWithoutImages);
       }
+    }
+    console.log('projectData?.project?.source_suggestion_id', projectData?.project?.source_suggestion_id)
+    if (projectData?.project?.source_suggestion_id) {
+      setSelectedSuggestionId(projectData.project.source_suggestion_id)
     }
   }, [projectData?.suggestions, projectId]);
 
@@ -126,32 +123,15 @@ export function ProjectSuggestions({
     }
   }, [suggestions.length])
 
-  // Handle clicks outside of suggestions
-  useEffect(() => {
-    if (selectedSuggestionId === null) return
-
-    const handleClickOutside = (event: MouseEvent) => {
-      // Ignore clicks on dialog navigation buttons
-      const target = event.target as HTMLElement
-      const isNavigationButton = target.closest('button[aria-label="Next step"], button[aria-label="Previous step"]')
-      if (isNavigationButton) return
-
-      if (!containerRef.current?.contains(target)) {
-        setSelectedSuggestionId(null)
-        onSuggestionSelect(null)
-      }
-    }
-
-    window.addEventListener('mousedown', handleClickOutside)
-    return () => window.removeEventListener('mousedown', handleClickOutside)
-  }, [selectedSuggestionId, onSuggestionSelect])
-
   const handleSelect = useCallback((index: number) => {
     if (suggestions[index]) {
       const suggestion = suggestions[index]
       const projectCosts = convertSuggestionToProjectCosts(suggestion)
       
+      // Update the selected card
       setSelectedSuggestionId(suggestion.id)
+      
+      // Notify parent component
       onSuggestionSelect({
         ...suggestion,
         convertedCosts: projectCosts ?? undefined,
@@ -164,26 +144,6 @@ export function ProjectSuggestions({
       })
     }
   }, [suggestions, onSuggestionSelect])
-
-  const handleGenerateImage = useCallback((suggestionId: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    
-    // Get the suggestion
-    const suggestion = suggestions.find(s => s.id === suggestionId)
-    
-    // Don't generate if already generating or if cost estimation is in progress
-    if (generatingImages[suggestionId] || !suggestion || suggestion.is_estimating) {
-      return
-    }
-
-    setGeneratingImages(prev => ({ ...prev, [suggestionId]: true }))
-    
-    emitGenerateImagesForSuggestions(projectId, [suggestionId])
-    
-    setTimeout(() => {
-      setGeneratingImages(prev => ({ ...prev, [suggestionId]: false }))
-    }, 30000) // 30 seconds timeout
-  }, [projectId, generatingImages, suggestions])
 
   const SuggestionSkeleton = () => (
     <div className="frosted-glass p-4 space-y-3 opacity-60">
@@ -201,7 +161,6 @@ export function ProjectSuggestions({
 
   const SuggestionCard = ({ suggestion, index }: { suggestion: ProjectSuggestion, index: number }) => {
     const { title, summary, category, estimatedCost } = suggestion
-    const [isCostBreakdownExpanded, setIsCostBreakdownExpanded] = useState(false)
     const costs = useMemo(() => calculateProjectCosts(estimatedCost?.breakdown), [estimatedCost])
     const isSelected = selectedSuggestionId === suggestion.id
 
@@ -214,11 +173,8 @@ export function ProjectSuggestions({
         className={cn(
           "frosted-glass",
           styles.card,
-          selectedSuggestionId !== null && !isSelected && styles.cardUnselected,
-          {
-            'hover:ring-2 hover:ring-accent/50 hover:shadow-md': selectedSuggestionId === null,
-            'ring-2 ring-accent shadow-lg': isSelected
-          }
+          "hover:ring-2 hover:ring-accent/50 hover:shadow-md",
+          isSelected && "ring-2 ring-accent shadow-lg"
         )}
         style={{
           '--card-height': `${cardFullHeights[index]}px`
@@ -236,10 +192,8 @@ export function ProjectSuggestions({
               </span>
             </div>
             <span className={cn(
-              "text-sm font-medium transition-colors",
-              isSelected 
-                ? 'text-accent'
-                : 'text-gray-500 dark:text-gray-400 group-hover:text-accent'
+              "text-sm font-medium",
+              isSelected ? 'text-accent' : 'text-gray-500 dark:text-gray-400'
             )}>
               {suggestion.is_estimating ? (
                 <div className="flex items-center">
@@ -258,81 +212,6 @@ export function ProjectSuggestions({
           <p className="text-gray-600 dark:text-gray-300 line-clamp-3 leading-relaxed text-sm">
             {summary}
           </p>
-          {isSelected && costs && (
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setIsCostBreakdownExpanded(!isCostBreakdownExpanded)
-                }}
-                className="w-full flex items-center justify-between text-sm font-medium text-gray-900 dark:text-gray-100 mb-2"
-              >
-                <span>Cost Breakdown</span>
-                <i className={cn(
-                  "fa-solid fa-chevron-down transition-transform",
-                  isCostBreakdownExpanded && "rotate-180"
-                )} />
-              </button>
-              <div className={cn(
-                "space-y-2 text-sm overflow-hidden transition-all duration-200 ease-in-out",
-                isCostBreakdownExpanded ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
-              )}>
-                {costs.materials.items?.length > 0 && (
-                  <>
-                    <div className="text-gray-500 dark:text-gray-400 mb-1">Materials</div>
-                    {costs.materials.items?.map((item: BaseCostItem, i: number) => (
-                      <div key={`material-${i}`} className="relative">
-                        <div className={cn(
-                          "pl-4 text-gray-600 dark:text-gray-300 flex justify-between",
-                          !item.isIncluded && "opacity-50"
-                        )}>
-                          <span className="font-medium">{item.item?.replace('- ', '')}</span>
-                          <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(parseCostValue(item.cost))}</span>
-                        </div>
-                        {!item.isIncluded ? <span className={cn(
-                          "absolute rounded-2",
-                          "w-[calc(100%-0.82rem)] ml-3 h-[1.5px]",
-                          "top-1/2 left-0 translate-y-1/2",
-                          "bg-black/20 dark:bg-white/20"
-                        )} /> : null}   
-                      </div>
-                    ))}
-                  </>
-                )}
-                {costs.labor.items?.length > 0 && costs.labor.total > 0 && (
-                  <>
-                    <div className="text-gray-500 dark:text-gray-400 mb-1">Labor</div>
-                    {costs.labor.items?.map((item: LaborCostItem, i: number) => (
-                      <div key={`labor-${i}`} className="relative">
-                        <div className="pl-4 text-gray-600 dark:text-gray-300 flex justify-between">
-                          <span className="font-medium">{item.description?.replace('- ', '')}</span>
-                          <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(item.hours * item.rate)}</span>
-                        </div>
-                        {!item.isIncluded ? <span className="absolute w-full h-[2px] rounded-2 bg-foreground" /> : null}
-                      </div>
-                    ))}
-                  </>
-                )}
-                {costs.other.items?.length > 0 && costs.other.total > 0 && (
-                  <>
-                    <div className="text-gray-500 dark:text-gray-400 mb-1">Other</div>
-                    {costs.other.items?.map((item: BaseCostItem, i: number) => (
-                      <div key={`other-${i}`} className="relative pl-4 text-gray-600 dark:text-gray-300 flex justify-between">
-                        <span className="font-medium">{item.item?.replace('- ', '')}</span>
-                        <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(parseCostValue(item.cost))}</span>
-                        {/* strikethrough */}
-                        {!item.isIncluded ? <span className="absolute w-full h-[2px] rounded-2 bg-foreground" /> : null}
-                      </div>
-                    ))}
-                  </>
-                )}
-                <div className="flex justify-between font-medium text-gray-900 dark:text-gray-100 pt-2 border-t border-gray-200 dark:border-gray-700">
-                  <span>Total Estimated Cost</span>
-                  <span className="tabular-nums text-right min-w-[100px]">{formatCurrency(costs.total)}</span>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     )
@@ -348,151 +227,25 @@ export function ProjectSuggestions({
     )
   }
 
-  type ImageStage = 'upscaled' | 'source' | 'generated'
-
-  const stageLabels: Record<ImageStage, string> = {
-    generated: 'Imagined',
-    upscaled: 'Current',
-    source: 'Current'
-  }
-  
-  const getImages = (suggestion: ProjectSuggestion): {
-    src: string
-    stage: ImageStage
-  }[] => {
-    if (!suggestion.images) return []
-    const images: { src: string, stage: ImageStage }[] = []
-    if (suggestion.images.generated?.length && suggestion.images.generated.length > 0) {
-      suggestion.images.generated.forEach(image => {
-        images.push({ src: image.url, stage: 'generated' })
-      })
-    }
-    if (suggestion.images.upscaled?.url) {
-      images.push({ src: suggestion.images.upscaled.url, stage: 'upscaled' })
-    }
-    if (!images.length && suggestion.images.source?.url) {
-      images.push({ src: suggestion.images.source.url, stage: 'source' })
-    }
-    return images
-  }
-
   return (
-    <div 
-      ref={containerRef}
-      className={cn(
-        styles.container,
-        selectedSuggestionId !== null && styles.hasSelection
-      )}
-    >
-      {suggestions.length === 0 ? (
-        <div className="space-y-4">
-          {[0, 1, 2].map((i) => (
-            <SuggestionSkeleton key={i} />
-          ))}
-        </div>
-      ) : (
-        <>
-          <div className={cn(
-            "text-sm text-gray-500 dark:text-gray-400 mb-4",
-            selectedSuggestionId !== null && "hidden"
-          )}>
-            <i className="fa-solid fa-wand-magic-sparkles mr-2" />
-            Select a suggestion to continue
-          </div>
-          <div className={cn(
-            "space-y-4",
-            selectedSuggestionId !== null && "space-y-0"
-          )}>
-            {suggestions.map((suggestion: ProjectSuggestion, index: number) => (
-              <div key={index}>
-                {selectedSuggestionId === suggestion.id && (
-                  <div className={cn(
-                    styles.suggestionImage,
-                    "flex flex-col flex-grow",
-
-                    selectedSuggestionId === suggestion.id && styles.visible
-                  )}>
-                    {getImages(suggestion).length > 0 ? (
-                      <div className={cn(
-                        "w-full h-full relative",
-                        "flex flex-col flex-grow",
-                        suggestion.images?.status?.isGenerating && "animate-pulse"
-                      )}>
-                        <Carousel 
-                          images={getImages(suggestion).map(img => ({
-                            src: img.src,
-                            alt: `${suggestion.title} - ${img.stage} image`,
-                            label: stageLabels[img.stage]
-                          }))}
-                          showControls={true}
-                          showIndicators={true}
-                          autoPlay={false}
-                        />
-                        {/* Loading Overlay */}
-                        {(suggestion.images?.status?.isGenerating || suggestion.images?.status?.isUpscaling) && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
-                            <div className="frosted-glass rounded-xl px-4 py-2 flex items-center gap-2">
-                              <i className={cn(
-                                "fa-solid",
-                                suggestion.images.status.isGenerating ? "fa-wand-magic-sparkles" : "fa-expand",
-                                "text-zinc-700 dark:text-zinc-300"
-                              )} />
-                              <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                                {suggestion.images.status.isGenerating ? "Generating image..." : "Upscaling image..."}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                        {/* Error Overlay */}
-                        {suggestion.images?.status?.lastError && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
-                            <div className="frosted-glass rounded-xl px-4 py-2 flex items-center gap-2 text-red-500">
-                              <i className="fa-solid fa-triangle-exclamation" />
-                              <span className="text-sm">
-                                Failed to generate image
-                              </span>
-                              <button
-                                onClick={(e) => handleGenerateImage(suggestion.id, e)}
-                                className="ml-2 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                              >
-                                <i className="fa-solid fa-rotate-right" />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div 
-                        className={cn(
-                          styles.imageSkeleton,
-                          (suggestion.images?.status?.isGenerating || generatingImages[suggestion.id]) && 'cursor-wait'
-                        )}
-                        title="Image will generate automatically"
-                      >
-                        {suggestion.images?.status?.isGenerating || generatingImages[suggestion.id] ? (
-                          <div className="flex flex-col items-center gap-2">
-                            <i className="fa-solid fa-wand-magic-sparkles text-2xl" />
-                            <span className="text-sm">Generating image...</span>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-center gap-2">
-                            <i className="fa-regular fa-image text-2xl" />
-                            <span className="text-sm">Image will generate automatically</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-                <SuggestionCard
-                  suggestion={suggestion}
-                  index={index}
-                />
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+    <div className={styles.container}>
+      <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        <i className="fa-solid fa-wand-magic-sparkles mr-2" />
+        Select a suggestion to continue
+      </div>
+      <div className="space-y-4">
+        {suggestions.length === 0 ? (
+          [0, 1, 2].map((i) => <SuggestionSkeleton key={i} />)
+        ) : (
+          suggestions.map((suggestion: ProjectSuggestion, index: number) => (
+            <SuggestionCard 
+              key={suggestion.id} 
+              suggestion={suggestion} 
+              index={index} 
+            />
+          ))
+        )}
+      </div>
     </div>
   )
 }

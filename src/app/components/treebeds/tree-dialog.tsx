@@ -13,6 +13,8 @@ import { StreetViewCard } from './components/street-view-card'
 import { ProjectDetails } from './components/project-details'
 import { ProjectSuggestions } from './components/project-suggestions'
 import { useDebouncedCallback } from '@/hooks/use-debounce'
+import { Carousel } from '@/app/components/ui/carousel'
+import { calculateProjectCosts, formatCurrency } from '@/lib/cost'
 
 type ProjectSuggestion = NonNullable<ProjectData['suggestions']>[number]
 
@@ -193,7 +195,7 @@ export function TreeDialog(props: {
     // Merge updates with current form data
     const mergedData = {
       ...formData,
-      ...updates
+      ...updates,
     }
     setFormData(mergedData)
 
@@ -274,7 +276,17 @@ export function TreeDialog(props: {
         breakdown: suggestion.estimatedCost.breakdown
       } : undefined
     }))
-  }, [])
+
+    handleProjectFormUpdate({
+      ...formData,
+      name: suggestion.title || '',
+      description: suggestion.summary || '',
+      suggestion: suggestion
+    })
+    
+    // Automatically move to the next step
+    setCurrentStep(currentStep + 1)
+  }, [currentStep])
 
   const handleStepChange = useCallback((newStep: number) => {
     console.log('[TreeDialog] Step changing to:', newStep)
@@ -332,6 +344,69 @@ export function TreeDialog(props: {
     }
   }, [formData, projectId, setProject, showToast])
 
+  // Helper function to display suggestion preview
+  const SuggestionPreview = useCallback(() => {
+    if (!formData.suggestion) return null
+    
+    const suggestion = formData.suggestion
+    const costs = calculateProjectCosts(suggestion.estimatedCost?.breakdown)
+    
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4">
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+            {suggestion.title}
+          </h3>
+          
+          {/* Image preview */}
+          {suggestion.images && (
+            <div className="w-full relative rounded-lg overflow-hidden">
+              <Carousel 
+                images={
+                  suggestion.images.generated?.map(img => ({
+                    src: img.url,
+                    alt: `${suggestion.title} - Imagined view`,
+                    label: 'Imagined'
+                  })) || []
+                }
+                showControls={true}
+                showIndicators={true}
+                autoPlay={false}
+              />
+            </div>
+          )}
+          
+          {/* Details */}
+          <div className="frosted-glass p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  {suggestion.category?.replace(/_/g, ' ')}
+                </span>
+              </div>
+              <span className="text-sm font-medium text-accent">
+                {costs?.total ? formatCurrency(costs.total) : 'Cost estimate unavailable'}
+              </span>
+            </div>
+            
+            <p className="text-gray-600 dark:text-gray-300 leading-relaxed text-sm">
+              {suggestion.summary}
+            </p>
+            
+            {costs && (
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex justify-between font-medium text-gray-900 dark:text-gray-100">
+                  <span>Total Estimated Cost</span>
+                  <span className="tabular-nums">{formatCurrency(costs.total)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }, [formData.suggestion])
+
   const steps: StepFormDialogStep[] = [ 
     {
       title: "Let's start a project",
@@ -384,13 +459,7 @@ export function TreeDialog(props: {
         || (projectData.data?.images?.length ?? 0) > 0
     },
     {
-      title: "Imagine your project",
-      onSubmit: () => {
-        const suggestion = formData.suggestion;
-        return handleProjectFormUpdate({
-          cost_breakdown: suggestion?.estimatedCost?.breakdown,
-        }, true)
-      },
+      title: "Browse project ideas",
       content: (
         <ProjectSuggestions
           projectId={projectId}
@@ -398,6 +467,17 @@ export function TreeDialog(props: {
           isLoading={!formData.location || !formData.viewParams}
         />
       ),
+      canProgress: Boolean(formData.suggestion)
+    },
+    {
+      title: "Review your selection",
+      content: <SuggestionPreview />,
+      onSubmit: () => {
+        const suggestion = formData.suggestion;
+        return handleProjectFormUpdate({
+          cost_breakdown: suggestion?.estimatedCost?.breakdown,
+        }, true)
+      },
       canProgress: Boolean(formData.suggestion)
     },
     {

@@ -404,6 +404,14 @@ export function useLiveTrees() {
           checkConnection();
         });
       }
+
+      wsManager.setLatestState('projectData', {
+        data: {
+          ...wsManager.getLatestState('projectData')?.data,
+          project: newProject,
+        },
+        projectId: newProject.id
+      });
       
       // Emit with immediate timing
       const success = wsManager.emit('setProject', newProject);
