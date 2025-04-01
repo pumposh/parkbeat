@@ -177,20 +177,69 @@ const UnmemoizedClusterMarker = ({
 
 // Export a memoized version with custom comparison
 export const ClusterMarker = memo(UnmemoizedClusterMarker, (prevProps, nextProps) => {
-  // Custom comparison function to prevent unnecessary re-renders
-  return (
-    // Compare cluster properties
-    prevProps.cluster.id === nextProps.cluster.id &&
-    prevProps.cluster.position.x === nextProps.cluster.position.x &&
-    prevProps.cluster.position.y === nextProps.cluster.position.y &&
-    prevProps.cluster.isNearCenter === nextProps.cluster.isNearCenter &&
-    // Compare focused marker ID
-    prevProps.focusedMarkerId === nextProps.focusedMarkerId &&
-    // Compare projects length (assuming projects list doesn't change)
-    prevProps.projects.length === nextProps.projects.length &&
-    prevProps.projectGroups?.length === nextProps.projectGroups?.length &&
-    // Compare cluster project IDs (deep comparison but only if everything else matches)
-    JSON.stringify(prevProps.cluster.projectIds.sort()) === 
-    JSON.stringify(nextProps.cluster.projectIds.sort())
-  );
+  // Compare cluster core properties
+  if (
+    prevProps.cluster.id !== nextProps.cluster.id ||
+    prevProps.cluster.position.x !== nextProps.cluster.position.x ||
+    prevProps.cluster.position.y !== nextProps.cluster.position.y ||
+    prevProps.cluster.isNearCenter !== nextProps.cluster.isNearCenter ||
+    prevProps.focusedMarkerId !== nextProps.focusedMarkerId
+  ) {
+    return false;
+  }
+  
+  // More thorough comparison of projects
+  if (prevProps.projects.length !== nextProps.projects.length) {
+    return false;
+  }
+
+  // Check for project ID changes in the cluster
+  const prevProjectIds = new Set(prevProps.cluster.projectIds);
+  const nextProjectIds = new Set(nextProps.cluster.projectIds);
+  
+  if (prevProjectIds.size !== nextProjectIds.size) {
+    return false;
+  }
+  
+  // Check if any project ID in the cluster has changed
+  for (const id of prevProjectIds) {
+    if (!nextProjectIds.has(id)) {
+      return false;
+    }
+  }
+  
+  // Check if any relevant project data has changed
+  // This is critical to detect WebSocket updates to projects within the cluster
+  const projectsToCheck = prevProps.cluster.projectIds;
+  
+  for (const projectId of projectsToCheck) {
+    const prevProject = prevProps.projects.find(p => p.id === projectId);
+    const nextProject = nextProps.projects.find(p => p.id === projectId);
+    
+    // If a project was added or removed, consider the props changed
+    if ((!prevProject && nextProject) || (prevProject && !nextProject)) {
+      return false;
+    }
+    
+    // If critical project data changed, consider the props changed
+    if (prevProject && nextProject) {
+      if (
+        prevProject.name !== nextProject.name ||
+        prevProject.status !== nextProject.status ||
+        prevProject._meta_updated_at?.getTime() !== nextProject._meta_updated_at?.getTime()
+      ) {
+        return false;
+      }
+    }
+  }
+  
+  // Check if project groups have changed
+  if (
+    (prevProps.projectGroups?.length || 0) !== (nextProps.projectGroups?.length || 0)
+  ) {
+    return false;
+  }
+  
+  // If we reach here, consider the props equal
+  return true;
 }); 

@@ -234,22 +234,80 @@ const UnmemoizedProjectMarker = ({ project, group, position, isNearCenter, isDel
 
 // Export a memoized version with custom comparison
 export const ProjectMarker = memo(UnmemoizedProjectMarker, (prevProps, nextProps) => {
-  // Custom comparison function to prevent unnecessary re-renders
-  return (
-    // Compare IDs
-    (prevProps.project?.id === nextProps.project?.id) &&
-    (prevProps.group?.id === nextProps.group?.id) &&
-    // Compare position
-    (prevProps.position.x === nextProps.position.x) &&
-    (prevProps.position.y === nextProps.position.y) &&
-    // Compare state
-    (prevProps.isNearCenter === nextProps.isNearCenter) &&
-    (prevProps.isDeleted === nextProps.isDeleted) &&
-    // Compare contribution data (only check if it exists or changed)
-    ((!prevProps.contributionSummary && !nextProps.contributionSummary) ||
-     (prevProps.contributionSummary?.total_amount_cents === nextProps.contributionSummary?.total_amount_cents &&
-      prevProps.contributionSummary?.contributor_count === nextProps.contributionSummary?.contributor_count))
-  );
+  // First, check if the project or group objects are different references
+  // If one is defined in previous props but not next props or vice versa, return false (props changed)
+  if ((!prevProps.project && nextProps.project) || (prevProps.project && !nextProps.project)) {
+    return false;
+  }
+  
+  if ((!prevProps.group && nextProps.group) || (prevProps.group && !nextProps.group)) {
+    return false;
+  }
+  
+  // For projects, compare critical fields that would affect rendering
+  if (prevProps.project && nextProps.project) {
+    // Check all critical fields that affect rendering or come from WebSocket updates
+    if (
+      prevProps.project.id !== nextProps.project.id ||
+      prevProps.project.name !== nextProps.project.name ||
+      prevProps.project.status !== nextProps.project.status ||
+      prevProps.project._loc_lat !== nextProps.project._loc_lat ||
+      prevProps.project._loc_lng !== nextProps.project._loc_lng ||
+      // Check update timestamps to detect WebSocket updates
+      prevProps.project._meta_updated_at?.getTime() !== nextProps.project._meta_updated_at?.getTime()
+    ) {
+      return false;
+    }
+  }
+  
+  // For groups, compare critical fields
+  if (prevProps.group && nextProps.group) {
+    if (
+      prevProps.group.id !== nextProps.group.id ||
+      prevProps.group.count !== nextProps.group.count ||
+      prevProps.group._loc_lat !== nextProps.group._loc_lat ||
+      prevProps.group._loc_lng !== nextProps.group._loc_lng
+    ) {
+      return false;
+    }
+  }
+  
+  // Compare position
+  if (
+    prevProps.position.x !== nextProps.position.x ||
+    prevProps.position.y !== nextProps.position.y
+  ) {
+    return false;
+  }
+  
+  // Compare other props
+  if (
+    prevProps.isNearCenter !== nextProps.isNearCenter ||
+    prevProps.isDeleted !== nextProps.isDeleted
+  ) {
+    return false;
+  }
+  
+  // Compare contribution data more thoroughly
+  // This is critical for WebSocket updates to contribution info
+  const prevContrib = prevProps.contributionSummary;
+  const nextContrib = nextProps.contributionSummary;
+  
+  if ((!prevContrib && nextContrib) || (prevContrib && !nextContrib)) {
+    return false;
+  }
+  
+  if (prevContrib && nextContrib) {
+    if (
+      prevContrib.total_amount_cents !== nextContrib.total_amount_cents ||
+      prevContrib.contributor_count !== nextContrib.contributor_count
+    ) {
+      return false;
+    }
+  }
+  
+  // If we made it here, the props are considered equal
+  return true;
 });
 
 // Helper function to convert hex color to hue-rotation value

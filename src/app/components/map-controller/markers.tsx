@@ -381,16 +381,64 @@ const UnmemoizedMarkers = ({ projects, projectGroups, map, onMarkerNearCenter, c
   )
 }
 
-// Export memoized component with custom comparison
+// Export memoized component
 export const Markers = memo(UnmemoizedMarkers, (prevProps, nextProps) => {
-  // Only re-render when critical props change
-  return (
-    // Map instance should be stable reference
-    prevProps.map === nextProps.map &&
-    // Check if projects have changed (length only for basic check)
-    prevProps.projects.length === nextProps.projects.length &&
-    prevProps.projectGroups?.length === nextProps.projectGroups?.length &&
-    // Contribution map reference comparison (shallow)
-    prevProps.contributionSummaryMap === nextProps.contributionSummaryMap
-  );
+  // Basic length check for collections that would trigger re-renders
+  if (
+    prevProps.projects.length !== nextProps.projects.length ||
+    (prevProps.projectGroups?.length || 0) !== (nextProps.projectGroups?.length || 0)
+  ) {
+    return false;
+  }
+  
+  // Check if any projects have been updated (via WebSocket)
+  // This is crucial - we need to check timestamps to catch updates
+  for (let i = 0; i < prevProps.projects.length; i++) {
+    const prevProject = prevProps.projects[i];
+    
+    // Skip if prevProject is undefined (should never happen, but for type safety)
+    if (!prevProject) continue;
+    
+    const nextProject = nextProps.projects.find(p => p?.id === prevProject.id);
+    
+    // If we can't find the matching project in the next props, consider it changed
+    if (!nextProject) return false;
+    
+    if (
+      prevProject.id !== nextProject.id ||
+      prevProject.name !== nextProject.name ||
+      prevProject.status !== nextProject.status ||
+      prevProject._meta_updated_at?.getTime() !== nextProject._meta_updated_at?.getTime()
+    ) {
+      return false;
+    }
+  }
+  
+  // Check if contribution data has changed
+  if (prevProps.contributionSummaryMap && nextProps.contributionSummaryMap) {
+    // Fast check: different number of entries
+    if (prevProps.contributionSummaryMap.size !== nextProps.contributionSummaryMap.size) {
+      return false;
+    }
+    
+    // Check if any contribution data has changed
+    for (const [id, prevSummary] of prevProps.contributionSummaryMap.entries()) {
+      const nextSummary = nextProps.contributionSummaryMap.get(id);
+      if (!nextSummary) return false;
+      
+      if (
+        prevSummary.total_amount_cents !== nextSummary.total_amount_cents ||
+        prevSummary.contributor_count !== nextSummary.contributor_count
+      ) {
+        return false;
+      }
+    }
+  }
+  
+  // Same map reference
+  if (prevProps.map !== nextProps.map) {
+    return false;
+  }
+  
+  return true;
 }); 

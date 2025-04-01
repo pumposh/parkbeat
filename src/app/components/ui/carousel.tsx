@@ -90,7 +90,7 @@ export function Carousel({
       }
       labelTimeoutRef.current = setTimeout(() => {
         setShowLabelTemporarily(false)
-      }, 1500)
+      }, 2500)
     } else {
       setShowLabelTemporarily(false)
       if (labelTimeoutRef.current) {
@@ -129,21 +129,20 @@ export function Carousel({
       onMouseLeave={() => setIsPaused(false)}
     >
       <div className="overflow-hidden rounded-lg flex-grow">
-        <div className="relative aspect-[1/1] h-full">
+        <div 
+          className="relative aspect-[1/1] h-full flex transition-transform duration-500 ease-in-out"
+          style={{
+            transform: `translateX(-${currentIndex * 100}%)`,
+          }}
+        >
           {images.map((image, index) => (
-            <div
-              key={`${image.src}-${index}`}
-              className={cn(
-                "absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out",
-                index === currentIndex ? "opacity-100 z-10" : "opacity-0 z-0"
-              )}
-              aria-hidden={index !== currentIndex}
-            >
+            <div key={`${image.src}-${index}`} className="relative min-w-full h-full">
               <img
                 src={image.src}
                 alt={image.alt || `Image ${index + 1}`}
                 className={cn(
-                  "absolute inset-0 w-full h-full object-cover"
+                  "absolute inset-0 w-full h-full object-cover",
+                  "transition-opacity duration-500",
                 )}
                 loading="lazy"
               />
@@ -154,7 +153,7 @@ export function Carousel({
                   "transition-opacity duration-300",
                   "opacity-0 group-hover:opacity-100",
                   {
-                    "opacity-100": showLabelTemporarily && index === currentIndex
+                    "opacity-100": showLabelTemporarily && index === currentIndex,
                   }
                 )}>
                   {image.label}
