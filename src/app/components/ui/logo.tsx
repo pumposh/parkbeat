@@ -38,7 +38,7 @@ const MaskEl = () => {
       priority
       loading="eager"
       fetchPriority="high"
-      sizes="(max-width: 768px) 96px, 96px"
+      sizes="(max-width: 768px) 500px, 500px"
       className="transition-opacity duration-150 ease-in-out absolute inset-0 object-contain overflow-visible scale-[1.65] brightness-[0.9] dark:brightness-[0.83]"
       style={{ opacity: isLoaded ? 1 : 0 }}
     />
@@ -54,7 +54,11 @@ export const Logo = ({
   showBetaTag?: boolean
 }) => {
   return (
-    <div className={cn("relative dark:bg-[#ffffff69] w-24 h-24 rounded-full p-2 outline outline-8 outline-zinc-300 dark:outline-zinc-500 dark:invert shadow-xl overflow-visible transition-opacity duration-300 ease-in-out", className)}
+    <div id="logo" className={cn(
+      "relative dark:bg-[#ffffff69] w-24 h-24 rounded-full p-2 outline outline-8",
+      "outline-zinc-300 dark:outline-zinc-500 dark:invert shadow-xl",
+      "overflow-visible transition-opacity duration-300 ease-in-out",
+      className)}
     style={{ backgroundColor: '#F2F0E630' }}>
       <Tree />
       <MaskEl />

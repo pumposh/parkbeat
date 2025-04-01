@@ -32,7 +32,7 @@ const steps: Step[] = [
     description: 'Discover and contribute to green spaces in your community.',
     buttonText: 'Let\'s go',
     content: (<div className="flex flex-col items-center justify-center gap-6 my-12">
-      <Logo className="scale-110" />
+      <Logo className="scale-100 pointer-events-auto" />
     </div>)
   },
   {
