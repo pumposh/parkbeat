@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useTheme } from 'next-themes'
 import maplibregl from 'maplibre-gl'
 import { cn } from '@/lib/utils'
@@ -56,13 +56,102 @@ export const MapController = ({
   const lastPermissionState = useRef<string | null>(null)
   const toast = useToast()
 
+  // Helper function to create GeoJSON features efficiently
+  const createGeoJSONFeatures = (projects: Project[]) => {
+    return projects.map((project: Project) => ({
+      type: 'Feature' as const,
+      geometry: { 
+        type: 'Point' as const,
+        coordinates: [project._loc_lng, project._loc_lat]
+      },
+      properties: {
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        created_at: getCreatedAt(project),
+        created_by: project._meta_created_by
+      }
+    }));
+  };
+
+  // Move these hooks to the component level, not inside useEffect
+  const previousHash = useRef<string>('');
+  // Memoize projects array transformation
+  const projectsArray = useMemo(() => 
+    Array.from(projectMap.values()), 
+    [projectMap]
+  );
+
+  // Create a hash of projects to detect changes efficiently
+  const getProjectsHash = (projects: Project[]) => {
+    return projects.map(p => 
+      `${p.id}-${p.status}-${Number(p._loc_lat).toFixed(6)}-${Number(p._loc_lng).toFixed(6)}-${p.name}`
+    ).join('|');
+  };
+
+  // Calculate the current hash
+  const currentHash = useMemo(() => 
+    getProjectsHash(projectsArray),
+    [projectsArray]
+  );
+
+  // Memoize feature creation - only recalculates when projects actually change
+  const features = useMemo(() => 
+    createGeoJSONFeatures(projectsArray),
+    [projectsArray]
+  );
+
+  // Update source data when trees change - optimization
+  useEffect(() => {
+    if (!map.current || !isMapLoaded) {
+      return;
+    }
+
+    // Clear any pending update
+    if (updateTimeout.current) {
+      clearTimeout(updateTimeout.current);
+    }
+    
+    // Skip update if nothing changed
+    if (currentHash === previousHash.current) return;
+    previousHash.current = currentHash;
+
+    // Debounce the update with slightly longer timeout for better batching
+    updateTimeout.current = setTimeout(() => {
+      if (!map.current?.isStyleLoaded() || !map.current?.getSource('trees')) {
+        if (map.current?.isStyleLoaded()) {
+          initializeLayers();
+        } else {
+          map.current?.once('style.load', initializeLayers);
+        }
+        return;
+      }
+
+      const source = map.current.getSource('trees') as maplibregl.GeoJSONSource;
+      if (!source) return;
+
+      // Use the memoized features
+      source.setData({
+        type: 'FeatureCollection',
+        features
+      });
       
-  const getCreatedAt = (project: Project) => {
+      // Update previous projects reference
+      previousProjects.current = projectsArray;
+    }, 150);  // Slightly longer debounce for better batching
+
+    return () => {
+      if (updateTimeout.current) {
+        clearTimeout(updateTimeout.current);
+      }
+    };
+  }, [isMapLoaded, currentHash, features, projectsArray]);
+
+  function getCreatedAt(project: Project) {
     if (!project._meta_created_at) return null;
     if (typeof project._meta_created_at === 'string') {
       return project._meta_created_at
     } else if (project._meta_created_at instanceof Date) {
-      console.log('project._meta_created_at', project._meta_created_at)
       return project._meta_created_at.toISOString()
     } else {
       return null
@@ -337,6 +426,40 @@ export const MapController = ({
   useEffect(() => {
     if (map.current || !location) return
 
+    // Store handler references for proper cleanup
+    const handlers = {
+      movestart: () => setIsMapMoving(true),
+      moveend: () => setIsMapMoving(false),
+      mousedown: () => setIsUserInteracting(true),
+      mouseup: () => setIsUserInteracting(false),
+      dragstart: () => setIsUserInteracting(true),
+      dragend: () => setIsUserInteracting(false),
+      zoomstart: () => setIsMapMoving(true),
+      zoomend: () => setIsMapMoving(false),
+      error: (e: any) => {
+        console.error('Map error:', e)
+        setMapError('Something went wrong with the map')
+      },
+      'style.error': (e: any) => {
+        console.error('Style error:', e)
+        setMapError('Failed to load map style')
+      }
+    };
+
+    // Store canvas event handlers separately
+    const canvasHandlers = {
+      webglcontextlost: (e: Event) => {
+        console.error('WebGL context lost:', e)
+        e.preventDefault()
+        setMapError('Map context was lost. Please refresh the page.')
+      },
+      webglcontextrestored: () => {
+        console.log('WebGL context restored')
+        setMapError(null)
+        map.current?.resize()
+      }
+    };
+
     try {
       if (!mapContainer.current) {
         throw new Error('Map container not found')
@@ -366,44 +489,23 @@ export const MapController = ({
         setMapError(null)
         setMapInstance(map.current)
 
-        // Add movement listeners
-        map.current.on('movestart', () => setIsMapMoving(true))
-        map.current.on('moveend', () => setIsMapMoving(false))
-        map.current.on('mousedown', () => setIsUserInteracting(true))
-        map.current.on('mouseup', () => setIsUserInteracting(false))
-        map.current.on('dragstart', () => setIsUserInteracting(true))
-        map.current.on('dragend', () => setIsUserInteracting(false))
-        map.current.on('zoomstart', () => setIsMapMoving(true))
-        map.current.on('zoomend', () => setIsMapMoving(false))
-        map.current.on('error', (e) => {
-          console.error('Map error:', e)
-          setMapError('Something went wrong with the map')
-        })
+        // Add movement listeners using stored handler references
+        Object.entries(handlers).forEach(([event, handler]) => {
+          map.current?.on(event as any, handler);
+        });
         
         // Handle WebGL context events
         const canvas = mapContainer.current?.querySelector('canvas')
         if (canvas) {
-          canvas.addEventListener('webglcontextlost', (e) => {
-            console.error('WebGL context lost:', e)
-            e.preventDefault()
-            setMapError('Map context was lost. Please refresh the page.')
-          })
-
-          canvas.addEventListener('webglcontextrestored', () => {
-            console.log('WebGL context restored')
-            setMapError(null)
-            map.current?.resize()
-          })
+          Object.entries(canvasHandlers).forEach(([event, handler]) => {
+            canvas.addEventListener(event, handler);
+          });
         }
 
         sendBounds()
       }
 
       map.current.once('load', setupMapEvents)
-      map.current.on('style.error', (e) => {
-        console.error('Style error:', e)
-        setMapError('Failed to load map style')
-      })
 
     } catch (error) {
       console.error('Error initializing map:', error)
@@ -416,24 +518,22 @@ export const MapController = ({
           // Force cleanup of WebGL context
           const canvas = mapContainer.current?.querySelector('canvas')
           if (canvas) {
+            // Remove canvas event listeners using the same handler references
+            Object.entries(canvasHandlers).forEach(([event, handler]) => {
+              canvas.removeEventListener(event, handler);
+            });
+
+            // Clean up WebGL context
             const gl = canvas.getContext('webgl') || canvas.getContext('webgl2')
             if (gl) {
               gl.getExtension('WEBGL_lose_context')?.loseContext()
             }
           }
 
-          map.current.off('movestart', () => setIsMapMoving(true))
-          map.current.off('moveend', () => setIsMapMoving(false))
-          map.current.off('mousedown', () => setIsUserInteracting(true))
-          map.current.off('mouseup', () => setIsUserInteracting(false))
-          map.current.off('dragstart', () => setIsUserInteracting(true))
-          map.current.off('dragend', () => setIsUserInteracting(false))
-          map.current.off('zoomstart', () => setIsMapMoving(true))
-          map.current.off('zoomend', () => setIsMapMoving(false))
-          map.current.off('error', () => {})
-          map.current.off('style.error', () => {})
-          map.current.off('webglcontextlost', () => {})
-          map.current.off('webglcontextrestored', () => {})
+          // Properly remove event listeners using the same handler references
+          Object.entries(handlers).forEach(([event, handler]) => {
+            map.current?.off(event as any, handler);
+          });
           
           // Remove the map instance and force garbage collection
           map.current.remove()
@@ -614,83 +714,6 @@ export const MapController = ({
       })
     }
   }
-
-  // Update source data when trees change
-  useEffect(() => {
-    if (!map.current || !isMapLoaded) {
-      console.log('Map not ready for data update')
-      return
-    }
-
-    // Clear any pending update
-    if (updateTimeout.current) {
-      clearTimeout(updateTimeout.current)
-    }
-
-    // Check if the projects have actually changed
-    const projectsChanged = Array.from(projectMap.values()).length !== previousProjects.current.length ||
-      Array.from(projectMap.values()).some((project, index) => {
-        const prevProject = previousProjects.current[index]
-        return !prevProject || 
-          project.id !== prevProject.id ||
-          project.status !== prevProject.status ||
-          project._loc_lat !== prevProject._loc_lat ||
-          project._loc_lng !== prevProject._loc_lng ||
-          project.name !== prevProject.name
-      })
-
-    if (!projectsChanged) return
-
-    // Debounce the update
-    updateTimeout.current = setTimeout(() => {
-      // If style is not loaded or source doesn't exist, initialize layers
-      if (!map.current?.isStyleLoaded() || !map.current?.getSource('trees')) {
-        console.log('Style not loaded or source missing, reinitializing layers')
-        if (map.current?.isStyleLoaded()) {
-          initializeLayers()
-        } else {
-          map.current?.once('style.load', initializeLayers)
-        }
-        return
-      }
-
-      const source = map.current.getSource('trees') as maplibregl.GeoJSONSource
-      if (!source) {
-        console.log('Trees source not found after check, something went wrong')
-        return
-      }
-
-      const features = Array.from(projectMap.values()).map((project: Project) => ({
-        type: 'Feature' as const,
-        geometry: { 
-          type: 'Point' as const,
-          coordinates: [project._loc_lng, project._loc_lat]
-        },
-        properties: {
-          id: project.id,
-          name: project.name,
-          status: project.status,
-          created_at: getCreatedAt(project),
-          created_by: project._meta_created_by
-        }
-      }))
-
-      console.log('Updating source with features:', features)
-      source.setData({
-        type: 'FeatureCollection',
-        features
-      })
-
-      // Update previous projects reference
-      previousProjects.current = Array.from(projectMap.values())
-    }, 100) // 100ms debounce
-
-    return () => {
-      if (updateTimeout.current) {
-        clearTimeout(updateTimeout.current)
-      }
-    }
-  }, [isMapLoaded, projectMap])
 
   // Function to handle control expansion
   const handleExpandControls = () => {

@@ -2,7 +2,7 @@
 
 import type { Project, ProjectGroup, ContributionSummary } from '@/hooks/use-tree-sockets'
 import { useLiveTrees } from '@/hooks/use-tree-sockets'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { createPortal } from 'react-dom'
 import { ProjectInfoPanel } from './project-info-panel'
 import type maplibregl from 'maplibre-gl'
@@ -82,7 +82,8 @@ function getMarkerFilter(status?: string): string {
   }
 }
 
-export const ProjectMarker = ({ project, group, position, isNearCenter, isDeleted, map }: ProjectMarkerProps) => {
+// Wrap the component with memo for better performance
+const UnmemoizedProjectMarker = ({ project, group, position, isNearCenter, isDeleted, map }: ProjectMarkerProps) => {
   const [showInfoPanel, setShowInfoPanel] = useState(false)
   const [isPanelLoading, setIsPanelLoading] = useState(false)
   const markerLoadTimeRef = useRef<number | null>(null)
@@ -230,6 +231,26 @@ export const ProjectMarker = ({ project, group, position, isNearCenter, isDelete
     </>
   )
 }
+
+// Export a memoized version with custom comparison
+export const ProjectMarker = memo(UnmemoizedProjectMarker, (prevProps, nextProps) => {
+  // Custom comparison function to prevent unnecessary re-renders
+  return (
+    // Compare IDs
+    (prevProps.project?.id === nextProps.project?.id) &&
+    (prevProps.group?.id === nextProps.group?.id) &&
+    // Compare position
+    (prevProps.position.x === nextProps.position.x) &&
+    (prevProps.position.y === nextProps.position.y) &&
+    // Compare state
+    (prevProps.isNearCenter === nextProps.isNearCenter) &&
+    (prevProps.isDeleted === nextProps.isDeleted) &&
+    // Compare contribution data (only check if it exists or changed)
+    ((!prevProps.contributionSummary && !nextProps.contributionSummary) ||
+     (prevProps.contributionSummary?.total_amount_cents === nextProps.contributionSummary?.total_amount_cents &&
+      prevProps.contributionSummary?.contributor_count === nextProps.contributionSummary?.contributor_count))
+  );
+});
 
 // Helper function to convert hex color to hue-rotation value
 function getHueRotation(hexColor: string): string {

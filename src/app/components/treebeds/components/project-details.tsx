@@ -108,7 +108,7 @@ function ProjectImages({
 
   return (
     <div className="relative w-full mb-4">
-      <div className="relative w-full pb-[100%] rounded-lg overflow-hidden">
+      <div className="relative w-full pb-[100%] rounded-xl overflow-hidden">
         <div className="absolute inset-0">
           <Carousel
             images={images.map(img => ({
@@ -118,10 +118,10 @@ function ProjectImages({
             }))}
             showControls={true}
             showIndicators={true}
-            autoPlay={false}
+            autoPlay={true}
           />
           {(isGeneratingFromData || isRegenerating) && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
+            <div className="absolute rounded-xl inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm z-20">
               <div className="frosted-glass rounded-xl px-4 py-2 flex items-center gap-2">
                 <i className="fa-solid fa-wand-magic-sparkles text-zinc-700 dark:text-zinc-300" />
                 <span className="text-sm text-zinc-700 dark:text-zinc-300">
@@ -319,21 +319,18 @@ export function ProjectDetails({
     
     setIsRegenerating(true);
     
-    // Use the new socket event that updates suggestion data before regenerating images
     const wsManager = WebSocketManager.getInstance();
     wsManager.emit('updateAndReimagineSuggestion', {
       projectId,
       suggestionId: initialData.suggestion.id
     }, { argBehavior: 'replace' });
     
-    // Reset state after a timeout
     setTimeout(() => {
       setHasEdits(false);
       setHasNameChanged(false);
       setHasDescriptionChanged(false);
       setHasCostsChanged(false);
       
-      // Update the initial refs to the current values
       initialName.current = name;
       initialDescription.current = description;
       if (costs) {
@@ -409,17 +406,26 @@ export function ProjectDetails({
               <i className="fa-solid fa-wand-magic-sparkles text-blue-600 dark:text-blue-400 text-xl flex-shrink-0" />
             </button>
           ) : (
-            <div className="rounded-lg bg-gray-50 dark:bg-black/10 p-4 flex items-center justify-between gap-3">
-              <div className="flex flex-col items-start gap-1">
+            <button
+              onClick={handleReimagineTap}
+              disabled={isRegenerating}
+              className={cn(
+                "w-full rounded-lg bg-gray-50 dark:bg-black/10 p-4", 
+                "flex items-center justify-between gap-3 transition-colors",
+                "hover:bg-gray-100 dark:hover:bg-black/20",
+                "disabled:opacity-50 disabled:pointer-events-none"
+              )}
+            >
+              <div className="flex flex-col items-start gap-1 text-left">
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
                   Something look off?
                 </p>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Edit your project details to improve your imagination
+                  Tap to reimagine this space with the current details
                 </p>
               </div>
-              <i className="fa-solid fa-circle-info text-gray-400 text-xl flex-shrink-0" />
-            </div>
+              <i className="fa-solid fa-wand-magic-sparkles text-gray-400 text-xl flex-shrink-0" />
+            </button>
           )}
         </div>
       )}

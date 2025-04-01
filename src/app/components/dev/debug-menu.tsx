@@ -27,7 +27,6 @@ import { Switch } from '../ui/switch';
 interface DebugMenuProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  initialTabId?: string;
   additionalTabs?: Array<{
     id: string;
     label: string;
@@ -42,12 +41,8 @@ interface DebugMenuProps {
 export function DebugMenu({ 
   isOpen, 
   onOpenChange,
-  initialTabId = 'connection',
   additionalTabs = []
-}: DebugMenuProps) {
-  /** Allows exit animation to complete before dialog is removed from DOM */
-  const isDialogOpenDelayed = useDelayedMemo(() => isOpen, [isOpen], 300);
-
+}: DebugMenuProps) {;
   // Get WebSocket state for displaying in the control
   const {
     connectionState,
@@ -79,31 +74,6 @@ export function DebugMenu({
     ...activeSubscriptions.map(id => ({ id, status: 'subscribed' as const })),
     ...unsubscribedRooms.map(id => ({ id, status: 'unsubscribed' as const }))
   ].sort((a, b) => a.id.localeCompare(b.id)), [activeSubscriptions, unsubscribedRooms]);
-
-  // Get connection status color
-  const getConnectionStatusColor = () => {
-    switch (connectionState) {
-      case 'connected':
-        return 'bg-emerald-500';
-      case 'disconnected':
-        return 'bg-red-500';
-      default:
-        return 'bg-amber-500';
-    }
-  };
-
-  // Find the initial tab index
-  const initialTabIndex = (() => {
-    const defaultTabs = [
-      { id: 'connection' },
-      { id: 'logging' },
-      { id: 'settings' }
-    ];
-    
-    const allTabs = [...defaultTabs, ...additionalTabs];
-    const index = allTabs.findIndex(tab => tab.id === initialTabId);
-    return index >= 0 ? index : 0;
-  })();
 
   // Define tab content for the debug dialog
   const debugTabs = [

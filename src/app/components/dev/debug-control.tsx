@@ -48,8 +48,7 @@ export function DebugControl({
       {triggerElement}
       <DebugMenu 
         isOpen={isDialogOpen} 
-        onOpenChange={(open) => handleTriggerClick(open)} 
-        initialTabId="connection"
+        onOpenChange={(open) => handleTriggerClick(open)}
       />
     </>
   );

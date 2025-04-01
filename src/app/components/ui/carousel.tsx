@@ -27,8 +27,10 @@ export function Carousel({
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [showLabelTemporarily, setShowLabelTemporarily] = useState(false)
   const transitionTimer = useRef<NodeJS.Timeout | null>(null)
   const autoPlayTimer = useRef<NodeJS.Timeout | null>(null)
+  const labelTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const goToImage = useCallback((index: number) => {
     if (isTransitioning || index === currentIndex) return
@@ -79,6 +81,30 @@ export function Carousel({
     }
   }, [isTransitioning])
 
+  // Handle temporary label visibility on index change
+  useEffect(() => {
+    if (images[currentIndex]?.label) {
+      setShowLabelTemporarily(true)
+      if (labelTimeoutRef.current) {
+        clearTimeout(labelTimeoutRef.current)
+      }
+      labelTimeoutRef.current = setTimeout(() => {
+        setShowLabelTemporarily(false)
+      }, 1500)
+    } else {
+      setShowLabelTemporarily(false)
+      if (labelTimeoutRef.current) {
+        clearTimeout(labelTimeoutRef.current)
+      }
+    }
+
+    return () => {
+      if (labelTimeoutRef.current) {
+        clearTimeout(labelTimeoutRef.current)
+      }
+    }
+  }, [currentIndex, images])
+
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -103,20 +129,21 @@ export function Carousel({
       onMouseLeave={() => setIsPaused(false)}
     >
       <div className="overflow-hidden rounded-lg flex-grow">
-        <div 
-          className="relative aspect-[1/1] h-full flex transition-transform duration-500 ease-out"
-          style={{
-            transform: `translateX(-${currentIndex * 100}%)`,
-          }}
-        >
+        <div className="relative aspect-[1/1] h-full">
           {images.map((image, index) => (
-            <div key={`${image.src}-${index}`} className="relative min-w-full h-full">
+            <div
+              key={`${image.src}-${index}`}
+              className={cn(
+                "absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out",
+                index === currentIndex ? "opacity-100 z-10" : "opacity-0 z-0"
+              )}
+              aria-hidden={index !== currentIndex}
+            >
               <img
                 src={image.src}
                 alt={image.alt || `Image ${index + 1}`}
                 className={cn(
-                  "absolute inset-0 w-full h-full object-cover",
-                  "transition-opacity duration-500",
+                  "absolute inset-0 w-full h-full object-cover"
                 )}
                 loading="lazy"
               />
@@ -124,7 +151,11 @@ export function Carousel({
                 <div className={cn(
                   "absolute top-2 left-2 z-10",
                   "px-2 py-1 rounded bg-black/50 text-white text-sm",
-                  "opacity-0 group-hover:opacity-100 transition-opacity"
+                  "transition-opacity duration-300",
+                  "opacity-0 group-hover:opacity-100",
+                  {
+                    "opacity-100": showLabelTemporarily && index === currentIndex
+                  }
                 )}>
                   {image.label}
                 </div>

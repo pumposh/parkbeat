@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { createPortal } from 'react-dom'
 import type { Project, ProjectGroup } from '@/hooks/use-tree-sockets'
 import type maplibregl from 'maplibre-gl'
@@ -26,7 +26,8 @@ function getClusterMarkerFilter(): string {
   return "hue-rotate(30deg) saturate(0.4) brightness(1.05) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.2))";
 }
 
-export const ClusterMarker = ({ 
+// Wrap component with memo for better performance
+const UnmemoizedClusterMarker = ({ 
   cluster, 
   projects, 
   projectGroups, 
@@ -172,4 +173,24 @@ export const ClusterMarker = ({
       </div>
     </>
   );
-}; 
+};
+
+// Export a memoized version with custom comparison
+export const ClusterMarker = memo(UnmemoizedClusterMarker, (prevProps, nextProps) => {
+  // Custom comparison function to prevent unnecessary re-renders
+  return (
+    // Compare cluster properties
+    prevProps.cluster.id === nextProps.cluster.id &&
+    prevProps.cluster.position.x === nextProps.cluster.position.x &&
+    prevProps.cluster.position.y === nextProps.cluster.position.y &&
+    prevProps.cluster.isNearCenter === nextProps.cluster.isNearCenter &&
+    // Compare focused marker ID
+    prevProps.focusedMarkerId === nextProps.focusedMarkerId &&
+    // Compare projects length (assuming projects list doesn't change)
+    prevProps.projects.length === nextProps.projects.length &&
+    prevProps.projectGroups?.length === nextProps.projectGroups?.length &&
+    // Compare cluster project IDs (deep comparison but only if everything else matches)
+    JSON.stringify(prevProps.cluster.projectIds.sort()) === 
+    JSON.stringify(nextProps.cluster.projectIds.sort())
+  );
+}); 
